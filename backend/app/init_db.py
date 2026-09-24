@@ -9,7 +9,7 @@ from app.database import DATABASE_URL
 
 MIGRATIONS = [
     ("tabel_entries", "position", "INTEGER DEFAULT 0"),
-    ("users", "is_user", "BOOLEAN NOT NULL DEFAULT 1"),
+    ("users", "is_user", "BOOLEAN NOT NULL DEFAULT TRUE"),
 ]
 
 
