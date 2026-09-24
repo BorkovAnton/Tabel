@@ -14,6 +14,7 @@ class RoleFlags(BaseModel):
     is_admin: bool = False            # Администратор
     is_hr: bool = False               # Кадровик
     timesheet_inspector: bool = False # Инспектор табелей
+    is_user: bool = True              # Пользователь (базовая роль)
 
 
 class UserWithRoles(RoleFlags):
@@ -69,6 +70,7 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
         is_admin=payload.is_admin,
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,
+        is_user=payload.is_user,
     )
     db.add(obj)
     db.commit()

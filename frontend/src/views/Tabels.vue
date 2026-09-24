@@ -34,7 +34,7 @@
         class="mr-4"
       />
       <v-btn
-        v-if="auth.isTimesheetInspector"
+        v-if="auth.canManageTabels"
         color="#2d5a3d"
         prepend-icon="mdi-plus"
         @click="openCreate"
@@ -59,7 +59,8 @@
                @click.stop="openTabel(item)">
           Открыть
         </v-btn>
-        <v-btn v-if="auth.isTimesheetInspector" size="small" variant="text" color="red"
+        <v-btn v-if="auth.canManageTabels && (auth.isTimesheetInspector || item.responsible_user_id === auth.user?.id)"
+               size="small" variant="text" color="red"
                icon="mdi-delete" @click.stop="removeTabel(item)" />
       </template>
       <template #no-data>

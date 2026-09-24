@@ -12,8 +12,9 @@
       <template #item.roles="{ item }">
         <v-chip v-if="item.is_admin" size="x-small" color="deep-purple" variant="toned" class="mr-1">Администратор</v-chip>
         <v-chip v-if="item.is_hr" size="x-small" color="teal" variant="toned" class="mr-1">Кадровик</v-chip>
-        <v-chip v-if="item.timesheet_inspector" size="x-small" color="orange" variant="toned">Инспектор табелей</v-chip>
-        <span v-if="!item.is_admin && !item.is_hr && !item.timesheet_inspector" class="text-grey text-caption">—</span>
+        <v-chip v-if="item.timesheet_inspector" size="x-small" color="orange" variant="toned" class="mr-1">Инспектор табелей</v-chip>
+        <v-chip v-if="item.is_user" size="x-small" color="blue" variant="toned">Пользователь</v-chip>
+        <span v-if="!item.is_admin && !item.is_hr && !item.timesheet_inspector && !item.is_user" class="text-grey text-caption">—</span>
       </template>
       <template #item.actions="{ item }">
         <v-btn size="small" variant="text" icon="mdi-pencil" color="#2d5a3d" @click="openEdit(item)" />
@@ -50,6 +51,7 @@
             <v-checkbox v-model="form.is_admin" label="Администратор" density="compact" hide-details color="deep-purple" />
             <v-checkbox v-model="form.is_hr" label="Кадровик" density="compact" hide-details color="teal" />
             <v-checkbox v-model="form.timesheet_inspector" label="Инспектор табелей" density="compact" hide-details color="orange" />
+            <v-checkbox v-model="form.is_user" label="Пользователь" density="compact" hide-details color="blue" hint="Доступ к «Табель фактический», «Табель», создание и заполнение табелей" persistent-hint />
           </div>
 
           <v-alert v-if="dialogError" type="error" density="compact" variant="tonal" class="mt-3">{{ dialogError }}</v-alert>
@@ -84,7 +86,7 @@ const dialog = ref(false)
 const saving = ref(false)
 const dialogError = ref('')
 const editing = ref(null)
-const form = ref({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false })
+const form = ref({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true })
 
 async function load() {
   loading.value = true
@@ -104,7 +106,7 @@ async function load() {
 function openCreate() {
   editing.value = null
   dialogError.value = ''
-  form.value = { username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false }
+  form.value = { username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true }
   dialog.value = true
 }
 
@@ -118,6 +120,7 @@ function openEdit(item) {
     is_admin: item.is_admin,
     is_hr: item.is_hr,
     timesheet_inspector: item.timesheet_inspector,
+    is_user: item.is_user !== false,
   }
   dialog.value = true
 }

@@ -9,6 +9,7 @@ from app.core.security import (
     get_current_user,
     hash_password,
     verify_password,
+    can_manage_tabels,
 )
 from app.database import get_db
 from app.models.user import User
@@ -23,6 +24,7 @@ class UserOut(BaseModel):
     is_admin: bool
     is_hr: bool
     timesheet_inspector: bool
+    is_user: bool = True
 
     class Config:
         from_attributes = True
@@ -41,6 +43,7 @@ class UserCreate(BaseModel):
     is_admin: bool = False
     is_hr: bool = False
     timesheet_inspector: bool = False
+    is_user: bool = True
 
 
 class UserUpdate(BaseModel):
@@ -49,6 +52,7 @@ class UserUpdate(BaseModel):
     is_admin: Optional[bool] = None
     is_hr: Optional[bool] = None
     timesheet_inspector: Optional[bool] = None
+    is_user: Optional[bool] = None
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -68,7 +72,7 @@ def me(user: User = Depends(get_current_user)):
 @router.get("/users", response_model=List[UserOut])
 def list_users(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Список пользователей (для назначения ответственного за табель)."""
-    if not (user.is_admin or user.timesheet_inspector):
+    if not can_manage_tabels(user):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     return db.query(User).order_by(User.username).all()
 
@@ -86,6 +90,7 @@ def create_user(payload: UserCreate, user: User = Depends(get_current_user), db:
         is_admin=payload.is_admin,
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,
+        is_user=payload.is_user,
     )
     db.add(new_user)
     db.commit()

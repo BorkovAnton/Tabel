@@ -15,6 +15,7 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)          # Администратор
     is_hr: Mapped[bool] = mapped_column(Boolean, default=False)             # Кадровик
     timesheet_inspector: Mapped[bool] = mapped_column(Boolean, default=False)  # Инспектор табелей
+    is_user: Mapped[bool] = mapped_column(Boolean, default=True)            # Пользователь (базовая роль)
 
     # Табельщик видит только те табели, где он ответственный
     responsible_for_all_departments: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -50,20 +50,26 @@ import { auth } from './auth'
 const router = useRouter()
 
 const allNavItems = [
-  { title: 'Сводка', path: '/', icon: 'mdi-view-dashboard', auth: false },
+  { title: 'Сводка', path: '/', icon: 'mdi-view-dashboard', auth: false, everyone: true },
   { title: 'Сотрудники', path: '/employees', icon: 'mdi-account-group', auth: false },
   { title: 'Импорт', path: '/import', icon: 'mdi-file-import', auth: false },
   { title: 'Расчёт событий', path: '/turnstile-fix', icon: 'mdi-calculator', auth: false },
-  { title: 'Табель фактический', path: '/timesheet-report', icon: 'mdi-calendar-month', auth: false },
+  { title: 'Табель фактический', path: '/timesheet-report', icon: 'mdi-calendar-month', auth: false, userRole: true },
   { title: 'Подразделения', path: '/departments', icon: 'mdi-office-building', auth: false },
   { title: 'Графики', path: '/schedules', icon: 'mdi-clock-outline', auth: false },
-  { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true },
+  { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true, userRole: true },
   { title: 'Пользователи', path: '/users', icon: 'mdi-account-key', admin: true }
 ]
+
+const isManager = () => auth.isAdmin || auth.isHR || auth.isTimesheetInspector
 
 const navItems = computed(() => allNavItems.filter(i => {
   if (i.auth && !auth.isAuthenticated) return false
   if (i.admin && !auth.isAdmin) return false
+  // Роль «Пользователь»: из рабочих разделов доступны «Табель фактический» и «Табель»
+  if (i.userRole && auth.isUser && !isManager()) return auth.isAuthenticated
+  // Прочие сервисные разделы — только администратору/кадровику/инспектору
+  if (!i.everyone && !isManager()) return false
   return true
 }))
 

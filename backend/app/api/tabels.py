@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 
-from app.core.security import get_current_user, require_timesheet_inspector, require_admin
+from app.core.security import get_current_user, require_timesheet_inspector, require_admin, can_manage_tabels
 from app.database import get_db
 from app.models.department import Department
 from app.models.employee import Employee
@@ -104,7 +104,19 @@ def _get_tabel_or_404(tabel_id: int, db: Session) -> Tabel:
 def _can_access(tabel: Tabel, user: User) -> bool:
     if (user.is_admin or user.is_hr) and user.timesheet_inspector:
         return True
+    # Роль «Пользователь»: доступ к табелям, где он ответственный
+    if user.is_user and tabel.responsible_user_id == user.id:
+        return True
     return tabel.responsible_user_id == user.id
+
+
+def _check_edit_access(tabel: Tabel, user: User):
+    """Редактировать/удалять табель может его ответственный (в т.ч. роль «Пользователь»)
+    или инспектор табелей."""
+    if not _can_access(tabel, user):
+        raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
+    if tabel.responsible_user_id != user.id and not can_manage_tabels(user):
+        raise HTTPException(status_code=403, detail="Табель может редактировать только ответственный")
 
 
 def _check_access(tabel: Tabel, user: User):
@@ -289,8 +301,10 @@ def remove_employee(tabel_id: int, employee_id: int, db: Session = Depends(get_d
 
 @router.delete("/{tabel_id}")
 def delete_tabel(tabel_id: int, db: Session = Depends(get_db),
-                 user: User = Depends(require_timesheet_inspector)):
+                 user: User = Depends(get_current_user)):
+    """Удалить табель — ответственный (в т.ч. роль «Пользователь») или инспектор табелей."""
     tabel = _get_tabel_or_404(tabel_id, db)
+    _check_edit_access(tabel, user)
     for e in list(tabel.entries):
         db.delete(e)
     db.delete(tabel)

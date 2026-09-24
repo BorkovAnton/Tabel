@@ -1,8 +1,8 @@
 import os
 from datetime import datetime, timedelta, timezone
 
+import bcrypt as _bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -14,16 +14,18 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change-me-secret")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "720"))
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return _bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
@@ -53,11 +55,22 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-def require_timesheet_inspector(user: User = Depends(get_current_user)) -> User:
-    """Доступ только для Администратора / Кадровика с ролью 'Инспектор табелей'."""
+def can_manage_tabels(user: User) -> bool:
+    """Создавать и удалять табели могут: Администратор/Кадровик с ролью
+    «Инспектор табелей», а также любой пользователь с ролью «Пользователь»."""
+    if user.is_user:
+        return True
     is_manager = user.is_admin or user.is_hr
-    if not (is_manager and user.timesheet_inspector):
-        raise HTTPException(status_code=403, detail="Требуется роль «Инспектор табелей»")
+    return bool(is_manager and user.timesheet_inspector)
+
+
+def require_timesheet_inspector(user: User = Depends(get_current_user)) -> User:
+    """Доступ для роли «Пользователь» либо «Инспектор табелей» (администратор/кадровик)."""
+    if not can_manage_tabels(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Требуются роли «Пользователь» или «Инспектор табелей»",
+        )
     return user
 
 

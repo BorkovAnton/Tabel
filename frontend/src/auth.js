@@ -12,6 +12,19 @@ export const auth = reactive({
   get isTimesheetInspector() {
     return !!this.user && (this.user.is_admin || this.user.is_hr) && this.user.timesheet_inspector
   },
+  // Роль «Пользователь»: базовая роль — меню «Табель», «Табель фактический»,
+  // создание и заполнение табелей (где он ответственный)
+  get isUser() {
+    return !!this.user && !!this.user.is_user
+  },
+  // Создание/удаление табелей: пользователь либо инспектор табелей
+  get canManageTabels() {
+    return this.isUser || this.isTimesheetInspector
+  },
+  // Кадровик (без роли инспектора табелей)
+  get isHR() {
+    return !!this.user && !!this.user.is_hr
+  },
   // Только Администратор: справочник «Коды часов», пользователи и роли
   get isAdmin() {
     return !!this.user && !!this.user.is_admin
