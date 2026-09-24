@@ -135,6 +135,26 @@ def _valid_codes(db: Session) -> set[str]:
 
 
 # ---------- эндпоинты ----------
+# ВАЖНО: статические пути (/search/employees) объявляются ДО динамических
+# (/{tabel_id}), иначе FastAPI подставит "search" в параметр tabel_id -> 422.
+
+@router.get("/search/employees", response_model=List[dict])
+def search_employees(q: str = Query("", min_length=0), db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """Поиск сотрудников по фамилии/табельному для выпадающего списка."""
+    query = db.query(Employee)
+    term = q.strip()
+    if term:
+        like = f"%{term}%"
+        query = query.filter(
+            (Employee.full_name.ilike(like)) | (Employee.tab_number.ilike(like)))
+    emps = query.order_by(Employee.full_name).limit(50).all()
+    return [
+        {"id": e.id, "full_name": e.full_name, "tab_number": e.tab_number,
+         "department_name": e.department.name if e.department else None}
+        for e in emps
+    ]
+
 
 @router.get("/", response_model=List[TabelOut])
 def list_tabels(
@@ -316,21 +336,3 @@ def delete_tabel(tabel_id: int, db: Session = Depends(get_db),
     db.delete(tabel)
     db.commit()
     return {"ok": True}
-
-
-@router.get("/search/employees", response_model=List[dict])
-def search_employees(q: str = Query("", min_length=0), db: Session = Depends(get_db),
-                     user: User = Depends(get_current_user)):
-    """Поиск сотрудников по фамилии/табельному для выпадающего списка."""
-    query = db.query(Employee)
-    term = q.strip()
-    if term:
-        like = f"%{term}%"
-        query = query.filter(
-            (Employee.full_name.ilike(like)) | (Employee.tab_number.ilike(like)))
-    emps = query.order_by(Employee.full_name).limit(50).all()
-    return [
-        {"id": e.id, "full_name": e.full_name, "tab_number": e.tab_number,
-         "department_name": e.department.name if e.department else None}
-        for e in emps
-    ]
