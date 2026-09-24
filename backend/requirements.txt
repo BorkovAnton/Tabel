@@ -1,0 +1,9 @@
+fastapi
+alembic==1.13.1
+uvicorn
+sqlalchemy
+psycopg2-binary
+python-dotenv
+pandas
+python-multipart
+openpyxl

@@ -1,0 +1,253 @@
+/* Корпоративный стиль ПОЛСПО - светло-зеленая гамма */
+
+:root {
+  /* Основные цвета - светло-зеленые как на сайте */
+  --primary-color: #2d5a3d;        /* Темно-зеленый */
+  --primary-dark: #1e3d29;
+  --primary-light: #4a7c59;
+  --primary-pale: #e8f5e9;         /* Светло-зеленый фон */
+  
+  --accent-color: #c62828;         /* Красный акцент */
+  --accent-dark: #8e0000;
+  
+  --bg-primary: #ffffff;
+  --bg-secondary: #f1f8e9;         /* Светло-зеленый фон страницы */
+  --bg-tertiary: #dcedc8;
+  
+  --text-primary: #1b5e20;
+  --text-secondary: #2e7d32;
+  --text-light: #66bb6a;
+  
+  --border-color: #c8e6c9;
+  --border-dark: #a5d6a7;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(45, 90, 61, 0.05);
+  --shadow: 0 4px 6px -1px rgba(45, 90, 61, 0.1), 0 2px 4px -1px rgba(45, 90, 61, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(45, 90, 61, 0.1), 0 4px 6px -2px rgba(45, 90, 61, 0.05);
+}
+
+/* Глобальные стили */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* Заголовки */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+/* Кнопки */
+.v-btn {
+  text-transform: none !important;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  box-shadow: var(--shadow) !important;
+  transition: all 0.3s ease !important;
+}
+
+.v-btn--variant-elevated:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* Primary кнопки - зеленые */
+.v-btn.bg-primary,
+.v-btn--color-primary {
+  background-color: var(--primary-color) !important;
+  color: white !important;
+}
+
+.v-btn.bg-primary:hover,
+.v-btn--color-primary:hover {
+  background-color: var(--primary-dark) !important;
+}
+
+/* Success кнопки */
+.v-btn.bg-success {
+  background-color: #43a047 !important;
+  color: white !important;
+}
+
+/* Красные кнопки */
+.v-btn.bg-error,
+.v-btn--color-error {
+  background-color: var(--accent-color) !important;
+  color: white !important;
+}
+
+/* Карточки */
+.v-card {
+  border-radius: 8px !important;
+  box-shadow: var(--shadow) !important;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-primary) !important;
+}
+
+.v-card.elevation-2 {
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* Таблицы */
+.v-data-table {
+  background-color: var(--bg-primary) !important;
+}
+
+.v-data-table thead th {
+  background-color: var(--primary-color) !important;
+  color: white !important;
+  font-weight: 600;
+  border-bottom: 2px solid var(--primary-dark);
+}
+
+.v-data-table tbody tr {
+  transition: background-color 0.2s ease;
+}
+
+.v-data-table tbody tr:hover {
+  background-color: var(--bg-secondary) !important;
+}
+
+/* Поля ввода */
+.v-text-field,
+.v-select,
+.v-textarea {
+  --v-field-border-color: var(--border-color);
+  --v-field-border-width: 1px;
+}
+
+.v-text-field:focus-within,
+.v-select:focus-within {
+  --v-field-border-color: var(--primary-color);
+}
+
+/* Навигация */
+.v-app-bar {
+  background-color: var(--primary-color) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+.v-app-bar .v-toolbar-title {
+  color: white !important;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Меню навигации */
+.v-navigation-drawer {
+  background-color: var(--bg-primary) !important;
+  border-right: 1px solid var(--border-color);
+}
+
+.v-list-item--active {
+  background-color: var(--primary-color) !important;
+  color: white !important;
+}
+
+/* Чипы */
+.v-chip {
+  font-weight: 500;
+}
+
+.v-chip.bg-blue {
+  background-color: var(--primary-light) !important;
+  color: white !important;
+}
+
+/* Alerts */
+.v-alert {
+  border-radius: 6px !important;
+  border-left: 4px solid;
+}
+
+.v-alert--type-error {
+  border-left-color: var(--accent-color);
+  background-color: #ffebee !important;
+  color: var(--accent-dark);
+}
+
+.v-alert--type-success {
+  border-left-color: #43a047;
+  background-color: #e8f5e9 !important;
+  color: var(--primary-color);
+}
+
+.v-alert--type-info {
+  border-left-color: var(--primary-color);
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary);
+}
+
+/* Диалоги */
+.v-dialog .v-card {
+  border-radius: 12px !important;
+}
+
+.v-dialog .v-card-title {
+  background-color: var(--bg-secondary);
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Разделители */
+.v-divider {
+  border-color: var(--border-color) !important;
+}
+
+/* Скроллбар */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--primary-light);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-color);
+}
+
+/* Утилиты */
+.bg-primary-gradient {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+}
+
+.bg-light-green {
+  background-color: var(--bg-secondary) !important;
+}
+
+.text-primary {
+  color: var(--primary-color) !important;
+}
+
+.text-accent {
+  color: var(--accent-color) !important;
+}
+
+.border-primary {
+  border-color: var(--primary-color) !important;
+}
+
+/* Анимации */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
