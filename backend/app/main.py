@@ -10,7 +10,10 @@ from app.api.time_codes import router as time_codes_router
 from app.api.users import router as users_router
 from app.api.tabels import router as tabels_router
 from app.init_data import seed
+from app.init_db import ensure_columns
 
+# Авто-миграция: добавляем недостающие колонки в старые базы (до create_all)
+ensure_columns()
 Base.metadata.create_all(bind=engine)
 
 # Инициализация справочников и пользователей по умолчанию
