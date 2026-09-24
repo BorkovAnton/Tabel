@@ -60,9 +60,9 @@
                @click.stop="openTabel(item)">
           Открыть
         </v-btn>
-        <v-btn v-if="auth.canManageTabels && (auth.isTimesheetInspector || item.responsible_user_id === auth.user?.id)"
+        <v-btn v-if="canDelete(item)"
                size="small" variant="text" color="red"
-               icon="mdi-delete" @click.stop="removeTabel(item)" />
+               icon="mdi-delete" title="Удалить табель" @click.stop="removeTabel(item)" />
       </template>
       <template #no-data>
         <div class="pa-6 text-grey">Табели не найдены</div>
@@ -162,6 +162,14 @@ function openTabel(e, item) {
     return
   }
   router.push(`/tabels/${Number(row.id)}`)
+}
+
+// Кнопка удаления: инспектор табелей — любой табель; обычный пользователь — только свой.
+// id приводим к числу, чтобы избежать несовпадения типов (строка/число).
+function canDelete(item) {
+  if (!auth.canManageTabels) return false
+  if (auth.isTimesheetInspector || auth.isAdmin) return true
+  return Number(item.responsible_user_id) === Number(auth.user?.id)
 }
 
 async function removeTabel(item) {
