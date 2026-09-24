@@ -8,7 +8,7 @@
       </h2>
       <v-spacer />
 
-      <v-btn v-if="auth.isAdmin" variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
+      <v-btn variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
         Коды часов
       </v-btn>
       <v-btn color="green darken-1" prepend-icon="mdi-content-save" :loading="saving" @click="save(false)">
@@ -50,8 +50,12 @@
             </td>
             <td class="col-sum text-center">{{ totalHours(row) }}</td>
             <td class="col-del">
-              <v-btn size="x-small" icon="mdi-close" color="red" variant="text"
-                     @click="removeEmployee(row)" />
+              <span class="code-chips" v-if="codesForRow(row).length">
+                <v-chip v-for="c in codesForRow(row)" :key="c.code" size="x-small"
+                        variant="tonal" color="#2d5a3d" style="margin:1px;">{{ c.code }}</v-chip>
+              </span>
+              <a href="#" class="text-red text-caption" style="white-space:nowrap;"
+                 @click.prevent="removeEmployee(row)">Удалить</a>
             </td>
           </tr>
 
@@ -334,13 +338,26 @@ async function save(showMsg = true) {
   }
 }
 
+function codesForRow(row) {
+  const used = new Set()
+  Object.values(row.days || {}).forEach(v => {
+    const t = String(v || '').trim().toLowerCase()
+    if (!t) return
+    const c = timeCodes.value.find(x => x.code.toLowerCase() === t)
+    if (c) used.add(c.code)
+  })
+  return Array.from(used).map(code => timeCodes.value.find(x => x.code === code))
+}
+
 async function loadCodes() {
-  // Справочник «Коды часов» доступен только Администратору
-  if (!auth.isAdmin) return
+  // Чтение справочника «Коды часов» доступно всем авторизованным;
+  // изменение/удаление записей — только Администратору (проверяется на бэкенде).
   try {
     const { data } = await api.get('/time-codes/')
-    timeCodes.value = data
-  } catch (e) { /* не админ — молча пропускаем */ }
+    timeCodes.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    console.error('Не удалось загрузить справочник кодов часов', e)
+  }
 }
 async function addCode() {
   codeError.value = ''
