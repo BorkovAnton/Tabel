@@ -8,8 +8,9 @@
       <v-spacer></v-spacer>
 
       <template v-if="auth.isAuthenticated">
+        <!-- Компактный список: если пунктов много, остальные в меню «Ещё» -->
         <v-btn
-          v-for="item in navItems"
+          v-for="item in visibleNavItems"
           :key="item.path"
           :to="item.path"
           variant="text"
@@ -18,6 +19,24 @@
           <v-icon start size="small">{{ item.icon }}</v-icon>
           {{ item.title }}
         </v-btn>
+
+        <v-menu v-if="hiddenNavItems.length" offset-y>
+          <template #activator="{ props }">
+            <v-btn v-bind="props" variant="text" style="color: rgba(255,255,255,0.9);">
+              <v-icon start size="small">mdi-dots-horizontal</v-icon>
+              Ещё
+            </v-btn>
+          </template>
+          <v-list density="compact">
+            <v-list-item
+              v-for="item in hiddenNavItems"
+              :key="item.path"
+              :prepend-icon="item.icon"
+              :title="item.title"
+              :to="item.path"
+            />
+          </v-list>
+        </v-menu>
 
         <v-menu offset-y>
           <template #activator="{ props }">
@@ -72,6 +91,11 @@ const navItems = computed(() => allNavItems.filter(i => {
   if (!i.everyone && !isManager()) return false
   return true
 }))
+
+// На узких экранах часть пунктов уходит в меню «Ещё», чтобы ничего не пропало
+const MAX_VISIBLE = 6
+const visibleNavItems = computed(() => navItems.value.slice(0, MAX_VISIBLE))
+const hiddenNavItems = computed(() => navItems.value.slice(MAX_VISIBLE))
 
 function logout() {
   auth.logout()

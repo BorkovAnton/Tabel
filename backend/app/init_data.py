@@ -44,6 +44,13 @@ def seed(db: Session) -> None:
             ))
     db.commit()
 
+    # Гарантируем, что у учётной записи admin включена роль «Администратор»
+    # (без неё не виден пункт меню «Пользователи»).
+    fix_admin = db.query(User).filter(User.username == "admin").first()
+    if fix_admin and not fix_admin.is_admin:
+        fix_admin.is_admin = True
+        db.commit()
+
     # Миграция: добавляем недостающие колонки в существующие таблицы (SQLite / PostgreSQL)
     _ensure_columns()
 
