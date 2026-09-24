@@ -46,7 +46,7 @@ class TabelOut(BaseModel):
     id: int
     year: int
     month: int
-    department_id: Optional[int]
+    department_id: Optional[int] = None
     department_name: Optional[str] = None
     responsible_user_id: int
     responsible_user_name: Optional[str] = None
@@ -69,16 +69,22 @@ class EntryRow(BaseModel):
     tab_number: str
     days: Dict[int, str]
 
+    @field_validator("full_name", "tab_number", mode="before")
+    @classmethod
+    def _none_to_empty(cls, v):
+        # старые записи могут содержать NULL — не роняем ответ валидацией
+        return "" if v is None else v
+
 
 class TabelDetailOut(BaseModel):
     id: int
     year: int
     month: int
     days_in_month: int
-    department_id: Optional[int]
-    department_name: Optional[str]
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
     responsible_user_id: int
-    responsible_user_name: Optional[str]
+    responsible_user_name: Optional[str] = None
     entries: List[EntryRow]
 
 

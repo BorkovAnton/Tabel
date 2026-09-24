@@ -268,10 +268,33 @@ function totalHours(row) {
 }
 
 async function loadTabel() {
-  const { data } = await api.get(`/tabels/${route.params.id}`)
-  tabel.value = data
-  dirty.value = {}
-  cellErrors.value = {}
+  // id берём из маршрута; защищаемся от нечисловых значений (422 на бэкенде)
+  const raw = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id
+  const id = Number(raw)
+  if (!Number.isInteger(id) || id <= 0) {
+    console.error('Некорректный id табеля в URL:', raw)
+    message.value = 'Некорректный адрес табеля'
+    messageType.value = 'error'
+    return
+  }
+  try {
+    const { data } = await api.get(`/tabels/${id}`)
+    tabel.value = data
+    dirty.value = {}
+    cellErrors.value = {}
+  } catch (e) {
+    const status = e.response?.status
+    const detail = typeof e.response?.data?.detail === 'string'
+      ? e.response.data.detail
+      : (status ? `Ошибка сервера ${status} при загрузке табеля` : 'Сеть недоступна')
+    message.value = detail
+    messageType.value = 'error'
+    // 401 — протух токен: на страницу входа
+    if (status === 401 && auth.isAuthenticated?.()) {
+      auth.logout?.()
+      window.location.href = '/login'
+    }
+  }
 }
 
 async function removeEmployee(row) {

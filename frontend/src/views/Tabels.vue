@@ -49,6 +49,7 @@
       :loading="loading"
       hover
       class="rounded-lg"
+      return-object
       @click:row="openTabel"
     >
       <template #item.period="{ item }">
@@ -152,8 +153,15 @@ async function load() {
 }
 
 function openTabel(e, item) {
-  const row = item || e
-  router.push(`/tabels/${row.id}`)
+  // В Vuetify 3 без return-object первый аргумент — объект события (без id),
+  // второй — данные строки. С return-object первым идёт сама строка.
+  const candidates = [item, e, e?.item, e?.item?.raw]
+  const row = candidates.find((c) => c && Number.isInteger(Number(c.id)) && Number(c.id) > 0)
+  if (!row) {
+    console.error('Не удалось определить строку табеля при клике', e, item)
+    return
+  }
+  router.push(`/tabels/${Number(row.id)}`)
 }
 
 async function removeTabel(item) {

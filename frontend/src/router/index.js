@@ -34,6 +34,18 @@ const router = createRouter({
   routes
 })
 
+// Табель открывается только по числовому id (/tabels/12).
+// Если в адресе не число (например /tabels/undefined из-за кэша старого бандла) —
+// перенаправляем на список табелей, иначе запрос к API вернёт 422.
+router.beforeEach((to) => {
+  if (to.name === 'TabelFill') {
+    const raw = Array.isArray(to.params.id) ? to.params.id[0] : to.params.id
+    if (!/^\d+$/.test(String(raw))) {
+      return { name: 'Tabels' }
+    }
+  }
+})
+
 // Пуская на сайт — сразу на окно авторизации модуля Табель
 router.beforeEach((to) => {
   const token = localStorage.getItem('token')
