@@ -1,0 +1,36 @@
+import { reactive } from 'vue'
+import api from './api'
+
+export const auth = reactive({
+  user: JSON.parse(localStorage.getItem('user') || 'null'),
+  token: localStorage.getItem('token'),
+
+  get isAuthenticated() {
+    return !!this.token
+  },
+  // Инспектор табелей: Администратор или Кадровик с ролью «Инспектор табелей» — видит все табели
+  get isTimesheetInspector() {
+    return !!this.user && (this.user.is_admin || this.user.is_hr) && this.user.timesheet_inspector
+  },
+
+  async login(username, password) {
+    const form = new URLSearchParams()
+    form.append('username', username)
+    form.append('password', password)
+    const { data } = await api.post('/auth/login', form, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    })
+    this.token = data.access_token
+    this.user = data.user
+    localStorage.setItem('token', data.access_token)
+    localStorage.setItem('user', JSON.stringify(data.user))
+    return data.user
+  },
+
+  logout() {
+    this.token = null
+    this.user = null
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+  }
+})

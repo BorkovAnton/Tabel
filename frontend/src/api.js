@@ -7,4 +7,13 @@ const api = axios.create({
   }
 })
 
+// Прикрепляем JWT-токен ко всем запросам (если пользователь авторизован)
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
 export default api

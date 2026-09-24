@@ -5,6 +5,9 @@ from .turnstile_event import TurnstileEvent
 from .timesheet_record import TimesheetRecord
 from .holiday_calendar import HolidayCalendar
 from .unrecognized_mapping import UnrecognizedMapping
+from .user import User
+from .time_code import TimeCode
+from .tabel import Tabel, TabelEntry
 
 __all__ = [
     "Department",
@@ -14,4 +17,8 @@ __all__ = [
     "TimesheetRecord",
     "HolidayCalendar",
     "UnrecognizedMapping",
+    "User",
+    "TimeCode",
+    "Tabel",
+    "TabelEntry",
 ]
