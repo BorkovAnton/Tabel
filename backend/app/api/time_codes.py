@@ -55,7 +55,8 @@ class TimeCodeOut(TimeCodeBase):
 
 @router.get("/", response_model=List[TimeCodeOut])
 def list_time_codes(include_inactive: bool = False, db: Session = Depends(get_db),
-                    user: User = Depends(get_current_user)):
+                    user: User = Depends(require_admin)):
+    """Справочник «Коды часов» доступен только Администратору."""
     q = db.query(TimeCode)
     if not include_inactive:
         q = q.filter(TimeCode.is_active == True)  # noqa: E712

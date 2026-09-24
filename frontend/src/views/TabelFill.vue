@@ -8,7 +8,7 @@
       </h2>
       <v-spacer />
 
-      <v-btn variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
+      <v-btn v-if="auth.isAdmin" variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
         Коды часов
       </v-btn>
       <v-btn color="green darken-1" prepend-icon="mdi-content-save" :loading="saving" @click="save(false)">
@@ -312,8 +312,12 @@ async function save(showMsg = true) {
 }
 
 async function loadCodes() {
-  const { data } = await api.get('/time-codes/')
-  timeCodes.value = data
+  // Справочник «Коды часов» доступен только Администратору
+  if (!auth.isAdmin) return
+  try {
+    const { data } = await api.get('/time-codes/')
+    timeCodes.value = data
+  } catch (e) { /* не админ — молча пропускаем */ }
 }
 async function addCode() {
   codeError.value = ''

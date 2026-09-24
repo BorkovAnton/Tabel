@@ -57,10 +57,15 @@ const allNavItems = [
   { title: 'Табель фактический', path: '/timesheet-report', icon: 'mdi-calendar-month', auth: false },
   { title: 'Подразделения', path: '/departments', icon: 'mdi-office-building', auth: false },
   { title: 'Графики', path: '/schedules', icon: 'mdi-clock-outline', auth: false },
-  { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true }
+  { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true },
+  { title: 'Пользователи', path: '/users', icon: 'mdi-account-key', admin: true }
 ]
 
-const navItems = computed(() => allNavItems.filter(i => !i.auth || auth.isAuthenticated))
+const navItems = computed(() => allNavItems.filter(i => {
+  if (i.auth && !auth.isAuthenticated) return false
+  if (i.admin && !auth.isAdmin) return false
+  return true
+}))
 
 function logout() {
   auth.logout()

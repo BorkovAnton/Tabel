@@ -8,6 +8,7 @@
       </h2>
       <v-spacer />
       <v-select
+        :menu-icon="null"
         v-model="filterMonth"
         :items="monthItems"
         item-title="title"
@@ -21,6 +22,7 @@
         class="mr-2"
       />
       <v-select
+        :menu-icon="null"
         v-model="filterYear"
         :items="years"
         label="Год"
@@ -71,21 +73,21 @@
         <v-card-text>
           <div class="form-field mb-3">
             <div class="field-label">Месяц</div>
-            <v-select v-model="form.month" :items="monthItems" item-title="title" item-value="value"
+            <v-select :menu-icon="null" v-model="form.month" :items="monthItems" item-title="title" item-value="value"
                       variant="solo" density="compact" flat hide-details />
           </div>
           <div class="form-field mb-3">
             <div class="field-label">Год</div>
-            <v-select v-model="form.year" :items="years" variant="solo" density="compact" flat hide-details />
+            <v-select :menu-icon="null" v-model="form.year" :items="years" variant="solo" density="compact" flat hide-details />
           </div>
           <div class="form-field mb-3">
             <div class="field-label">Подразделение</div>
-            <v-select v-model="form.department_id" :items="departments" item-title="name" item-value="id"
+            <v-select :menu-icon="null" v-model="form.department_id" :items="departments" item-title="name" item-value="id"
                       variant="solo" density="compact" flat clearable hide-details />
           </div>
           <div class="form-field">
             <div class="field-label">Ответственный</div>
-            <v-select v-model="form.responsible_user_id" :items="users" item-title="label" item-value="id"
+            <v-select :menu-icon="null" v-model="form.responsible_user_id" :items="users" item-title="label" item-value="id"
                       variant="solo" density="compact" flat hide-details />
           </div>
           <v-alert v-if="createError" type="error" density="compact" class="mt-2" variant="tonal">{{ createError }}</v-alert>

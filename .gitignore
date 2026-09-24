@@ -1,7 +1,5 @@
-# Python compiled files
+# Database files
+*.db
+# Python cache
 __pycache__/
 *.pyc
-
-# Environment and config (common for backend projects)
-.env
-.env.local

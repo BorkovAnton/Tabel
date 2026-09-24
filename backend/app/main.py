@@ -7,6 +7,7 @@ from app.api.departments import router as departments_router
 from app.api.schedules import router as schedules_router
 from app.api.auth import router as auth_router
 from app.api.time_codes import router as time_codes_router
+from app.api.users import router as users_router
 from app.api.tabels import router as tabels_router
 from app.init_data import seed
 
@@ -40,6 +41,7 @@ app.include_router(departments_router)
 app.include_router(schedules_router)
 app.include_router(auth_router)
 app.include_router(time_codes_router)
+app.include_router(users_router)
 app.include_router(tabels_router)
 
 @app.get("/health")
