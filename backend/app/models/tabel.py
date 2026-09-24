@@ -38,6 +38,8 @@ class TabelEntry(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tabel_id: Mapped[int] = mapped_column(Integer, ForeignKey("tabels.id"), nullable=False)
     employee_id: Mapped[int] = mapped_column(Integer, ForeignKey("employees.id"), nullable=False)
+    # порядок добавления сотрудника в табель (строка «съезжает» вниз по мере добавления)
+    position: Mapped[int] = mapped_column(Integer, default=0)
 
     day_1: Mapped[str | None] = mapped_column(String(8))
     day_2: Mapped[str | None] = mapped_column(String(8))

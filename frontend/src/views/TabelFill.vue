@@ -8,30 +8,6 @@
       </h2>
       <v-spacer />
 
-      <!-- Выбор сотрудника из списка с поиском по буквам фамилии -->
-      <v-combobox
-        v-model="selectedEmployee"
-        :items="employeeOptions"
-        item-title="label"
-        item-value="id"
-        label="Выбрать сотрудника (поиск по фамилии)"
-        prepend-inner-icon="mdi-magnify"
-        density="compact"
-        variant="outlined"
-        clearable
-        hide-details
-        return-object
-        style="min-width: 340px;"
-        no-filter
-        @update:search="onSearch"
-      >
-        <template #item="{ props, item }">
-          <v-list-item v-bind="props" :title="item.raw.label" :subtitle="item.raw.tab_number ? 'Таб. ' + item.raw.tab_number : ''" />
-        </template>
-      </v-combobox>
-      <v-btn color="#2d5a3d" prepend-icon="mdi-account-plus" :disabled="!selectedEmployee" @click="addEmployee">
-        Добавить
-      </v-btn>
       <v-btn variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
         Коды часов
       </v-btn>
@@ -78,10 +54,66 @@
                      @click="removeEmployee(row)" />
             </td>
           </tr>
+
+          <!-- Строка добавления сотрудника: появляется под списком и «съезжает» вниз -->
+          <tr class="add-row">
+            <td class="sticky-col"></td>
+            <td class="sticky-col2 add-cell">
+              <div class="d-flex align-center" style="gap: 6px;">
+                <v-autocomplete
+                  v-model="selectedEmployee"
+                  :items="employeeOptions"
+                  item-title="label"
+                  item-value="id"
+                  :menu-icon="null"
+                  label="Добавить сотрудника (поиск по фамилии)"
+                  prepend-inner-icon="mdi-magnify"
+                  density="compact"
+                  variant="outlined"
+                  clearable
+                  hide-details
+                  auto-select-first
+                  style="min-width: 320px; max-width: 420px;"
+                  @update:model-value="onEmployeePicked"
+                >
+                  <template #item="{ props, item }">
+                    <v-list-item v-bind="props" :title="item.raw.label"
+                                 :subtitle="item.raw.tab_number ? 'Таб. ' + item.raw.tab_number : ''" />
+                  </template>
+                </v-autocomplete>
+                <span v-if="selectedEmployee" class="text-caption text-grey">— строка появится здесь</span>
+              </div>
+            </td>
+            <td :colspan="tabel.days_in_month + 2"></td>
+          </tr>
         </tbody>
       </table>
-      <div v-else class="pa-8 text-center text-grey">
-        Табель пуст. Выберите сотрудника в списке выше и нажмите «Добавить».
+      <div v-else class="pa-4">
+        <!-- Табель пуст — форма добавления видна сразу -->
+        <div class="d-flex align-center mb-4" style="gap: 6px;">
+          <v-autocomplete
+            v-model="selectedEmployee"
+            :items="employeeOptions"
+            item-title="label"
+            item-value="id"
+            :menu-icon="null"
+            label="Добавить сотрудника (поиск по фамилии)"
+            prepend-inner-icon="mdi-magnify"
+            density="compact"
+            variant="outlined"
+            clearable
+            hide-details
+            auto-select-first
+            style="min-width: 320px; max-width: 420px;"
+            @update:model-value="onEmployeePicked"
+          >
+            <template #item="{ props, item }">
+              <v-list-item v-bind="props" :title="item.raw.label"
+                           :subtitle="item.raw.tab_number ? 'Таб. ' + item.raw.tab_number : ''" />
+            </template>
+          </v-autocomplete>
+          <span class="text-caption text-grey">— первый сотрудник появится здесь</span>
+        </div>
       </div>
     </div>
 
@@ -90,13 +122,13 @@
       <option v-for="c in timeCodes" :key="c.id" :value="c.code">{{ c.name }} (день {{ c.hours_day }} / ночь {{ c.hours_night }})</option>
     </datalist>
 
-    <!-- Справочник «Коды часов» -->
+    <!-- Справочник «Коды часов» (редактирование — только для Администратора) -->
     <v-dialog v-model="codesDialog" max-width="720">
       <v-card title="Справочник «Коды часов»">
         <v-card-text>
           <v-table density="compact">
             <thead>
-              <tr><th>Код</th><th>Наименование</th><th>Часов день</th><th>Часов ночь</th><th></th></tr>
+              <tr><th>Код</th><th>Наименование</th><th>Часов день</th><th>Часов ночь</th><th v-if="auth.isAdmin"></th></tr>
             </thead>
             <tbody>
               <tr v-for="c in timeCodes" :key="c.id">
@@ -104,18 +136,23 @@
                 <td>{{ c.name }}</td>
                 <td>{{ c.hours_day }}</td>
                 <td>{{ c.hours_night }}</td>
-                <td><v-btn size="x-small" icon="mdi-delete" color="red" variant="text" @click="deleteCode(c)" /></td>
+                <td v-if="auth.isAdmin"><v-btn size="x-small" icon="mdi-delete" color="red" variant="text" @click="deleteCode(c)" /></td>
               </tr>
             </tbody>
           </v-table>
-          <v-form @submit.prevent="addCode" class="d-flex mt-4" style="gap:8px;">
-            <v-text-field v-model="newCode.code" label="Код" density="compact" variant="outlined" style="max-width:100px;" hide-details />
-            <v-text-field v-model="newCode.name" label="Наименование" density="compact" variant="outlined" hide-details />
-            <v-text-field v-model.number="newCode.hours_day" label="День" type="number" step="0.01" density="compact" variant="outlined" style="max-width:100px;" hide-details />
-            <v-text-field v-model.number="newCode.hours_night" label="Ночь" type="number" step="0.01" density="compact" variant="outlined" style="max-width:100px;" hide-details />
-            <v-btn color="#2d5a3d" type="submit" prepend-icon="mdi-plus">Добавить</v-btn>
-          </v-form>
-          <div v-if="codeError" class="text-red mt-2">{{ codeError }}</div>
+          <template v-if="auth.isAdmin">
+            <v-form @submit.prevent="addCode" class="d-flex mt-4" style="gap:8px;">
+              <v-text-field v-model="newCode.code" label="Код" density="compact" variant="outlined" style="max-width:100px;" hide-details />
+              <v-text-field v-model="newCode.name" label="Наименование" density="compact" variant="outlined" hide-details />
+              <v-text-field v-model.number="newCode.hours_day" label="День" type="number" step="0.01" density="compact" variant="outlined" style="max-width:100px;" hide-details />
+              <v-text-field v-model.number="newCode.hours_night" label="Ночь" type="number" step="0.01" density="compact" variant="outlined" style="max-width:100px;" hide-details />
+              <v-btn color="#2d5a3d" type="submit" prepend-icon="mdi-plus">Добавить</v-btn>
+            </v-form>
+            <div v-if="codeError" class="text-red mt-2">{{ codeError }}</div>
+          </template>
+          <div v-else class="text-caption text-grey mt-2">
+            Изменять справочник может только Администратор.
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -131,6 +168,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
+import { auth } from '../auth'
 
 const route = useRoute()
 const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
@@ -150,7 +188,7 @@ const codeError = ref('')
 // --- поиск сотрудников в выпадающем списке ---
 const allEmployees = ref([])
 const selectedEmployee = ref(null)
-let searchTimer = null
+let addingInProgress = false
 
 const employeeOptions = computed(() =>
   allEmployees.value.map(e => ({
@@ -159,13 +197,28 @@ const employeeOptions = computed(() =>
   }))
 )
 
-async function loadEmployees(q = '') {
-  const { data } = await api.get('/tabels/search/employees', { params: { q } })
-  allEmployees.value = data
+async function loadEmployees() {
+  const { data } = await api.get('/tabels/search/employees', { params: { q: '' } })
+  // исключаем уже добавленных в табель
+  const inTabel = new Set((tabel.value?.entries || []).map(r => r.employee_id))
+  allEmployees.value = data.filter(e => !inTabel.has(e.id))
 }
-function onSearch(q) {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => loadEmployees(q || ''), 250)
+
+// выбор из списка сразу добавляет строку вниз таблицы
+async function onEmployeePicked(empId) {
+  if (!empId || addingInProgress) return
+  addingInProgress = true
+  try {
+    await api.post(`/tabels/${route.params.id}/employees`, { employee_ids: [empId] })
+    await loadTabel()
+    await loadEmployees()
+  } catch (e) {
+    message.value = e.response?.data?.detail || 'Ошибка добавления'
+    messageType.value = 'error'
+  } finally {
+    selectedEmployee.value = null
+    addingInProgress = false
+  }
 }
 
 function codeSet() {
@@ -221,24 +274,11 @@ async function loadTabel() {
   cellErrors.value = {}
 }
 
-async function addEmployee() {
-  const emp = selectedEmployee.value
-  if (!emp || emp.id === undefined && typeof emp !== 'object') return
-  const empId = typeof emp === 'object' ? emp.id : emp
-  try {
-    await api.post(`/tabels/${route.params.id}/employees`, { employee_ids: [empId] })
-    selectedEmployee.value = null
-    await loadTabel()
-  } catch (e) {
-    message.value = e.response?.data?.detail || 'Ошибка добавления'
-    messageType.value = 'error'
-  }
-}
-
 async function removeEmployee(row) {
   if (!confirm(`Убрать ${row.full_name} из табеля?`)) return
   await api.delete(`/tabels/${route.params.id}/entries/${row.employee_id}`)
   await loadTabel()
+  await loadEmployees()
 }
 
 async function save(showMsg = true) {
@@ -296,7 +336,8 @@ async function deleteCode(c) {
 setInterval(() => { if (Object.keys(dirty.value).length) save(false) }, 30000)
 
 onMounted(async () => {
-  await Promise.all([loadTabel(), loadCodes(), loadEmployees('')])
+  await Promise.all([loadTabel(), loadCodes()])
+  await loadEmployees()
 })
 </script>
 
@@ -335,4 +376,6 @@ thead .sticky-col, thead .sticky-col2 { z-index: 4; background: #2d5a3d !importa
 .day-input:focus { background: #fffde7; outline: 2px solid #2d5a3d; }
 .is-code { color: #1565c0; font-weight: bold; }
 .is-error { background: #ffebee; outline: 2px solid red; }
+.add-row td { border-top: 2px dashed #a5d6a7; background: #f9fbe7; }
+.add-cell { padding: 6px 8px !important; }
 </style>

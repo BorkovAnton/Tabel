@@ -4,10 +4,11 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 
-from app.core.security import get_current_user, require_timesheet_inspector
+from app.core.security import get_current_user, require_timesheet_inspector, require_admin
 from app.database import get_db
 from app.models.department import Department
 from app.models.employee import Employee
@@ -192,7 +193,7 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
     _check_access(tabel, user)
     dim = calendar.monthrange(tabel.year, tabel.month)[1]
     entries = []
-    for e in tabel.entries:
+    for e in sorted(tabel.entries, key=lambda x: (x.position or 0, x.id)):
         entries.append(EntryRow(
             employee_id=e.employee_id,
             full_name=e.employee.full_name if e.employee else "",
@@ -216,6 +217,8 @@ def add_employees(tabel_id: int, payload: EntriesAdd, db: Session = Depends(get_
     tabel = _get_tabel_or_404(tabel_id, db)
     _check_access(tabel, user)
     added = 0
+    next_pos = (db.query(func.max(TabelEntry.position)).filter(
+        TabelEntry.tabel_id == tabel_id).scalar() or 0) + 1
     for emp_id in payload.employee_ids:
         emp = db.get(Employee, emp_id)
         if not emp:
@@ -224,7 +227,9 @@ def add_employees(tabel_id: int, payload: EntriesAdd, db: Session = Depends(get_
             TabelEntry.tabel_id == tabel_id, TabelEntry.employee_id == emp_id).first()
         if exists:
             continue
-        db.add(TabelEntry(tabel_id=tabel_id, employee_id=emp_id))
+        # новый сотрудник добавляется в конец списка — строки «съезжают» вниз
+        db.add(TabelEntry(tabel_id=tabel_id, employee_id=emp_id, position=next_pos))
+        next_pos += 1
         added += 1
     db.commit()
     return {"added": added}
@@ -256,7 +261,9 @@ def update_cells(tabel_id: int, updates: List[CellUpdate], db: Session = Depends
                 TabelEntry.tabel_id == tabel_id, TabelEntry.employee_id == key).first()
         entry = cache[key]
         if not entry:
-            entry = TabelEntry(tabel_id=tabel_id, employee_id=key)
+            next_pos = (db.query(func.max(TabelEntry.position)).filter(
+                TabelEntry.tabel_id == tabel_id).scalar() or 0) + 1
+            entry = TabelEntry(tabel_id=tabel_id, employee_id=key, position=next_pos)
             db.add(entry)
             cache[key] = entry
         setattr(entry, f"day_{up.day}", value)

@@ -5,7 +5,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_admin
 from app.database import get_db
 from app.models.time_code import TimeCode
 from app.models.user import User
@@ -64,8 +64,8 @@ def list_time_codes(include_inactive: bool = False, db: Session = Depends(get_db
 
 @router.post("/", response_model=TimeCodeOut)
 def create_time_code(payload: TimeCodeCreate, db: Session = Depends(get_db),
-                     user: User = Depends(get_current_user)):
-    """Справочник нефиксированный — добавлять записи может любой авторизованный."""
+                     user: User = Depends(require_admin)):
+    """Добавлять записи в справочник может только Администратор."""
     code = payload.code.strip()
     if db.query(TimeCode).filter(TimeCode.code == code).first():
         raise HTTPException(status_code=400, detail=f"Код «{code}» уже существует")
@@ -78,7 +78,7 @@ def create_time_code(payload: TimeCodeCreate, db: Session = Depends(get_db),
 
 @router.put("/{code_id}", response_model=TimeCodeOut)
 def update_time_code(code_id: int, payload: TimeCodeUpdate, db: Session = Depends(get_db),
-                     user: User = Depends(get_current_user)):
+                     user: User = Depends(require_admin)):
     obj = db.query(TimeCode).filter(TimeCode.id == code_id).first()
     if not obj:
         raise HTTPException(status_code=404, detail="Код не найден")
@@ -95,7 +95,8 @@ def update_time_code(code_id: int, payload: TimeCodeUpdate, db: Session = Depend
 
 
 @router.delete("/{code_id}")
-def delete_time_code(code_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_time_code(code_id: int, db: Session = Depends(get_db),
+                     user: User = Depends(require_admin)):
     obj = db.query(TimeCode).filter(TimeCode.id == code_id).first()
     if not obj:
         raise HTTPException(status_code=404, detail="Код не найден")

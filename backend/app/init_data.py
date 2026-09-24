@@ -1,7 +1,9 @@
 """Инициализация справочников и учётных записей по умолчанию."""
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
+from app.database import DATABASE_URL
 from app.models.time_code import TimeCode
 from app.models.user import User
 
@@ -40,3 +42,22 @@ def seed(db: Session) -> None:
                 timesheet_inspector=inspector,
             ))
     db.commit()
+
+    # Миграция: добавляем недостающие колонки в существующие таблицы (SQLite / PostgreSQL)
+    _ensure_columns()
+
+
+def _ensure_columns() -> None:
+    """Добавляет новые колонки в уже созданные таблицы (простая авто-миграция)."""
+    engine = create_engine(DATABASE_URL)
+    inspector = inspect(engine)
+    migrations = [
+        ("tabel_entries", "position", "INTEGER DEFAULT 0"),
+    ]
+    with engine.begin() as conn:
+        for table, column, coltype in migrations:
+            if not inspector.has_table(table):
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            if column not in existing:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"))

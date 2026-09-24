@@ -12,6 +12,10 @@ export const auth = reactive({
   get isTimesheetInspector() {
     return !!this.user && (this.user.is_admin || this.user.is_hr) && this.user.timesheet_inspector
   },
+  // Только Администратор: справочник «Коды часов», пользователи и роли
+  get isAdmin() {
+    return !!this.user && !!this.user.is_admin
+  },
 
   async login(username, password) {
     const form = new URLSearchParams()

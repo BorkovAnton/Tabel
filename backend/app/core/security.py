@@ -59,3 +59,10 @@ def require_timesheet_inspector(user: User = Depends(get_current_user)) -> User:
     if not (is_manager and user.timesheet_inspector):
         raise HTTPException(status_code=403, detail="Требуется роль «Инспектор табелей»")
     return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Доступ только для Администратора."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Только администратор")
+    return user
