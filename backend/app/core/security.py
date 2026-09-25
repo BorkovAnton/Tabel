@@ -79,3 +79,43 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Только администратор")
     return user
+
+
+def allowed_department_id_set(user: User, db: Session) -> set[int] | None:
+    """Разрешённые id подразделений пользователя (включая дочерние).
+
+    Возвращает None, если пользователю доступны ВСЕ подразделения
+    (администратор, кадровик, инспектор табелей или явный «*»).
+    Пустое множество — подразделений не назначено.
+    """
+    from app.models.department import Department
+
+    if user.is_admin or user.is_hr or user.timesheet_inspector or user.all_departments_allowed:
+        return None
+    base_ids = set(user.allowed_department_ids)
+    if not base_ids:
+        return set()
+    # добавляем все дочерние подразделения рекурсивно
+    all_depts = db.query(Department.id, Department.parent_id).all()
+    children: dict[int, list[int]] = {}
+    for did, pid in all_depts:
+        children.setdefault(pid, []).append(did)
+    result = set(base_ids)
+    stack = list(base_ids)
+    while stack:
+        current = stack.pop()
+        for child in children.get(current, []):
+            if child not in result:
+                result.add(child)
+                stack.append(child)
+    return result
+
+
+def check_department_access(user: User, db: Session, department_id) -> None:
+    """403, если пользователю нельзя работать с указанным подразделением."""
+    allowed = allowed_department_id_set(user, db)
+    if allowed is None:  # все подразделения
+        return
+    if department_id is None or int(department_id) not in allowed:
+        raise HTTPException(status_code=403,
+                            detail="Нет прав на это подразделение (права выдаёт администратор)")

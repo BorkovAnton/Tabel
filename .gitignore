@@ -1,6 +1,7 @@
-# Python compiled files
+# Python compiled files and caches
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 
 # Database files
 *.db

@@ -54,6 +54,12 @@ def seed(db: Session) -> None:
     # Миграция: добавляем недостающие колонки в существующие таблицы (SQLite / PostgreSQL)
     _ensure_columns()
 
+    # Администратору доступны все подразделения
+    fix_admin = db.query(User).filter(User.username == "admin").first()
+    if fix_admin and (fix_admin.allowed_departments or "") != '"*"':
+        fix_admin.allowed_departments = '"*"'
+        db.commit()
+
 
 def _ensure_columns() -> None:
     """Добавляет новые колонки в уже созданные таблицы (простая авто-миграция)."""
@@ -62,6 +68,7 @@ def _ensure_columns() -> None:
     migrations = [
         ("tabel_entries", "position", "INTEGER DEFAULT 0"),
         ("users", "is_user", "BOOLEAN DEFAULT 1"),
+        ("users", "allowed_departments", "TEXT DEFAULT ''"),
     ]
     with engine.begin() as conn:
         for table, column, coltype in migrations:

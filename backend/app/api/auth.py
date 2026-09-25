@@ -25,6 +25,7 @@ class UserOut(BaseModel):
     is_hr: bool
     timesheet_inspector: bool
     is_user: bool = True
+    allowed_departments: str = ""   # JSON-список id подразделений или "*" — все
 
     class Config:
         from_attributes = True
@@ -44,6 +45,7 @@ class UserCreate(BaseModel):
     is_hr: bool = False
     timesheet_inspector: bool = False
     is_user: bool = True
+    allowed_departments: str = ""
 
 
 class UserUpdate(BaseModel):
@@ -53,6 +55,7 @@ class UserUpdate(BaseModel):
     is_hr: Optional[bool] = None
     timesheet_inspector: Optional[bool] = None
     is_user: Optional[bool] = None
+    allowed_departments: Optional[str] = None
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -91,6 +94,7 @@ def create_user(payload: UserCreate, user: User = Depends(get_current_user), db:
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,
         is_user=payload.is_user,
+        allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
     )
     db.add(new_user)
     db.commit()
@@ -110,6 +114,8 @@ def update_user(user_id: int, payload: UserUpdate, user: User = Depends(get_curr
         target.hashed_password = hash_password(data.pop("password"))
     else:
         data.pop("password", None)
+    if "allowed_departments" in data:
+        data["allowed_departments"] = _normalize_allowed_departments(data["allowed_departments"], db)
     for k, v in data.items():
         setattr(target, k, v)
     db.commit()
