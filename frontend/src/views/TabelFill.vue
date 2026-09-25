@@ -38,8 +38,8 @@
               {{ row.full_name }}<br /><small class="text-grey">{{ row.tab_number }}</small>
             </td>
             <td v-for="d in tabel.days_in_month" :key="d" class="cell-day">
-              <v-combobox
-                :model-value="row.days[d]"
+              <v-autocomplete
+                :model-value="row.days[d] || null"
                 :items="cellItems"
                 item-title="title"
                 item-value="value"
@@ -48,22 +48,21 @@
                 dense
                 variant="plain"
                 hide-details
-                auto-select-first
-                return-object
+                :filter="cellFilter"
                 class="cell-combo"
                 :class="{ 'is-error-cell': hasError(row.employee_id, d) }"
                 placeholder=""
                 @update:model-value="(v) => onCellChange(row.employee_id, d, v)"
               >
                 <template #selection="{ item }">
-                  <span :class="['cell-text', { 'is-code': isCodeText(item.raw.value ?? item.title) }]">
-                    {{ shortLabel(item.raw.value ?? item.title) }}
+                  <span :class="['cell-text', { 'is-code': isCodeText(item.value) }]">
+                    {{ item.value }}
                   </span>
                 </template>
                 <template #item="{ props: p, item }">
                   <v-list-item v-bind="p" :title="item.raw.title" />
                 </template>
-              </v-combobox>
+              </v-autocomplete>
             </td>
             <td class="col-sum text-center">{{ totalHours(row) }}</td>
             <td class="col-del">
@@ -250,7 +249,7 @@ function shortLabel(v) {
 }
 
 // Список для ячеек: все коды часов + типовые значения часов.
-// v-combobox фильтрует его по подстроке: наберите «8» — останутся 8, 8н, 8с и т.д.
+// v-autocomplete фильтрует его по подстроке начала: наберите «8» — останутся 8, 8н, 8с и т.д.
 const cellItems = computed(() => {
   const items = timeCodes.value.map(c => ({
     title: `${c.code} — ${c.name} (день ${c.hours_day} / ночь ${c.hours_night})`,
@@ -263,12 +262,22 @@ const cellItems = computed(() => {
   return items
 })
 
-// выбор/ввод значения ячейки
+// поиск по началу кода/числа: «8» оставляет 8, 8н, 8с
+function cellFilter(value, query) {
+  if (!query) return true
+  const q = String(query).toLowerCase().replace(',', '.')
+  const v = String(value ?? '').toLowerCase().replace(',', '.')
+  return v.startsWith(q) || v.includes(q)
+}
+
+// выбор значения ячейки — только из списка (ручной ввод запрещён)
 function onCellChange(empId, day, val) {
   let text = ''
   if (val !== null && val !== undefined) {
-    text = (typeof val === 'object') ? String(val.value ?? val.title ?? '') : String(val)
+    text = (typeof val === 'object') ? String(val.value ?? '') : String(val)
   }
+  // если выбранного значения нет в списке — откатываем (запрет ручного ввода)
+  if (text && !cellItems.value.some(it => it.value === text)) return
   text = text.trim()
   const row = tabel.value.entries.find(r => r.employee_id === empId)
   if (row) row.days[day] = text
