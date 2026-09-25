@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 from urllib.parse import quote
 
 from app.database import get_db
-from app.core.security import allowed_department_id_set, get_current_user
+from app.core.security import allowed_department_id_set, get_current_user, require_admin
 from app.models.user import User
 from app.models.employee import Employee
 from app.models.turnstile_event import TurnstileEvent
@@ -177,8 +177,12 @@ def calculate_day_record(events: List[TurnstileEvent], lunch_minutes: int):
 def calculate_timesheet(
     payload: TimesheetCalculateRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
-    """Рассчитывает табель на основе событий проходной за указанный период."""
+    """Рассчитывает табель на основе событий проходной за указанный период.
+
+    Доступ только для Администратора (служебная операция).
+    """
 
     date_from = parse_date(payload.date_from, "date_from")
     date_to = parse_date(payload.date_to, "date_to")

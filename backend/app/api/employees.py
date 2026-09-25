@@ -4,6 +4,7 @@ from typing import List
 import pandas as pd
 import io
 
+from app.core.security import require_admin
 from app.database import get_db
 from app.models.employee import Employee
 from app.models.department import Department
@@ -77,9 +78,10 @@ def create_employee(
 @router.post("/import", response_model=EmployeeImportResponse)
 async def import_employees_from_excel(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
 ):
-    """Импорт ТОЛЬКО НОВЫХ сотрудников из Excel"""
+    """Импорт ТОЛЬКО НОВЫХ сотрудников из Excel. Доступ только для Администратора."""
     
     # Проверка формата файла
     if not file.filename.endswith(('.xlsx', '.xls')):

@@ -139,12 +139,86 @@
         </v-card>
       </v-col>
     </v-row>
+
+    <!-- Расчёт табеля (служебный блок, виден только Администратору) -->
+    <v-row v-if="auth.isAdmin">
+      <v-col cols="12" md="6">
+        <v-card class="pa-4">
+          <v-card-title>Расчёт табеля</v-card-title>
+          <v-card-text>
+            <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+              Выполняет расчёт фактического табеля за выбранный период по данным проходной и графиков.
+            </p>
+
+            <v-row>
+              <v-col cols="12" sm="6">
+                <v-text-field
+                  v-model="calcDateFrom"
+                  label="Дата с"
+                  type="date"
+                  variant="outlined"
+                  density="comfortable"
+                  prepend-inner-icon="mdi-calendar"
+                ></v-text-field>
+              </v-col>
+              <v-col cols="12" sm="6">
+                <v-text-field
+                  v-model="calcDateTo"
+                  label="Дата по"
+                  type="date"
+                  variant="outlined"
+                  density="comfortable"
+                  prepend-inner-icon="mdi-calendar"
+                ></v-text-field>
+              </v-col>
+            </v-row>
+
+            <v-alert
+              v-if="calcError"
+              type="error"
+              closable
+              class="mb-4"
+              @click:close="calcError = ''"
+            >
+              {{ calcError }}
+            </v-alert>
+
+            <v-alert
+              v-if="calcResult"
+              type="success"
+              closable
+              class="mb-4"
+              @click:close="calcResult = null"
+            >
+              Расчёт завершён!<br>
+              Обработано дней: {{ calcResult.total_days }},<br>
+              Сотрудников: {{ calcResult.employees_processed }},<br>
+              Создано записей: {{ calcResult.records_created }},<br>
+              Обновлено записей: {{ calcResult.records_updated }},<br>
+              Требуют проверки: {{ calcResult.needs_review_count }}
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-btn
+              color="success"
+              :loading="calcLoading"
+              :disabled="!calcDateFrom || !calcDateTo"
+              prepend-icon="mdi-calculator"
+              @click="calculateTimesheet"
+            >
+              Рассчитать
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-col>
+    </v-row>
   </v-container>
 </template>
 
 <script setup>
 import { ref } from 'vue'
 import api from '../api'
+import { auth } from '../auth'
 
 const employeeFile = ref(null)
 const employeeLoading = ref(false)
@@ -156,6 +230,45 @@ const turnstileLoading = ref(false)
 const turnstileError = ref('')
 const turnstileResult = ref(null)
 const unrecognizedNames = ref([])
+
+// Расчёт табеля
+const calcDateFrom = ref('')
+const calcDateTo = ref('')
+const calcLoading = ref(false)
+const calcError = ref('')
+const calcResult = ref(null)
+
+// По умолчанию — текущий месяц
+;(function initCalcPeriod() {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const lastDay = new Date(y, now.getMonth() + 1, 0).getDate()
+  calcDateFrom.value = `${y}-${m}-01`
+  calcDateTo.value = `${y}-${m}-${String(lastDay).padStart(2, '0')}`
+})()
+
+async function calculateTimesheet() {
+  if (!calcDateFrom.value || !calcDateTo.value) return
+
+  calcLoading.value = true
+  calcError.value = ''
+  calcResult.value = null
+
+  try {
+    const response = await api.post('/api/timesheet/calculate', {
+      employee_id: null,
+      date_from: calcDateFrom.value,
+      date_to: calcDateTo.value
+    })
+    calcResult.value = response.data
+  } catch (e) {
+    calcError.value = e.response?.data?.detail || 'Ошибка при расчёте табеля'
+    console.error(e)
+  } finally {
+    calcLoading.value = false
+  }
+}
 
 function extractFile(fileValue) {
   return Array.isArray(fileValue) ? fileValue[0] : fileValue

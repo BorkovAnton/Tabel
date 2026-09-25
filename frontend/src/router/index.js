@@ -21,7 +21,8 @@ const routes = [
 
   { path: '/', name: 'Home', component: Home },
   { path: '/employees', name: 'Employees', component: Employees },
-  { path: '/import', name: 'Import', component: Import },
+  // Импорт и расчёт табеля — служебные операции, только Администратор
+  { path: '/import', name: 'Import', component: Import, meta: { requiresAuth: true, requiresAdmin: true } },
   { path: '/turnstile', name: 'Turnstile', component: Turnstile },
   { path: '/timesheet-report', name: 'TimesheetReport', component: TimesheetReport },
   { path: '/turnstile-fix', name: 'TurnstileFix', component: TurnstileFix },
