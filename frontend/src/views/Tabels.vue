@@ -1,47 +1,51 @@
 <template>
   <div>
-    <div class="d-flex align-center mb-4">
-      <h2 class="text-h5" style="font-weight:bold;">
-        Табели
-        <v-chip v-if="auth.isTimesheetInspector" size="small" class="ml-2">Инспектор табелей — видны все</v-chip>
-        <v-chip v-else size="small" class="ml-2" color="grey">Видны только мои табели</v-chip>
-      </h2>
-      <v-spacer />
-      <v-select
-        :menu-icon="null"
-        v-model="filterMonth"
-        :items="monthItems"
-        item-title="title"
-        item-value="value"
-        label="Месяц"
-        clearable
-        density="compact"
-        hide-details
-        variant="outlined"
-        style="max-width: 170px;"
-        class="mr-2"
-      />
-      <v-select
-        :menu-icon="null"
-        v-model="filterYear"
-        :items="years"
-        label="Год"
-        clearable
-        density="compact"
-        hide-details
-        variant="outlined"
-        style="max-width: 120px;"
-        class="mr-4"
-      />
+    <v-card class="pa-4 mb-4" flat>
+      <div class="d-flex align-center mb-4">
+        <h2 class="text-h5" style="font-weight:bold;">
+          Табели
+          <v-chip v-if="auth.isTimesheetInspector" size="small" class="ml-2">Инспектор табелей — видны все</v-chip>
+          <v-chip v-else size="small" class="ml-2" color="grey">Видны только мои табели</v-chip>
+        </h2>
+      </div>
+
+      <v-row class="mb-4">
+        <v-col cols="12" md="3">
+          <v-select
+            v-model="filterMonth"
+            :items="monthItems"
+            item-title="title"
+            item-value="value"
+            label="Месяц"
+            clearable
+            density="compact"
+            hide-details
+            variant="outlined"
+          />
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-select
+            v-model="filterYear"
+            :items="years"
+            label="Год"
+            clearable
+            density="compact"
+            hide-details
+            variant="outlined"
+          />
+        </v-col>
+      </v-row>
+
       <v-btn
         v-if="auth.canManageTabels"
         color="#2d5a3d"
         prepend-icon="mdi-plus"
+        class="mt-4"
         @click="openCreate"
       >
         Создать табель
       </v-btn>
-    </div>
+    </v-card>
 
     <v-data-table
       :headers="headers"
