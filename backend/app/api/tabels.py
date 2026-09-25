@@ -19,23 +19,28 @@ from app.models.user import User
 router = APIRouter(prefix="/tabels", tags=["Tabels"])
 
 NUMERIC_RE = re.compile(r"^\d{1,2}([.,]\d{1,2})?$")  # часы: >0 и <= 23.59 (точность до сотых)
+# Числовые коды из справочника допускаются как значения ячейки наравне с текстовыми
+CODE_NUMERIC_RE = re.compile(r"^\d+[.,]?\d*$")
 
 
 def validate_day_value(value: str, valid_codes: set[str]) -> str:
-    """Число часов (0..23.59, сотые) либо буквенный код из справочника."""
+    """Значение ячейки: только код из справочника «Коды часов» (в т.ч. числовые, напр. «8с», «8н»)
+    либо число часов >0 и <=23.59 (для совместимости со старыми данными)."""
     v = value.strip()
     if not v:
         return ""
+    codes_lower = {c.lower() for c in valid_codes}
+    # сначала проверяем точное совпадение с кодом справочника (важно для «8н», «8с» и т.п.)
+    if v.lower() in codes_lower:
+        return v
     if NUMERIC_RE.match(v):
         num = float(v.replace(",", "."))
         if num <= 0:
             raise ValueError(f"«{v}»: значение должно быть больше 0")
         if num > 23.59:
             raise ValueError(f"«{v}»: значение не может быть больше 23.59")
-        return f"{num:.2f}".rstrip("0").rstrip(".").replace(".", ".")
-    if v.lower() in {c.lower() for c in valid_codes}:
-        return v
-    raise ValueError(f"«{v}»: введите число часов (0…23.59) или код из справочника «Коды часов»")
+        return f"{num:.2f}".rstrip("0").rstrip(".")
+    raise ValueError(f"«{v}»: выберите значение из списка «Коды часов»")
 
 
 def entry_days(entry: TabelEntry, days_in_month: int) -> Dict[int, str]:

@@ -38,15 +38,32 @@
               {{ row.full_name }}<br /><small class="text-grey">{{ row.tab_number }}</small>
             </td>
             <td v-for="d in tabel.days_in_month" :key="d" class="cell-day">
-              <input
-                class="day-input"
-                :class="{ 'is-code': isCode(row.days[d]), 'is-error': hasError(row.employee_id, d) }"
-                v-model="row.days[d]"
-                maxlength="8"
-                @input="markDirty(row.employee_id, d); validateCell(row.employee_id, d)"
-                @keydown="limitInput($event)"
-                list="codes-list"
-              />
+              <v-combobox
+                :model-value="row.days[d]"
+                :items="cellItems"
+                item-title="title"
+                item-value="value"
+                menu-icon=""
+                clearable
+                dense
+                variant="plain"
+                hide-details
+                auto-select-first
+                return-object
+                class="cell-combo"
+                :class="{ 'is-error-cell': hasError(row.employee_id, d) }"
+                placeholder=""
+                @update:model-value="(v) => onCellChange(row.employee_id, d, v)"
+              >
+                <template #selection="{ item }">
+                  <span :class="['cell-text', { 'is-code': isCodeText(item.raw.value ?? item.title) }]">
+                    {{ shortLabel(item.raw.value ?? item.title) }}
+                  </span>
+                </template>
+                <template #item="{ props: p, item }">
+                  <v-list-item v-bind="p" :title="item.raw.title" />
+                </template>
+              </v-combobox>
             </td>
             <td class="col-sum text-center">{{ totalHours(row) }}</td>
             <td class="col-del">
@@ -120,11 +137,6 @@
         </div>
       </div>
     </div>
-
-    <!-- подсказки datalist для кодов -->
-    <datalist id="codes-list">
-      <option v-for="c in timeCodes" :key="c.id" :value="c.code">{{ c.name }} (день {{ c.hours_day }} / ночь {{ c.hours_night }})</option>
-    </datalist>
 
     <!-- Справочник «Коды часов» (редактирование — только для Администратора) -->
     <v-dialog v-model="codesDialog" max-width="720">
@@ -228,22 +240,51 @@ async function onEmployeePicked(empId) {
 function codeSet() {
   return new Set(timeCodes.value.map(c => c.code.toLowerCase()))
 }
-function isCode(v) {
-  return !!v && !/^[\d.,]+$/g.test(v)
+function isCodeText(v) {
+  // код из справочника (в т.ч. «8н», «8с») — подсвечиваем синим
+  return !!v && codeSet().has(String(v).trim().toLowerCase())
+}
+function shortLabel(v) {
+  // в самой ячейке показываем только код/число, без длинного описания
+  return String(v ?? '')
+}
+
+// Список для ячеек: все коды часов + типовые значения часов.
+// v-combobox фильтрует его по подстроке: наберите «8» — останутся 8, 8н, 8с и т.д.
+const cellItems = computed(() => {
+  const items = timeCodes.value.map(c => ({
+    title: `${c.code} — ${c.name} (день ${c.hours_day} / ночь ${c.hours_night})`,
+    value: c.code,
+  }))
+  for (const h of [0.25, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 23.59]) {
+    const s = String(h).replace('.', ',')
+    items.push({ title: `${s} ч.`, value: s })
+  }
+  return items
+})
+
+// выбор/ввод значения ячейки
+function onCellChange(empId, day, val) {
+  let text = ''
+  if (val !== null && val !== undefined) {
+    text = (typeof val === 'object') ? String(val.value ?? val.title ?? '') : String(val)
+  }
+  text = text.trim()
+  const row = tabel.value.entries.find(r => r.employee_id === empId)
+  if (row) row.days[day] = text
+  markDirty(empId, day)
+  validateCell(empId, day)
 }
 function isValidValue(v) {
   if (!v || !v.trim()) return true
   const s = v.trim().replace(',', '.')
+  // сначала точное совпадение с кодом справочника (важно для «8н», «8с»)
+  if (codeSet().has(s.toLowerCase())) return true
   if (/^\d{1,2}(\.\d{1,2})?$/.test(s)) {
     const n = parseFloat(s)
     return n > 0 && n <= 23.59
   }
-  return codeSet().has(s.toLowerCase())
-}
-function limitInput(e) {
-  const allowed = '0123456789.,'.includes(e.key) || /[a-zA-Zа-яА-ЯёЁ]/.test(e.key) ||
-    ['Backspace','Delete','Tab','ArrowLeft','ArrowRight','Enter',' '].includes(e.key)
-  if (!allowed) e.preventDefault()
+  return false
 }
 function hasError(empId, day) {
   return !!cellErrors.value[`${empId}_${day}`]
@@ -409,17 +450,21 @@ onMounted(async () => {
 .sticky-col { position: sticky; left: 0; background: #f1f8e9; z-index: 2; }
 .sticky-col2 { position: sticky; left: 36px; background: #f1f8e9; z-index: 2; }
 thead .sticky-col, thead .sticky-col2 { z-index: 4; background: #2d5a3d !important; }
-.day-input {
-  width: 40px;
-  border: none;
-  outline: none;
+/* ячейка табеля — combobox с выбором из списка кодов/часов */
+.cell-combo { min-width: 40px; }
+.cell-combo :deep(.v-field) { background: transparent; box-shadow: none !important; }
+.cell-combo :deep(.v-field__field), .cell-combo :deep(input) { text-align: center; }
+.cell-combo :deep(.v-field__input) {
   text-align: center;
   font-size: 13px;
-  background: transparent;
+  padding: 0 2px !important;
+  min-height: 26px !important;
+  height: 26px !important;
 }
-.day-input:focus { background: #fffde7; outline: 2px solid #2d5a3d; }
+.cell-combo :deep(.v-field__append-inner) { display: none; }
+.cell-text { font-size: 13px; }
 .is-code { color: #1565c0; font-weight: bold; }
-.is-error { background: #ffebee; outline: 2px solid red; }
+.is-error, .is-error-cell { background: #ffebee; outline: 2px solid red; }
 .add-row td { border-top: 2px dashed #a5d6a7; background: #f9fbe7; }
 .add-cell { padding: 6px 8px !important; }
 </style>
