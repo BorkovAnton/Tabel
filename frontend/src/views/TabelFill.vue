@@ -20,13 +20,27 @@
       {{ message }}
     </v-alert>
 
+    <!-- Легенда подсветки дней -->
+    <div class="d-flex align-center flex-wrap mb-2" style="gap: 14px; font-size: 13px;">
+      <span><span class="legend-box legend-weekend"></span> Выходной день</span>
+      <span><span class="legend-box legend-holiday"></span> ★ Праздничный (нерабочий) день</span>
+      <span v-if="calendarNotLoaded" class="text-caption text-grey-darken-1">
+        Производственный календарь на {{ tabel.year }} год не загружен — показаны только выходные по пятидневке.
+        Загрузите календарь на вкладке «Импорт».
+      </span>
+    </div>
+
     <div style="overflow-x:auto; border:1px solid #c8e6c9; border-radius:8px; background:white;">
       <table class="tabel-table" v-if="tabel.entries.length">
         <thead>
           <tr>
             <th class="col-no sticky-col">№</th>
             <th class="col-fio sticky-col2">ФИО / табельный</th>
-            <th v-for="d in tabel.days_in_month" :key="d" class="col-day">{{ d }}</th>
+            <th v-for="d in tabel.days_in_month" :key="d" class="col-day"
+                :class="{ 'day-weekend': isWeekend(d), 'day-holiday': isHoliday(d) }"
+                :title="holidayName(d)">
+              {{ d }}<span v-if="isHoliday(d)" class="holiday-mark">★</span>
+            </th>
             <th class="col-sum">Итого</th>
             <th class="col-del"></th>
           </tr>
@@ -37,7 +51,8 @@
             <td class="col-fio sticky-col2" :title="row.full_name">
               {{ row.full_name }}<br /><small class="text-grey">{{ row.tab_number }}</small>
             </td>
-            <td v-for="d in tabel.days_in_month" :key="d" class="cell-day">
+            <td v-for="d in tabel.days_in_month" :key="d" class="cell-day"
+                :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
               <!-- обычный input вместо v-autocomplete: значение остаётся в ячейке,
                    «убегание» строки при выборе больше не происходит.
                    Ручной ввод запрещён — по клику открывается список кодов/часов -->
@@ -221,6 +236,19 @@ const saving = ref(false)
 const codesDialog = ref(false)
 const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0 })
 const codeError = ref('')
+
+// --- подсветка выходных и праздников (производственный календарь) ---
+const weekendSet = computed(() => new Set(tabel.value?.weekend_days || []))
+const holidaySet = computed(() => new Set(tabel.value?.holiday_days || []))
+function isWeekend(d) { return weekendSet.value.has(d) }
+function isHoliday(d) { return holidaySet.value.has(d) }
+function holidayName(d) {
+  const n = tabel.value?.holiday_names?.[d]
+  return n ? `${d}: ${n} — праздничный (нерабочий) день` : ''
+}
+// если ни одного праздника — скорее всего календарь на год ещё не загружен
+const calendarNotLoaded = computed(() =>
+  !!tabel.value && (tabel.value.holiday_days?.length ?? 0) === 0)
 
 // --- поиск сотрудников в выпадающем списке ---
 const allEmployees = ref([])
@@ -491,6 +519,16 @@ onMounted(async () => {
 .col-fio { min-width: 220px; text-align: left; padding-left: 8px !important; }
 .col-day { width: 42px; text-align: center; }
 .col-sum { width: 60px; }
+/* подсветка выходных/праздников: заголовок дня и ячейки */
+.day-weekend { background-color: #b71c1c !important; color: #ffebee !important; }
+.day-holiday { background-color: #f9a825 !important; color: #4e342e !important; }
+.holiday-mark { font-size: 10px; margin-left: 1px; vertical-align: top; }
+.cell-weekend { background-color: #ffebee; }
+.cell-holiday { background-color: #fff8e1; }
+.legend-box { display: inline-block; width: 14px; height: 14px; border-radius: 3px;
+              border: 1px solid #c8e6c9; vertical-align: middle; margin-right: 4px; }
+.legend-weekend { background-color: #ffebee; }
+.legend-holiday { background-color: #fff8e1; }
 .sticky-col { position: sticky; left: 0; background: #f1f8e9; z-index: 2; }
 .sticky-col2 { position: sticky; left: 36px; background: #f1f8e9; z-index: 2; }
 thead .sticky-col, thead .sticky-col2 { z-index: 4; background: #2d5a3d !important; }

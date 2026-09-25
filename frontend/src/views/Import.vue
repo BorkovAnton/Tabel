@@ -211,6 +211,81 @@
           </v-card-actions>
         </v-card>
       </v-col>
+
+      <!-- Загрузка производственного календаря (только Администратор) -->
+      <v-col cols="12" md="6">
+        <v-card class="pa-4">
+          <v-card-title>Производственный календарь</v-card-title>
+          <v-card-text>
+            <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+              Загружает выходные и праздничные дни с сайта
+              <a href="https://xmlcalendar.ru/index.php?country=by" target="_blank" rel="noopener">
+                xmlcalendar.ru
+              </a>
+              (Беларусь). Эти дни подсвечиваются в табелях. Календарь нужно загрузить
+              отдельно для каждого года (например, текущего и следующего).
+            </p>
+
+            <v-row>
+              <v-col cols="12" sm="6">
+                <v-select
+                  v-model="calYear"
+                  :items="calYearOptions"
+                  label="Год"
+                  variant="outlined"
+                  density="comfortable"
+                  prepend-inner-icon="mdi-calendar-range"
+                ></v-select>
+              </v-col>
+              <v-col cols="12" sm="6">
+                <v-select
+                  v-model="calCountry"
+                  :items="[{ title: 'Беларусь (by)', value: 'by' }, { title: 'Россия (ru)', value: 'ru' }]"
+                  item-title="title"
+                  item-value="value"
+                  label="Страна"
+                  variant="outlined"
+                  density="comfortable"
+                  prepend-inner-icon="mdi-earth"
+                ></v-select>
+              </v-col>
+            </v-row>
+
+            <v-alert
+              v-if="calError"
+              type="error"
+              closable
+              class="mb-4"
+              @click:close="calError = ''"
+            >
+              {{ calError }}
+            </v-alert>
+
+            <v-alert
+              v-if="calResult"
+              type="success"
+              closable
+              class="mb-4"
+              @click:close="calResult = null"
+            >
+              Календарь за {{ calResult.year }} год ({{ calResult.country.toUpperCase() }}) загружен!<br>
+              Дней сохранено: {{ calResult.days_saved }},<br>
+              Праздничных дней: {{ calResult.holidays }},<br>
+              Всего нерабочих дней: {{ calResult.nonworking_days_total }}
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-btn
+              color="primary"
+              :loading="calLoading"
+              prepend-icon="mdi-cloud-download-outline"
+              @click="loadCalendar"
+            >
+              Загрузить календарь
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-col>
     </v-row>
   </v-container>
 </template>
@@ -237,6 +312,36 @@ const calcDateTo = ref('')
 const calcLoading = ref(false)
 const calcError = ref('')
 const calcResult = ref(null)
+
+// Производственный календарь (xmlcalendar.ru)
+const calYear = ref(new Date().getFullYear())
+const calCountry = ref('by')
+const calLoading = ref(false)
+const calError = ref('')
+const calResult = ref(null)
+const calYearOptions = (() => {
+  const y = new Date().getFullYear()
+  const arr = []
+  for (let i = y - 2; i <= y + 2; i++) arr.push(i)
+  return arr
+})()
+
+async function loadCalendar() {
+  calLoading.value = true
+  calError.value = ''
+  calResult.value = null
+  try {
+    const response = await api.post('/holidays/load', null, {
+      params: { year: calYear.value, country: calCountry.value }
+    })
+    calResult.value = response.data
+  } catch (e) {
+    calError.value = e.response?.data?.detail || 'Ошибка загрузки производственного календаря'
+    console.error(e)
+  } finally {
+    calLoading.value = false
+  }
+}
 
 // По умолчанию — текущий месяц
 ;(function initCalcPeriod() {

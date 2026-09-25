@@ -98,6 +98,10 @@ class TabelDetailOut(BaseModel):
     responsible_user_id: int
     responsible_user_name: Optional[str] = None
     entries: List[EntryRow]
+    # подсветка нерабочих дней: номера дней месяца (1..days_in_month)
+    weekend_days: List[int] = []
+    holiday_days: List[int] = []
+    holiday_names: Dict[int, str] = {}
 
 
 class CellUpdate(BaseModel):
@@ -271,7 +275,42 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
         responsible_user_id=tabel.responsible_user_id,
         responsible_user_name=tabel.responsible_user.full_name or tabel.responsible_user.username if tabel.responsible_user else None,
         entries=entries,
+        **nonworking_days_map(tabel.year, tabel.month, dim, db),
     )
+
+
+def nonworking_days_map(year: int, month: int, dim: int, db: Session) -> dict:
+    """Выходные и праздники месяца из производственного календаря (holiday_calendars).
+
+    Если календарь за год не загружен — fallback: выходные по пятидневке (сб/вс).
+    """
+    from app.models.holiday_calendar import HolidayCalendar
+
+    rows = db.query(HolidayCalendar).filter(
+        HolidayCalendar.date >= date(year, month, 1),
+        HolidayCalendar.date <= date(year, month, dim),
+    ).all()
+    weekend_days: List[int] = []
+    holiday_days: List[int] = []
+    holiday_names: Dict[int, str] = {}
+    if rows:
+        for h in rows:
+            if h.is_holiday:
+                holiday_days.append(h.date.day)
+                if h.description:
+                    holiday_names[h.date.day] = h.description
+            elif h.is_weekend:
+                weekend_days.append(h.date.day)
+    else:
+        # календарь не загружен — считаем выходные по стандартной пятидневке
+        for d in range(1, dim + 1):
+            if date(year, month, d).weekday() in (5, 6):
+                weekend_days.append(d)
+    return {
+        "weekend_days": sorted(weekend_days),
+        "holiday_days": sorted(holiday_days),
+        "holiday_names": holiday_names,
+    }
 
 
 @router.post("/{tabel_id}/employees")

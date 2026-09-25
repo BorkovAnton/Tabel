@@ -9,6 +9,7 @@ from app.api.auth import router as auth_router
 from app.api.time_codes import router as time_codes_router
 from app.api.users import router as users_router
 from app.api.tabels import router as tabels_router
+from app.api.holidays import router as holidays_router
 from app.init_data import seed
 from app.init_db import ensure_columns
 
@@ -46,6 +47,7 @@ app.include_router(auth_router)
 app.include_router(time_codes_router)
 app.include_router(users_router)
 app.include_router(tabels_router)
+app.include_router(holidays_router)
 
 @app.get("/health")
 async def health_check():
