@@ -12,9 +12,42 @@ from app.core.security import (
     can_manage_tabels,
 )
 from app.database import get_db
+from app.models.department import Department
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+def _normalize_allowed_departments(raw, db: Session) -> str:
+    """Приводит значение прав на подразделения к каноничному виду в БД.
+
+    Допустимые форматы на вход: "" (пусто), "*" (все), JSON-список id [1,2].
+    Сохраняется: "" | '"*"' | JSON-список существующих id.
+    """
+    import json
+
+    if raw is None:
+        return ""
+    s = str(raw).strip()
+    if not s:
+        return ""
+    if s == "*":
+        return '"*"'
+    try:
+        ids = json.loads(s)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Некорректный формат подразделений")
+    if not isinstance(ids, list):
+        raise HTTPException(status_code=400, detail="Некорректный формат подразделений")
+    clean = []
+    for x in ids:
+        try:
+            did = int(x)
+        except (ValueError, TypeError):
+            continue
+        if did not in clean and db.get(Department, did) is not None:
+            clean.append(did)
+    return json.dumps(clean) if clean else ""
 
 
 class UserOut(BaseModel):

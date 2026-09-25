@@ -1,10 +1,14 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional, Union
 
+from app.api.auth import _normalize_allowed_departments
 from app.core.security import hash_password, require_admin
 from app.database import get_db
+from app.models.department import Department
 from app.models.user import User
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -15,12 +19,26 @@ class RoleFlags(BaseModel):
     is_hr: bool = False               # Кадровик
     timesheet_inspector: bool = False # Инспектор табелей
     is_user: bool = True              # Пользователь (базовая роль)
+    # Права на подразделения: JSON-строка '["*"]'-список id или "*" (все).
+    # Фронтенд может прислать и список чисел — нормализуем валидатором.
+    allowed_departments: str = ""
+
+    @field_validator("allowed_departments", mode="before")
+    @classmethod
+    def _ad_to_str(cls, v):
+        if v is None:
+            return ""
+        if isinstance(v, list):
+            return json.dumps([int(x) for x in v])
+        return str(v)
 
 
 class UserWithRoles(RoleFlags):
     id: int
     username: str
     full_name: str
+    allowed_department_names: List[str] = []
+    all_departments: bool = False
 
     class Config:
         from_attributes = True
@@ -49,11 +67,26 @@ class UserCreateWithRoles(RoleFlags):
         return v
 
 
+def _dept_names_map(db: Session) -> dict:
+    return {d.id: d.name for d in db.query(Department).all()}
+
+
+def _to_with_roles(u: User, names: dict) -> UserWithRoles:
+    obj = UserWithRoles.model_validate(u)
+    if u.all_departments_allowed:
+        obj.all_departments = True
+        obj.allowed_department_names = ["Все подразделения"]
+    else:
+        obj.allowed_department_names = [names.get(i, f"#{i}") for i in u.allowed_department_ids]
+    return obj
+
 @router.get("/with-roles", response_model=List[UserWithRoles])
 def list_users_with_roles(db: Session = Depends(get_db),
                           user: User = Depends(require_admin)):
     """Справочник пользователей с ролями — только для Администратора."""
-    return db.query(User).order_by(User.username).all()
+    names = _dept_names_map(db)
+    return [_to_with_roles(u, names)
+            for u in db.query(User).order_by(User.username).all()]
 
 
 @router.post("/with-roles", response_model=UserWithRoles)
@@ -71,11 +104,29 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,
         is_user=payload.is_user,
+        allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
     )
     db.add(obj)
     db.commit()
     db.refresh(obj)
-    return obj
+    return _to_with_roles(obj, _dept_names_map(db))
+
+
+@router.put("/with-roles/{user_id}", response_model=UserWithRoles)
+def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depends(get_db),
+                           user: User = Depends(require_admin)):
+    """Редактирование ролей и прав на подразделения — только для Администратора."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    target.is_admin = payload.is_admin
+    target.is_hr = payload.is_hr
+    target.timesheet_inspector = payload.timesheet_inspector
+    target.is_user = payload.is_user
+    target.allowed_departments = _normalize_allowed_departments(payload.allowed_departments, db)
+    db.commit()
+    db.refresh(target)
+    return _to_with_roles(target, _dept_names_map(db))
 
 
 @router.delete("/with-roles/{user_id}")

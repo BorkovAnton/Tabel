@@ -8,7 +8,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 
-from app.core.security import get_current_user, require_timesheet_inspector, require_admin, can_manage_tabels
+from app.core.security import (
+    allowed_department_id_set,
+    can_manage_tabels,
+    check_department_access,
+    get_current_user,
+    require_admin,
+    require_timesheet_inspector,
+)
 from app.database import get_db
 from app.models.department import Department
 from app.models.employee import Employee
@@ -146,8 +153,17 @@ def _valid_codes(db: Session) -> set[str]:
 @router.get("/search/employees", response_model=List[dict])
 def search_employees(q: str = Query("", min_length=0), db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """Поиск сотрудников по фамилии/табельному для выпадающего списка."""
+    """Поиск сотрудников по фамилии/табельному для выпадающего списка.
+
+    Роль «Пользователь» видит только сотрудников своих подразделений
+    (права задаёт администратор в справочнике «Пользователи»).
+    """
     query = db.query(Employee)
+    allowed = allowed_department_id_set(user, db)
+    if allowed is not None:
+        if not allowed:
+            return []
+        query = query.filter(Employee.department_id.in_(allowed))
     term = q.strip()
     if term:
         like = f"%{term}%"
@@ -200,9 +216,14 @@ def list_tabels(
 @router.post("/", response_model=TabelOut)
 def create_tabel(payload: TabelCreate, db: Session = Depends(get_db),
                  user: User = Depends(require_timesheet_inspector)):
-    """Создать табель — могут инспекторы табелей (администратор/кадровик)."""
+    """Создать табель — могут инспекторы табелей и роль «Пользователь».
+
+    Пользователь без прав на все подразделения может создавать табели
+    только для своих подразделений.
+    """
     if not (1 <= payload.month <= 12):
         raise HTTPException(status_code=400, detail="Некорректный месяц")
+    check_department_access(user, db, payload.department_id)
     existing = db.query(Tabel).filter(
         Tabel.year == payload.year,
         Tabel.month == payload.month,

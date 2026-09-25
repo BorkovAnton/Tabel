@@ -11,6 +11,8 @@ from openpyxl.utils import get_column_letter
 from urllib.parse import quote
 
 from app.database import get_db
+from app.core.security import allowed_department_id_set, get_current_user
+from app.models.user import User
 from app.models.employee import Employee
 from app.models.turnstile_event import TurnstileEvent
 from app.models.work_schedule import WorkSchedule
@@ -369,7 +371,8 @@ def get_timesheet_report(
     month: int = Query(..., ge=1, le=12, description="Месяц (1-12)"),
     year: int = Query(..., ge=2020, description="Год"),
     department_id: Optional[int] = Query(None, description="ID подразделения"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
 ):
     """Получить отчет табеля за месяц"""
     
@@ -377,11 +380,27 @@ def get_timesheet_report(
     
     # Получаем сотрудников
     query = db.query(Employee)
-    if department_id:
-        all_dept_ids = get_all_department_ids(department_id, db)
-        query = query.filter(Employee.department_id.in_(all_dept_ids))
+    allowed = allowed_department_id_set(user, db)
+    if allowed is not None:
+        # роль «Пользователь»: только сотрудники назначенных подразделений
+        if not allowed:
+            employees = []
+        else:
+            query = query.filter(Employee.department_id.in_(allowed))
+            if department_id and int(department_id) not in allowed:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Нет прав на это подразделение (права выдаёт администратор)")
+            if department_id:
+                all_dept_ids = get_all_department_ids(department_id, db)
+                query = query.filter(Employee.department_id.in_(all_dept_ids))
+            employees = query.order_by(Employee.full_name).all()
+    else:
+        if department_id:
+            all_dept_ids = get_all_department_ids(department_id, db)
+            query = query.filter(Employee.department_id.in_(all_dept_ids))
+        employees = query.order_by(Employee.full_name).all()
     
-    employees = query.order_by(Employee.full_name).all()
     
     employee_reports = []
     
@@ -463,18 +482,35 @@ def get_timesheet_report_excel(
     month: int = Query(..., ge=1, le=12),
     year: int = Query(..., ge=2020),
     department_id: Optional[int] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
 ):
     """Сгенерировать Excel файл с табелем"""
     
     _, days_in_month = monthrange(year, month)
     
     query = db.query(Employee)
-    if department_id:
-        all_dept_ids = get_all_department_ids(department_id, db)
-        query = query.filter(Employee.department_id.in_(all_dept_ids))
+    allowed = allowed_department_id_set(user, db)
+    if allowed is not None:
+        # роль «Пользователь»: только сотрудники назначенных подразделений
+        if not allowed:
+            employees = []
+        else:
+            query = query.filter(Employee.department_id.in_(allowed))
+            if department_id and int(department_id) not in allowed:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Нет прав на это подразделение (права выдаёт администратор)")
+            if department_id:
+                all_dept_ids = get_all_department_ids(department_id, db)
+                query = query.filter(Employee.department_id.in_(all_dept_ids))
+            employees = query.order_by(Employee.full_name).all()
+    else:
+        if department_id:
+            all_dept_ids = get_all_department_ids(department_id, db)
+            query = query.filter(Employee.department_id.in_(all_dept_ids))
+        employees = query.order_by(Employee.full_name).all()
     
-    employees = query.order_by(Employee.full_name).all()
     
     wb = Workbook()
     ws = wb.active

@@ -227,7 +227,7 @@ const needsReviewCount = computed(() => {
 
 async function loadDepartments() {
   try {
-    const response = await api.get('/departments/?flat=true')
+    const response = await api.get("/departments/?flat=true")
     departments.value = response.data
   } catch (e) {
     console.error('Ошибка загрузки подразделений:', e)

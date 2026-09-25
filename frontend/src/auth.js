@@ -30,6 +30,19 @@ export const auth = reactive({
     return !!this.user && !!this.user.is_admin
   },
 
+  // Обновить данные пользователя с сервера (например, после смены прав)
+  async refresh() {
+    if (!this.token) return null
+    try {
+      const { data } = await api.get('/auth/me')
+      this.user = data
+      localStorage.setItem('user', JSON.stringify(data))
+      return data
+    } catch (e) {
+      return null
+    }
+  },
+
   async login(username, password) {
     const form = new URLSearchParams()
     form.append('username', username)

@@ -3,9 +3,11 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
 
+from app.core.security import allowed_department_id_set, get_current_user
 from app.database import get_db
 from app.models.department import Department
 from app.models.employee import Employee
+from app.models.user import User
 
 router = APIRouter(prefix="/departments", tags=["Departments"])
 
@@ -79,10 +81,21 @@ def build_tree(departments: List[Department], parent_id: Optional[int], db: Sess
 @router.get("/", response_model=List[DepartmentResponse])
 def get_departments(
     flat: bool = Query(False, description="Плоский список вместо дерева"),
-    db: Session = Depends(get_db)
+    all: bool = Query(False, description="Все подразделения (для администратора, выдаёт права)"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
 ):
-    """Получить список подразделений"""
-    departments = db.query(Department).all()
+    """Получить список подразделений.
+
+    Роль «Пользователь» получает только подразделения, на которые у него
+    есть права (назначает администратор в справочнике «Пользователи»).
+    Флаг all=True возвращает полный список — доступен только администратору.
+    """
+    allowed = None if all else allowed_department_id_set(user, db)
+    if not all and allowed is not None:
+        departments = db.query(Department).filter(Department.id.in_(allowed or [-1])).all()
+    else:
+        departments = db.query(Department).all()
     
     if flat:
         result = []

@@ -16,6 +16,14 @@
         <v-chip v-if="item.is_user" size="x-small" color="blue" variant="toned">Пользователь</v-chip>
         <span v-if="!item.is_admin && !item.is_hr && !item.timesheet_inspector && !item.is_user" class="text-grey text-caption">—</span>
       </template>
+      <template #item.departments="{ item }">
+        <span v-if="item.all_departments" class="text-caption" style="color:#2d5a3d;">Все подразделения</span>
+        <template v-else-if="item.allowed_department_names?.length">
+          <v-chip v-for="d in item.allowed_department_names" :key="d" size="x-small" variant="toned"
+                  color="blue-grey" class="mr-1 mb-1">{{ d }}</v-chip>
+        </template>
+        <span v-else class="text-grey text-caption">—</span>
+      </template>
       <template #item.actions="{ item }">
         <v-btn size="small" variant="text" icon="mdi-pencil" color="#2d5a3d" @click="openEdit(item)" />
         <v-btn size="small" variant="text" icon="mdi-delete" color="red"
@@ -54,6 +62,15 @@
             <v-checkbox v-model="form.is_user" label="Пользователь" density="compact" hide-details color="blue" hint="Доступ к «Табель фактический», «Табель», создание и заполнение табелей" persistent-hint />
           </div>
 
+          <div v-if="form.is_user && !form.is_admin && !form.is_hr && !form.timesheet_inspector" class="mt-3">
+            <div class="field-label mb-1">Права на подразделения</div>
+            <v-checkbox v-model="allDepartments" label="Все подразделения" density="compact" hide-details color="blue-grey" class="mb-1" />
+            <v-select :menu-icon="null" v-if="!allDepartments" v-model="form.deptIds" :items="deptItems" multiple chips closable-chips
+                      density="compact" variant="outlined" hide-details clearable label="Выберите подразделения"
+                      item-title="title" item-value="value" />
+            <div class="text-caption text-grey mt-1">Если не выбрано ни одного подразделения — сотрудник будет недоступен в списке при создании табеля.</div>
+          </div>
+
           <v-alert v-if="dialogError" type="error" density="compact" variant="tonal" class="mt-3">{{ dialogError }}</v-alert>
         </v-card-text>
         <v-card-actions>
@@ -75,6 +92,7 @@ const headers = [
   { title: 'Логин', key: 'username', sortable: true },
   { title: 'ФИО', key: 'full_name', sortable: true },
   { title: 'Роли', key: 'roles', sortable: false },
+  { title: 'Подразделения', key: 'departments', sortable: false },
   { title: '', key: 'actions', sortable: false }
 ]
 
@@ -86,7 +104,27 @@ const dialog = ref(false)
 const saving = ref(false)
 const dialogError = ref('')
 const editing = ref(null)
-const form = ref({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true })
+const allDepartments = ref(false)
+const deptItems = ref([])
+const form = ref({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, deptIds: [] })
+
+async function loadDepartments() {
+  try {
+    // полный список доступен только администратору (этот экран и так только для него)
+    const { data } = await api.get('/departments/?flat=true&all=true')
+    deptItems.value = data.map(d => ({ title: d.parent_name ? `${d.name} (${d.parent_name})` : d.name, value: d.id }))
+  } catch (e) { /* справочник под разделением не критичен */ }
+}
+
+function parseAllowed(raw) {
+  if (!raw) return []
+  const s = String(raw).trim()
+  if (s === '*') return []
+  try {
+    const arr = JSON.parse(s)
+    return Array.isArray(arr) ? arr.map(Number).filter(n => !Number.isNaN(n)) : []
+  } catch (e) { return [] }
+}
 
 async function load() {
   loading.value = true
@@ -106,7 +144,9 @@ async function load() {
 function openCreate() {
   editing.value = null
   dialogError.value = ''
-  form.value = { username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true }
+  allDepartments.value = false
+  form.value = { username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, deptIds: [] }
+  loadDepartments()
   dialog.value = true
 }
 
@@ -121,7 +161,10 @@ function openEdit(item) {
     is_hr: item.is_hr,
     timesheet_inspector: item.timesheet_inspector,
     is_user: item.is_user !== false,
+    deptIds: parseAllowed(item.allowed_departments),
   }
+  allDepartments.value = !!item.all_departments
+  loadDepartments()
   dialog.value = true
 }
 
@@ -129,13 +172,17 @@ async function saveUser() {
   saving.value = true
   dialogError.value = ''
   try {
+    const allowed = allDepartments.value ? '*' : JSON.stringify(form.value.deptIds || [])
     if (editing.value) {
-      const payload = { ...form.value }
+      const payload = { ...form.value, allowed_departments: allowed }
       if (!payload.password) delete payload.password
       payload.username = undefined
-      await api.put(`/auth/users/${editing.value.id}`, payload)
+      delete payload.deptIds
+      await api.put(`/users/with-roles/${editing.value.id}`, payload)
     } else {
-      await api.post('/users/with-roles', form.value)
+      const payload = { ...form.value, allowed_departments: allowed }
+      delete payload.deptIds
+      await api.post('/users/with-roles', payload)
     }
     dialog.value = false
     await load()

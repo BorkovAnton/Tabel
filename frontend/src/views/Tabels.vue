@@ -186,6 +186,7 @@ async function openCreate() {
   createError.value = ''
   createDialog.value = true
   try {
+    await auth.refresh()  // подтянуть актуальные права на подразделения
     departments.value = (await api.get('/departments/')).data
     users.value = (await api.get('/auth/users')).data.map(u => ({
       id: u.id, label: `${u.full_name || u.username} (${u.username})`
