@@ -38,31 +38,53 @@
               {{ row.full_name }}<br /><small class="text-grey">{{ row.tab_number }}</small>
             </td>
             <td v-for="d in tabel.days_in_month" :key="d" class="cell-day">
-              <v-autocomplete
-                :model-value="row.days[d] || null"
-                :items="cellItems"
-                item-title="title"
-                item-value="value"
-                menu-icon=""
-                clearable
-                dense
-                variant="plain"
-                hide-details
-                :filter="cellFilter"
-                class="cell-combo"
-                :class="{ 'is-error-cell': hasError(row.employee_id, d) }"
-                placeholder=""
-                @update:model-value="(v) => onCellChange(row.employee_id, d, v)"
-              >
-                <template #selection="{ item }">
-                  <span :class="['cell-text', { 'is-code': isCodeText(item.value) }]">
-                    {{ item.value }}
-                  </span>
-                </template>
-                <template #item="{ props: p, item }">
-                  <v-list-item v-bind="p" :title="item.raw.title" />
-                </template>
-              </v-autocomplete>
+              <!-- обычный input вместо v-autocomplete: значение остаётся в ячейке,
+                   «убегание» строки при выборе больше не происходит.
+                   Ручной ввод запрещён — по клику открывается список кодов/часов -->
+              <div class="cell-wrap" :class="{ 'is-open': openCell === row.employee_id + '_' + d }">
+                <input
+                  class="cell-input"
+                  :class="{ 'is-code': isCodeText(row.days[d]), 'is-error-cell': hasError(row.employee_id, d) }"
+                  :value="row.days[d] || ''"
+                  readonly
+                  tabindex="-1"
+                  @click="openCellPicker(row.employee_id, d, $event)"
+                />
+                <v-menu
+                  :model-value="openCell === row.employee_id + '_' + d"
+                  :location="'bottom'"
+                  :attach="false"
+                  content-class="cell-menu"
+                  max-height="320"
+                  @update:model-value="(v) => { if (!v) openCell = null }"
+                >
+                  <div style="width: 300px;">
+                    <v-text-field
+                      ref="cellSearchRef"
+                      v-model="cellQuery"
+                      density="compact"
+                      variant="solo-filled"
+                      flat-end
+                      hide-details
+                      clearable
+                      placeholder="Поиск (напр. 8)"
+                      prepend-inner-icon="mdi-magnify"
+                      autofocus
+                      class="pa-1"
+                    />
+                    <v-list density="compact" max-height="260" class="overflow-y-auto">
+                      <v-list-item
+                        v-for="it in filteredCellItems"
+                        :key="it.value"
+                        :title="it.title"
+                        prepend-icon="mdi-check"
+                        @click="pickCellValue(row.employee_id, d, it.value)"
+                      />
+                      <v-list-item v-if="!filteredCellItems.length" title="Ничего не найдено" disabled />
+                    </v-list>
+                  </div>
+                </v-menu>
+              </div>
             </td>
             <td class="col-sum text-center">{{ totalHours(row) }}</td>
             <td class="col-del">
@@ -270,19 +292,32 @@ function cellFilter(value, query) {
   return v.startsWith(q) || v.includes(q)
 }
 
-// выбор значения ячейки — только из списка (ручной ввод запрещён)
-function onCellChange(empId, day, val) {
-  let text = ''
-  if (val !== null && val !== undefined) {
-    text = (typeof val === 'object') ? String(val.value ?? '') : String(val)
-  }
-  // если выбранного значения нет в списке — откатываем (запрет ручного ввода)
-  if (text && !cellItems.value.some(it => it.value === text)) return
-  text = text.trim()
+const openCell = ref(null)      // "empId_day" — какая ячейка сейчас открыта
+const cellQuery = ref('')
+
+const filteredCellItems = computed(() => {
+  const q = cellQuery.value.trim().toLowerCase().replace(',', '.')
+  if (!q) return cellItems.value
+  return cellItems.value.filter(it => cellFilter(it.value, q))
+})
+
+function openCellPicker(empId, day) {
+  const key = empId + '_' + day
+  if (openCell.value === key) { openCell.value = null; return }
+  openCell.value = key
+  // стартовый запрос = текущее значение ячейки (можно сразу перевыбрать похожее)
+  const row = tabel.value.entries.find(r => r.employee_id === empId)
+  cellQuery.value = row?.days[day] || ''
+}
+
+function pickCellValue(empId, day, val) {
+  const text = String(val ?? '').trim()
   const row = tabel.value.entries.find(r => r.employee_id === empId)
   if (row) row.days[day] = text
   markDirty(empId, day)
   validateCell(empId, day)
+  openCell.value = null
+  cellQuery.value = ''
 }
 function isValidValue(v) {
   if (!v || !v.trim()) return true
@@ -459,21 +494,32 @@ onMounted(async () => {
 .sticky-col { position: sticky; left: 0; background: #f1f8e9; z-index: 2; }
 .sticky-col2 { position: sticky; left: 36px; background: #f1f8e9; z-index: 2; }
 thead .sticky-col, thead .sticky-col2 { z-index: 4; background: #2d5a3d !important; }
-/* ячейка табеля — combobox с выбором из списка кодов/часов */
-.cell-combo { min-width: 40px; }
-.cell-combo :deep(.v-field) { background: transparent; box-shadow: none !important; }
-.cell-combo :deep(.v-field__field), .cell-combo :deep(input) { text-align: center; }
-.cell-combo :deep(.v-field__input) {
+/* ячейка табеля: фиксированная высота — значение остаётся в своей ячейке,
+   строки не «съезжают» при выборе */
+.cell-wrap { position: relative; width: 100%; height: 26px; }
+.cell-input {
+  width: 100%;
+  height: 26px;
+  box-sizing: border-box;
+  border: none;
+  outline: none;
+  background: transparent;
   text-align: center;
   font-size: 13px;
-  padding: 0 2px !important;
-  min-height: 26px !important;
-  height: 26px !important;
+  font-family: inherit;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.87);
 }
-.cell-combo :deep(.v-field__append-inner) { display: none; }
+.cell-input:hover { background: #e8f5e9; }
+.cell-wrap.is-open .cell-input { background: #e8f5e9; box-shadow: inset 0 0 0 2px #2d5a3d; }
 .cell-text { font-size: 13px; }
 .is-code { color: #1565c0; font-weight: bold; }
-.is-error, .is-error-cell { background: #ffebee; outline: 2px solid red; }
+.is-error, .is-error-cell { background: #ffebee !important; outline: 2px solid red; }
 .add-row td { border-top: 2px dashed #a5d6a7; background: #f9fbe7; }
 .add-cell { padding: 6px 8px !important; }
+</style>
+
+<style>
+/* меню выбора значения ячейки (v-menu рендерится вне scoped-области) */
+.cell-menu .v-overlay__content { background: white; border-radius: 8px; }
 </style>
