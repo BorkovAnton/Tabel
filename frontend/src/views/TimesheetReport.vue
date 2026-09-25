@@ -50,16 +50,6 @@
           </v-col>
           <v-col cols="12" md="3" class="d-flex align-end">
             <v-btn 
-              color="success" 
-              size="large"
-              class="flex-grow-1 mr-2"
-              @click="calculateTimesheet"
-              :loading="calculating"
-              prepend-icon="mdi-calculator"
-            >
-              Рассчитать
-            </v-btn>
-            <v-btn 
               color="primary" 
               size="large"
               class="flex-grow-1"
@@ -172,7 +162,7 @@
     </v-card>
 
     <v-alert v-else-if="!loading" type="info" variant="tonal" class="mt-4">
-      Выберите месяц и год, затем нажмите "Рассчитать" или "Сформировать"
+      Выберите месяц и год, затем нажмите "Сформировать". Расчёт табеля выполняется на вкладке «Импорт».
     </v-alert>
   </v-container>
 </template>
@@ -182,7 +172,6 @@ import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 
 const loading = ref(false)
-const calculating = ref(false)
 const excelLoading = ref(false)
 const error = ref('')
 const reportData = ref(null)
@@ -231,45 +220,6 @@ async function loadDepartments() {
     departments.value = response.data
   } catch (e) {
     console.error('Ошибка загрузки подразделений:', e)
-  }
-}
-
-async function calculateTimesheet() {
-  calculating.value = true
-  error.value = ''
-  
-  try {
-    const year = selectedYear.value
-    const month = selectedMonth.value
-    
-    const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`
-    const lastDay = new Date(year, month, 0).getDate()
-    const dateTo = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
-    
-    const response = await api.post('/api/timesheet/calculate', {
-      employee_id: null,
-      date_from: dateFrom,
-      date_to: dateTo
-    })
-    
-    const data = response.data
-    alert(
-      `Расчёт завершён!\n\n` +
-      `Обработано дней: ${data.total_days}\n` +
-      `Сотрудников: ${data.employees_processed}\n` +
-      `Создано записей: ${data.records_created}\n` +
-      `Обновлено записей: ${data.records_updated}\n` +
-      `Требуют проверки: ${data.needs_review_count}`
-    )
-    
-    // Автоматически формируем отчёт после расчёта
-    await generateReport()
-    
-  } catch (e) {
-    error.value = e.response?.data?.detail || 'Ошибка при расчёте табеля'
-    console.error(e)
-  } finally {
-    calculating.value = false
   }
 }
 

@@ -71,7 +71,7 @@ const router = useRouter()
 const allNavItems = [
   { title: 'Сводка', path: '/', icon: 'mdi-view-dashboard', auth: false, everyone: true },
   { title: 'Сотрудники', path: '/employees', icon: 'mdi-account-group', auth: false },
-  { title: 'Импорт', path: '/import', icon: 'mdi-file-import', auth: false },
+  { title: 'Импорт', path: '/import', icon: 'mdi-file-import', auth: false, admin: true },
   { title: 'Расчёт событий', path: '/turnstile-fix', icon: 'mdi-calculator', auth: false },
   { title: 'Табель фактический', path: '/timesheet-report', icon: 'mdi-calendar-month', auth: false, userRole: true },
   { title: 'Подразделения', path: '/departments', icon: 'mdi-office-building', auth: false },

@@ -6,6 +6,7 @@ from datetime import datetime, time
 import pandas as pd
 import io
 
+from app.core.security import require_admin
 from app.database import get_db
 from app.models.employee import Employee
 from app.models.turnstile_event import TurnstileEvent
@@ -153,8 +154,12 @@ def normalize_event_type(value) -> str:
 async def import_turnstile_events(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
 ):
-    """Импорт событий проходной (турникета) из Excel-файла."""
+    """Импорт событий проходной (турникета) из Excel-файла.
+
+    Доступ только для Администратора (служебная операция).
+    """
 
     # Проверка формата файла
     if not file.filename.endswith(('.xlsx', '.xls')):
