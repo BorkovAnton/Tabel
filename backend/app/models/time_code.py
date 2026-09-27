@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Integer, String, Float
+from sqlalchemy import Column, Boolean, Integer, String, Float, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -14,3 +14,4 @@ class TimeCode(Base):
     hours_day: Mapped[float] = mapped_column(Float, default=0.0)   # часов день
     hours_night: Mapped[float] = mapped_column(Float, default=0.0) # часов ночь
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    destinations = Column(JSON, default=list)

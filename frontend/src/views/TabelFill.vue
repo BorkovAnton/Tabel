@@ -20,7 +20,6 @@
       {{ message }}
     </v-alert>
 
-    <!-- Легенда подсветки дней -->
     <div class="d-flex align-center flex-wrap mb-2" style="gap: 14px; font-size: 13px;">
       <span><span class="legend-box legend-weekend"></span> Выходной день</span>
       <span><span class="legend-box legend-holiday"></span> ★ Праздничный (нерабочий) день</span>
@@ -33,29 +32,35 @@
     <div style="overflow-x:auto; border:1px solid #c8e6c9; border-radius:8px; background:white;">
       <table class="tabel-table" v-if="tabel.entries.length">
         <thead>
+          <!-- ПЕРВЫЙ УРОВЕНЬ ШАПКИ -->
           <tr>
-            <th class="col-no sticky-col">№</th>
-            <th class="col-fio sticky-col2">ФИО / табельный</th>
-            <th v-for="d in tabel.days_in_month" :key="d" class="col-day"
-                :class="{ 'day-weekend': isWeekend(d), 'day-holiday': isHoliday(d) }"
-                :title="holidayName(d)">
-              {{ d }}<span v-if="isHoliday(d)" class="holiday-mark">★</span>
+            <th class="col-no" rowspan="2">№<br>п/п</th>
+            <th class="col-fio" rowspan="2">Ф.И.О.</th>
+            <th class="col-days-header" :colspan="tabel.days_in_month">Дни недели</th>
+            <th v-for="col in summaryColumns" :key="col.key" class="col-summary-header" rowspan="2"
+                :title="col.label">
+              {{ col.label }}
             </th>
-            <th class="col-sum">Итого</th>
-            <th class="col-del"></th>
+            <th class="col-del" rowspan="2"></th>
+          </tr>
+          <!-- ВТОРОЙ УРОВЕНЬ ШАПКИ: дни недели + числа -->
+          <tr>
+            <th v-for="d in tabel.days_in_month" :key="d" class="col-day-header"
+                :class="{ 'day-weekend-header': isWeekend(d), 'day-holiday-header': isHoliday(d) }"
+                :title="holidayName(d)">
+              <div class="day-name">{{ getDayOfWeek(d) }}</div>
+              <div class="day-number">{{ d }}</div>
+            </th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(row, idx) in tabel.entries" :key="row.employee_id">
-            <td class="col-no sticky-col">{{ idx + 1 }}</td>
-            <td class="col-fio sticky-col2" :title="row.full_name">
+            <td class="col-no">{{ idx + 1 }}</td>
+            <td class="col-fio" :title="row.full_name">
               {{ row.full_name }}<br /><small class="text-grey">{{ row.tab_number }}</small>
             </td>
             <td v-for="d in tabel.days_in_month" :key="d" class="cell-day"
                 :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
-              <!-- обычный input вместо v-autocomplete: значение остаётся в ячейке,
-                   «убегание» строки при выборе больше не происходит.
-                   Ручной ввод запрещён — по клику открывается список кодов/часов -->
               <div class="cell-wrap" :class="{ 'is-open': openCell === row.employee_id + '_' + d }">
                 <input
                   class="cell-input"
@@ -65,9 +70,6 @@
                   tabindex="-1"
                   @click="openCellPicker(row.employee_id, d, $event)"
                 />
-                <!-- Меню позиционируется по координатам клика (:positioned + left/top):
-                     открывается прямо под ячейкой, а не «открепляется» в случайное место.
-                     :attach="false" убран — он ломал позиционирование -->
                 <v-menu
                   :model-value="openCell === row.employee_id + '_' + d"
                   :positioned="true"
@@ -107,7 +109,10 @@
                 </v-menu>
               </div>
             </td>
-            <td class="col-sum text-center">{{ totalHours(row) }}</td>
+            <!-- ЗНАЧЕНИЯ ИТОГОВЫХ КОЛОНОК -->
+            <td v-for="col in summaryColumns" :key="col.key" class="col-summary-cell text-center">
+              {{ calculateSummary(row)[col.key] || 0 }}
+            </td>
             <td class="col-del">
               <span class="code-chips" v-if="codesForRow(row).length">
                 <v-chip v-for="c in codesForRow(row)" :key="c.code" size="x-small"
@@ -118,10 +123,9 @@
             </td>
           </tr>
 
-          <!-- Строка добавления сотрудника: появляется под списком и «съезжает» вниз -->
           <tr class="add-row">
-            <td class="sticky-col"></td>
-            <td class="sticky-col2 add-cell">
+            <td></td>
+            <td class="add-cell">
               <div class="d-flex align-center" style="gap: 6px;">
                 <v-autocomplete
                   v-model="selectedEmployee"
@@ -147,12 +151,11 @@
                 <span v-if="selectedEmployee" class="text-caption text-grey">— строка появится здесь</span>
               </div>
             </td>
-            <td :colspan="tabel.days_in_month + 2"></td>
+            <td :colspan="tabel.days_in_month + summaryColumns.length + 1"></td>
           </tr>
         </tbody>
       </table>
       <div v-else class="pa-4">
-        <!-- Табель пуст — форма добавления видна сразу -->
         <div class="d-flex align-center mb-4" style="gap: 6px;">
           <v-autocomplete
             v-model="selectedEmployee"
@@ -180,13 +183,20 @@
       </div>
     </div>
 
-    <!-- Справочник «Коды часов» (редактирование — только для Администратора) -->
-    <v-dialog v-model="codesDialog" max-width="720">
+    <!-- Справочник «Коды часов» -->
+    <v-dialog v-model="codesDialog" max-width="900">
       <v-card title="Справочник «Коды часов»">
         <v-card-text>
           <v-table density="compact">
             <thead>
-              <tr><th>Код</th><th>Наименование</th><th>Часов день</th><th>Часов ночь</th><th v-if="auth.isAdmin"></th></tr>
+              <tr>
+                <th>Код</th>
+                <th>Наименование</th>
+                <th>Часов день</th>
+                <th>Часов ночь</th>
+                <th style="min-width: 200px;">Направления</th>
+                <th v-if="auth.isAdmin"></th>
+              </tr>
             </thead>
             <tbody>
               <tr v-for="c in timeCodes" :key="c.id">
@@ -194,17 +204,40 @@
                 <td>{{ c.name }}</td>
                 <td>{{ c.hours_day }}</td>
                 <td>{{ c.hours_night }}</td>
-                <td v-if="auth.isAdmin"><v-btn size="x-small" icon="mdi-delete" color="red" variant="text" @click="deleteCode(c)" /></td>
+                <td>
+                  <v-chip v-for="dest in (c.destinations || [])" :key="dest" size="x-small" class="mr-1 mb-1">
+                    {{ summaryColumns.find(col => col.key === dest)?.label || dest }}
+                  </v-chip>
+                  <span v-if="!c.destinations || c.destinations.length === 0" class="text-grey text-caption">Не указано</span>
+                </td>
+                <td v-if="auth.isAdmin">
+                  <v-btn size="x-small" icon="mdi-delete" color="red" variant="text" @click="deleteCode(c)" />
+                </td>
               </tr>
             </tbody>
           </v-table>
+          
           <template v-if="auth.isAdmin">
-            <v-form @submit.prevent="addCode" class="d-flex mt-4" style="gap:8px;">
+            <v-form @submit.prevent="addCode" class="d-flex flex-wrap mt-4" style="gap:8px; align-items: flex-start;">
               <v-text-field v-model="newCode.code" label="Код" density="compact" variant="outlined" style="max-width:100px;" hide-details />
-              <v-text-field v-model="newCode.name" label="Наименование" density="compact" variant="outlined" hide-details />
-              <v-text-field v-model.number="newCode.hours_day" label="День" type="number" step="0.01" density="compact" variant="outlined" style="max-width:100px;" hide-details />
-              <v-text-field v-model.number="newCode.hours_night" label="Ночь" type="number" step="0.01" density="compact" variant="outlined" style="max-width:100px;" hide-details />
-              <v-btn color="#2d5a3d" type="submit" prepend-icon="mdi-plus">Добавить</v-btn>
+              <v-text-field v-model="newCode.name" label="Наименование" density="compact" variant="outlined" style="flex:1; min-width: 150px;" hide-details />
+              <v-text-field v-model.number="newCode.hours_day" label="День" type="number" step="0.01" density="compact" variant="outlined" style="max-width:80px;" hide-details />
+              <v-text-field v-model.number="newCode.hours_night" label="Ночь" type="number" step="0.01" density="compact" variant="outlined" style="max-width:80px;" hide-details />
+              
+              <v-select
+                v-model="newCode.destinations"
+                :items="summaryColumns.map(c => ({ title: c.label, value: c.key }))"
+                label="Куда попадет"
+                density="compact"
+                variant="outlined"
+                multiple
+                chips
+                closable-chips
+                style="min-width: 250px; flex: 2;"
+                hide-details
+              />
+              
+              <v-btn color="#2d5a3d" type="submit" prepend-icon="mdi-plus" class="align-self-end" style="height: 40px;">Добавить</v-btn>
             </v-form>
             <div v-if="codeError" class="text-red mt-2">{{ codeError }}</div>
           </template>
@@ -230,20 +263,44 @@ import { auth } from '../auth'
 
 const route = useRoute()
 const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+const dayOfWeekNames = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
 
 const tabel = ref(null)
 const timeCodes = ref([])
-const dirty = ref({})           // { "empId_day": value }
-const cellErrors = ref({})      // { "empId_day": true }
+const dirty = ref({})
+const cellErrors = ref({})
 const message = ref('')
 const messageType = ref('success')
 const saving = ref(false)
 
 const codesDialog = ref(false)
-const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0 })
+const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, destinations: [] })
 const codeError = ref('')
 
-// --- подсветка выходных и праздников (производственный календарь) ---
+// Итоговые колонки — полные названия для вертикальных заголовков
+const summaryColumns = [
+  { key: 'fact_days', label: 'фактической работы' },
+  { key: 'total_hours', label: 'Итого часов' },
+  { key: 'vacation', label: 'трудовой отпуск' },
+  { key: 'sick', label: 'болезнь' },
+  { key: 'admin_leave', label: 'с разрешения администрации' },
+  { key: 'weekend_holiday', label: 'выходные и праздн.' },
+  { key: 'other_absence', label: 'Другие неявки' },
+  { key: 'overtime_days', label: 'сверхурочные дни' },
+  { key: 'overtime_hours', label: 'Сверхурочные часы' },
+  { key: 'night_hours', label: 'ночные часы' },
+  { key: 'tariff_hours', label: 'Итого часов по участку' },
+  { key: 'kdu_work_days', label: 'КДУ УШН' },
+  { key: 'kdu_weekend_days', label: 'КДУ, вых. дни УШН' }
+]
+
+// Получить день недели для числа месяца
+function getDayOfWeek(day) {
+  if (!tabel.value) return ''
+  const date = new Date(tabel.value.year, tabel.value.month - 1, day)
+  return dayOfWeekNames[date.getDay()]
+}
+
 const weekendSet = computed(() => new Set(tabel.value?.weekend_days || []))
 const holidaySet = computed(() => new Set(tabel.value?.holiday_days || []))
 function isWeekend(d) { return weekendSet.value.has(d) }
@@ -252,11 +309,9 @@ function holidayName(d) {
   const n = tabel.value?.holiday_names?.[d]
   return n ? `${d}: ${n} — праздничный (нерабочий) день` : ''
 }
-// если ни одного праздника — скорее всего календарь на год ещё не загружен
 const calendarNotLoaded = computed(() =>
   !!tabel.value && (tabel.value.holiday_days?.length ?? 0) === 0)
 
-// --- поиск сотрудников в выпадающем списке ---
 const allEmployees = ref([])
 const selectedEmployee = ref(null)
 let addingInProgress = false
@@ -270,12 +325,10 @@ const employeeOptions = computed(() =>
 
 async function loadEmployees() {
   const { data } = await api.get('/tabels/search/employees', { params: { q: '' } })
-  // исключаем уже добавленных в табель
   const inTabel = new Set((tabel.value?.entries || []).map(r => r.employee_id))
   allEmployees.value = data.filter(e => !inTabel.has(e.id))
 }
 
-// выбор из списка сразу добавляет строку вниз таблицы
 async function onEmployeePicked(empId) {
   if (!empId || addingInProgress) return
   addingInProgress = true
@@ -296,15 +349,9 @@ function codeSet() {
   return new Set(timeCodes.value.map(c => c.code.toLowerCase()))
 }
 function isCodeText(v) {
-  // код из справочника (в т.ч. «8н», «8с») — подсвечиваем синим
   return !!v && codeSet().has(String(v).trim().toLowerCase())
 }
-function shortLabel(v) {
-  // в самой ячейке показываем только код/число, без длинного описания
-  return String(v ?? '')
-}
 
-// Часы в виде «8ч15м» для отображения в списке кодов (без дробей вида 8.25)
 function hoursToHM(h) {
   const total = Math.round((Number(h) || 0) * 60)
   if (!total) return '0м'
@@ -315,9 +362,6 @@ function hoursToHM(h) {
   return `${mm}м`
 }
 
-// Список для ячеек: только коды из справочника timeCodes.
-// Фильтр по началу строки: наберите «8» — останутся 8, 8н, 8с и т.д.
-// В названии часы показываются в формате «8ч15м», а не десятичной дробью.
 const cellItems = computed(() => {
   return timeCodes.value.map(c => {
     const h = (Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)
@@ -329,7 +373,6 @@ const cellItems = computed(() => {
   })
 })
 
-// поиск по началу кода/числа: «8» оставляет 8, 8н, 8с
 function cellFilter(value, query) {
   if (!query) return true
   const q = String(query).toLowerCase().replace(',', '.')
@@ -337,9 +380,8 @@ function cellFilter(value, query) {
   return v.startsWith(q) || v.includes(q)
 }
 
-const openCell = ref(null)      // "empId_day" — какая ячейка сейчас открыта
+const openCell = ref(null)
 const cellQuery = ref('')
-// координаты клика по ячейке — для позиционированного v-menu (открывается под курсором)
 const menuX = ref(0)
 const menuY = ref(0)
 
@@ -352,11 +394,9 @@ const filteredCellItems = computed(() => {
 function openCellPicker(empId, day, event) {
   const key = empId + '_' + day
   if (openCell.value === key) { openCell.value = null; return }
-  // запоминаем точку клика: меню с :positioned рендерится по этим координатам
   menuX.value = event?.clientX ?? 0
-  menuY.value = (event?.clientY ?? 0) + 24 // чуть ниже строки, чтобы не закрывать ячейку
+  menuY.value = (event?.clientY ?? 0) + 24
   openCell.value = key
-  // стартовый запрос = текущее значение ячейки (можно сразу перевыбрать похожее)
   const row = tabel.value.entries.find(r => r.employee_id === empId)
   cellQuery.value = row?.days[day] || ''
 }
@@ -370,10 +410,10 @@ function pickCellValue(empId, day, val) {
   openCell.value = null
   cellQuery.value = ''
 }
+
 function isValidValue(v) {
   if (!v || !v.trim()) return true
   const s = v.trim().replace(',', '.')
-  // сначала точное совпадение с кодом справочника (важно для «8н», «8с»)
   if (codeSet().has(s.toLowerCase())) return true
   if (/^\d{1,2}(\.\d{1,2})?$/.test(s)) {
     const n = parseFloat(s)
@@ -381,43 +421,38 @@ function isValidValue(v) {
   }
   return false
 }
+
 function hasError(empId, day) {
   return !!cellErrors.value[`${empId}_${day}`]
 }
+
 function validateCell(empId, day) {
   const key = `${empId}_${day}`
   const row = tabel.value.entries.find(r => r.employee_id === empId)
   if (row && !isValidValue(row.days[day])) cellErrors.value[key] = true
   else delete cellErrors.value[key]
 }
+
 function markDirty(empId, day) {
   const row = tabel.value.entries.find(r => r.employee_id === empId)
   dirty.value[`${empId}_${day}`] = row ? row.days[day] : ''
 }
-// Парсит значение ячейки в МИНУТЫ. Поддерживаются форматы:
-//  - десятичные доли часа: «8.25» = 8ч15м, «7.5» = 7ч30м
-//  - часо-минутный формат:  «8ч15м», «8:15», «8 15» = 8ч15м
-//  - коды из справочника:   суммируются часы дня + ночи
+
 function cellMinutes(v) {
   const s = String(v ?? '').trim().toLowerCase().replace(/,/g, '.')
   if (!s) return 0
-  // «8ч15м» / «8 ч 15 мин» / «8ч» / «15м»
   let m = s.match(/^(\d+)\s*ч\s*(\d+)?\s*м?$/)
   if (m) return parseInt(m[1]) * 60 + (m[2] ? parseInt(m[2]) : 0)
   m = s.match(/^(\d+)\s*м$/)
   if (m) return parseInt(m[1])
-  // «8:15»
   m = s.match(/^(\d+):([0-5]\d)$/)
   if (m) return parseInt(m[1]) * 60 + parseInt(m[2])
-  // число: доля после точки — это ДРОБЬ ЧАСА (0.15 ч = 9 мин), а не минуты
   if (/^\d+(\.\d+)?$/.test(s)) return Math.round(parseFloat(s) * 60)
-  // код из справочника — берём часы дня + ночи
   const c = timeCodes.value.find(x => x.code.toLowerCase() === s)
   if (c) return Math.round(((Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)) * 60)
   return 0
 }
 
-// Итог по строке: сумма часов в МИНУТАХ, результат — в виде «168ч15м»
 function totalHours(row) {
   let minutes = 0
   for (let d = 1; d <= tabel.value.days_in_month; d++) {
@@ -428,8 +463,49 @@ function totalHours(row) {
   return mm ? `${hh}ч${mm}м` : `${hh}ч`
 }
 
+function calculateSummary(row) {
+  const summary = {}
+  summaryColumns.forEach(col => summary[col.key] = 0)
+
+  for (let d = 1; d <= tabel.value.days_in_month; d++) {
+    const val = String(row.days[d] || '').trim()
+    if (!val) continue
+
+    if (/^\d{1,2}([.,]\d{1,2})?$/.test(val)) {
+      const num = parseFloat(val.replace(',', '.'))
+      summary.total_hours += num
+      summary.fact_days += 1
+      summary.tariff_hours += num
+      continue
+    }
+
+    const codeObj = timeCodes.value.find(c => c.code.toLowerCase() === val.toLowerCase())
+    if (codeObj) {
+      const hours = (Number(codeObj.hours_day) || 0) + (Number(codeObj.hours_night) || 0)
+      const dests = codeObj.destinations || []
+
+      dests.forEach(dest => {
+        if (summary.hasOwnProperty(dest)) {
+          const isDays = dest.includes('day') || dest.includes('дни') || dest.includes('days')
+          summary[dest] += isDays ? 1 : hours
+        }
+      })
+    }
+  }
+
+  for (const key in summary) {
+    if (key.includes('hours') || key.includes('час')) {
+      summary[key] = Math.round(summary[key] * 100) / 100
+    }
+    if (key.includes('day') || key.includes('дни') || key.includes('days')) {
+      summary[key] = Math.round(summary[key])
+    }
+  }
+
+  return summary
+}
+
 async function loadTabel() {
-  // id берём из маршрута; защищаемся от нечисловых значений (422 на бэкенде)
   const raw = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id
   const id = Number(raw)
   if (!Number.isInteger(id) || id <= 0) {
@@ -450,7 +526,6 @@ async function loadTabel() {
       : (status ? `Ошибка сервера ${status} при загрузке табеля` : 'Сеть недоступна')
     message.value = detail
     messageType.value = 'error'
-    // 401 — протух токен: на страницу входа
     if (status === 401 && auth.isAuthenticated?.()) {
       auth.logout?.()
       window.location.href = '/login'
@@ -507,8 +582,6 @@ function codesForRow(row) {
 }
 
 async function loadCodes() {
-  // Чтение справочника «Коды часов» доступно всем авторизованным;
-  // изменение/удаление записей — только Администратору (проверяется на бэкенде).
   try {
     const { data } = await api.get('/time-codes/')
     timeCodes.value = Array.isArray(data) ? data : []
@@ -516,24 +589,25 @@ async function loadCodes() {
     console.error('Не удалось загрузить справочник кодов часов', e)
   }
 }
+
 async function addCode() {
   codeError.value = ''
   try {
     await api.post('/time-codes/', newCode.value)
-    newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0 }
+    newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0, destinations: [] }
     await loadCodes()
   } catch (e) {
     codeError.value = typeof e.response?.data?.detail === 'string'
       ? e.response.data.detail : 'Ошибка добавления кода'
   }
 }
+
 async function deleteCode(c) {
   if (!confirm(`Удалить код «${c.code}»?`)) return
   await api.delete(`/time-codes/${c.id}`)
   await loadCodes()
 }
 
-// автосохранение каждые 30 сек, если есть несохранённые изменения
 setInterval(() => { if (Object.keys(dirty.value).length) save(false) }, 30000)
 
 onMounted(async () => {
@@ -545,63 +619,200 @@ onMounted(async () => {
 <style scoped>
 .tabel-table {
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .tabel-table th, .tabel-table td {
-  border: 1px solid #c8e6c9;
+  border: 1px solid #000;
   padding: 2px;
 }
+
+/* Шапка таблицы */
 .tabel-table thead th {
-  background-color: #2d5a3d !important;
-  color: white !important;
-  position: sticky;
-  top: 0;
-  z-index: 3;
+  background-color: white !important;
+  color: black !important;
+  font-weight: bold;
+  text-align: center;
+  vertical-align: middle;
 }
-.col-no { width: 36px; text-align: center; }
-.col-fio { min-width: 220px; text-align: left; padding-left: 8px !important; }
-.col-day { width: 42px; text-align: center; }
-.col-sum { width: 60px; }
-/* подсветка выходных/праздников: заголовок дня и ячейки */
-.day-weekend { background-color: #b71c1c !important; color: #ffebee !important; }
-.day-holiday { background-color: #f9a825 !important; color: #4e342e !important; }
-.holiday-mark { font-size: 10px; margin-left: 1px; vertical-align: top; }
-.cell-weekend { background-color: #ffebee; }
-.cell-holiday { background-color: #fff8e1; }
-.legend-box { display: inline-block; width: 14px; height: 14px; border-radius: 3px;
-              border: 1px solid #c8e6c9; vertical-align: middle; margin-right: 4px; }
-.legend-weekend { background-color: #ffebee; }
-.legend-holiday { background-color: #fff8e1; }
-.sticky-col { position: sticky; left: 0; background: #f1f8e9; z-index: 2; }
-.sticky-col2 { position: sticky; left: 36px; background: #f1f8e9; z-index: 2; }
-thead .sticky-col, thead .sticky-col2 { z-index: 4; background: #2d5a3d !important; }
-/* ячейка табеля: фиксированная высота — значение остаётся в своей ячейке,
-   строки не «съезжают» при выборе */
-.cell-wrap { position: relative; width: 100%; height: 26px; }
+
+.col-no { 
+  width: 40px; 
+  text-align: center;
+  font-size: 11px;
+}
+
+.col-fio { 
+  min-width: 200px; 
+  text-align: left; 
+  padding-left: 6px !important;
+}
+
+/* Заголовок "Дни недели" */
+.col-days-header {
+  font-size: 13px;
+  font-weight: bold;
+  padding: 4px !important;
+}
+
+/* Ячейки дней в шапке */
+.col-day-header {
+  width: 38px;
+  min-width: 38px;
+  max-width: 38px;
+  padding: 2px 1px !important;
+  font-size: 10px;
+}
+
+.day-name {
+  font-size: 9px;
+  font-weight: normal;
+  color: #666;
+}
+
+.day-number {
+  font-size: 11px;
+  font-weight: bold;
+}
+
+/* Выходные и праздники в шапке */
+.day-weekend-header {
+  background-color: #f0f0f0 !important;
+}
+
+.day-holiday-header {
+  background-color: #fff3cd !important;
+}
+
+/* Итоговые колонки — вертикальные заголовки */
+.col-summary-header {
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  padding: 8px 2px !important;
+  font-size: 10px;
+  font-weight: bold;
+  text-align: center;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  vertical-align: middle;
+  background-color: white !important;
+  border-left: 1px solid #000 !important;
+}
+
+/* Ячейки итоговых значений */
+.col-summary-cell {
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  padding: 2px 1px !important;
+  font-size: 11px;
+  font-weight: normal;
+  text-align: center;
+  background-color: white !important;
+  border-left: 1px solid #000 !important;
+}
+
+.col-del { 
+  width: 40px;
+  background-color: white !important;
+}
+
+/* Ячейки дней */
+.cell-day {
+  width: 38px;
+  min-width: 38px;
+  max-width: 38px;
+  padding: 2px !important;
+}
+
+.cell-weekend { 
+  background-color: #f0f0f0; 
+}
+
+.cell-holiday { 
+  background-color: #fff3cd; 
+}
+
+.holiday-mark { 
+  font-size: 10px; 
+  margin-left: 1px; 
+  vertical-align: top; 
+}
+
+.legend-box { 
+  display: inline-block; 
+  width: 14px; 
+  height: 14px; 
+  border-radius: 3px;
+  border: 1px solid #c8e6c9; 
+  vertical-align: middle; 
+  margin-right: 4px; 
+}
+
+.legend-weekend { 
+  background-color: #f0f0f0; 
+}
+
+.legend-holiday { 
+  background-color: #fff3cd; 
+}
+
+/* Ячейка табеля */
+.cell-wrap { 
+  position: relative; 
+  width: 100%; 
+  height: 24px; 
+}
+
 .cell-input {
   width: 100%;
-  height: 26px;
+  height: 24px;
   box-sizing: border-box;
   border: none;
   outline: none;
   background: transparent;
   text-align: center;
-  font-size: 13px;
+  font-size: 12px;
   font-family: inherit;
   cursor: pointer;
   color: rgba(0, 0, 0, 0.87);
 }
-.cell-input:hover { background: #e8f5e9; }
-.cell-wrap.is-open .cell-input { background: #e8f5e9; box-shadow: inset 0 0 0 2px #2d5a3d; }
-.cell-text { font-size: 13px; }
-.is-code { color: #1565c0; font-weight: bold; }
-.is-error, .is-error-cell { background: #ffebee !important; outline: 2px solid red; }
-.add-row td { border-top: 2px dashed #a5d6a7; background: #f9fbe7; }
-.add-cell { padding: 6px 8px !important; }
+
+.cell-input:hover { 
+  background: #e8f5e9; 
+}
+
+.cell-wrap.is-open .cell-input { 
+  background: #e8f5e9; 
+  box-shadow: inset 0 0 0 2px #2d5a3d; 
+}
+
+.is-code { 
+  color: #1565c0; 
+  font-weight: bold; 
+}
+
+.is-error, .is-error-cell { 
+  background: #ffebee !important; 
+  outline: 2px solid red; 
+}
+
+.add-row td { 
+  border-top: 2px dashed #a5d6a7; 
+  background: #f9fbe7; 
+}
+
+.add-cell { 
+  padding: 6px 8px !important; 
+}
 </style>
 
 <style>
-/* меню выбора значения ячейки (v-menu рендерится вне scoped-области) */
-.cell-menu .v-overlay__content { background: white; border-radius: 8px; }
+.cell-menu .v-overlay__content { 
+  background: white; 
+  border-radius: 8px; 
+}
 </style>
