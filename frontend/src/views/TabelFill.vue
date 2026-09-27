@@ -65,10 +65,16 @@
                   tabindex="-1"
                   @click="openCellPicker(row.employee_id, d, $event)"
                 />
+                <!-- Меню позиционируется по координатам клика (:positioned + left/top):
+                     открывается прямо под ячейкой, а не «открепляется» в случайное место.
+                     :attach="false" убран — он ломал позиционирование -->
                 <v-menu
                   :model-value="openCell === row.employee_id + '_' + d"
-                  :location="'bottom'"
-                  :attach="false"
+                  :positioned="true"
+                  :style="{ left: menuX + 'px', top: menuY + 'px' }"
+                  :scrim="false"
+                  :hide-scroll="false"
+                  :min-width="260"
                   content-class="cell-menu"
                   max-height="320"
                   @update:model-value="(v) => { if (!v) openCell = null }"
@@ -317,6 +323,9 @@ function cellFilter(value, query) {
 
 const openCell = ref(null)      // "empId_day" — какая ячейка сейчас открыта
 const cellQuery = ref('')
+// координаты клика по ячейке — для позиционированного v-menu (открывается под курсором)
+const menuX = ref(0)
+const menuY = ref(0)
 
 const filteredCellItems = computed(() => {
   const q = cellQuery.value.trim().toLowerCase().replace(',', '.')
@@ -324,9 +333,12 @@ const filteredCellItems = computed(() => {
   return cellItems.value.filter(it => cellFilter(it.value, q))
 })
 
-function openCellPicker(empId, day) {
+function openCellPicker(empId, day, event) {
   const key = empId + '_' + day
   if (openCell.value === key) { openCell.value = null; return }
+  // запоминаем точку клика: меню с :positioned рендерится по этим координатам
+  menuX.value = event?.clientX ?? 0
+  menuY.value = (event?.clientY ?? 0) + 24 // чуть ниже строки, чтобы не закрывать ячейку
   openCell.value = key
   // стартовый запрос = текущее значение ячейки (можно сразу перевыбрать похожее)
   const row = tabel.value.entries.find(r => r.employee_id === empId)
