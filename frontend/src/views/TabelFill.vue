@@ -298,18 +298,13 @@ function shortLabel(v) {
   return String(v ?? '')
 }
 
-// Список для ячеек: все коды часов + типовые значения часов.
+// Список для ячеек: только коды из справочника timeCodes.
 // v-autocomplete фильтрует его по подстроке начала: наберите «8» — останутся 8, 8н, 8с и т.д.
 const cellItems = computed(() => {
-  const items = timeCodes.value.map(c => ({
+  return timeCodes.value.map(c => ({
     title: `${c.code} — ${c.name} (день ${c.hours_day} / ночь ${c.hours_night})`,
     value: c.code,
   }))
-  for (const h of [0.25, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 23.59]) {
-    const s = String(h).replace('.', ',')
-    items.push({ title: `${s} ч.`, value: s })
-  }
-  return items
 })
 
 // поиск по началу кода/числа: «8» оставляет 8, 8н, 8с
