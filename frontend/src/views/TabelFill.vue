@@ -394,21 +394,34 @@ function markDirty(empId, day) {
   const row = tabel.value.entries.find(r => r.employee_id === empId)
   dirty.value[`${empId}_${day}`] = row ? row.days[day] : ''
 }
-// Итог по строке: сумма часов в МИНУТАХ (чтобы «8ч15м» не превращалось в 8.15 или 8.25),
-// результат показываем в виде «166ч30м»
+// Парсит значение ячейки в МИНУТЫ. Поддерживаются форматы:
+//  - десятичные доли часа: «8.25» = 8ч15м, «7.5» = 7ч30м
+//  - часо-минутный формат:  «8ч15м», «8:15», «8 15» = 8ч15м
+//  - коды из справочника:   суммируются часы дня + ночи
+function cellMinutes(v) {
+  const s = String(v ?? '').trim().toLowerCase().replace(/,/g, '.')
+  if (!s) return 0
+  // «8ч15м» / «8 ч 15 мин» / «8ч» / «15м»
+  let m = s.match(/^(\d+)\s*ч\s*(\d+)?\s*м?$/)
+  if (m) return parseInt(m[1]) * 60 + (m[2] ? parseInt(m[2]) : 0)
+  m = s.match(/^(\d+)\s*м$/)
+  if (m) return parseInt(m[1])
+  // «8:15»
+  m = s.match(/^(\d+):([0-5]\d)$/)
+  if (m) return parseInt(m[1]) * 60 + parseInt(m[2])
+  // число: доля после точки — это ДРОБЬ ЧАСА (0.15 ч = 9 мин), а не минуты
+  if (/^\d+(\.\d+)?$/.test(s)) return Math.round(parseFloat(s) * 60)
+  // код из справочника — берём часы дня + ночи
+  const c = timeCodes.value.find(x => x.code.toLowerCase() === s)
+  if (c) return Math.round(((Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)) * 60)
+  return 0
+}
+
+// Итог по строке: сумма часов в МИНУТАХ, результат — в виде «168ч15м»
 function totalHours(row) {
   let minutes = 0
   for (let d = 1; d <= tabel.value.days_in_month; d++) {
-    const v = (row.days[d] || '').trim().replace(',', '.')
-    if (!v) continue
-    // число часов: «8.5» = 8ч30м
-    if (/^\d+(\.\d+)?$/.test(v)) {
-      minutes += Math.round(parseFloat(v) * 60)
-    } else {
-      // код из справочника — берём часы дня + ночи
-      const c = timeCodes.value.find(x => x.code.toLowerCase() === v.toLowerCase())
-      if (c) minutes += Math.round(((Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)) * 60)
-    }
+    minutes += cellMinutes(row.days[d])
   }
   const hh = Math.floor(minutes / 60)
   const mm = minutes % 60
