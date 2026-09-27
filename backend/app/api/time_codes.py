@@ -18,6 +18,7 @@ class TimeCodeBase(BaseModel):
     name: str
     hours_day: float = 0.0
     hours_night: float = 0.0
+    destinations: List[str] = []
     is_active: bool = True
 
     @field_validator("code")
@@ -78,22 +79,25 @@ def create_time_code(payload: TimeCodeCreate, db: Session = Depends(get_db),
     return obj
 
 
-@router.put("/{code_id}", response_model=TimeCodeOut)
-def update_time_code(code_id: int, payload: TimeCodeUpdate, db: Session = Depends(get_db),
-                     user: User = Depends(require_admin)):
-    obj = db.query(TimeCode).filter(TimeCode.id == code_id).first()
-    if not obj:
+@router.put("/{code_id}")  # <-- ВАЖНО: здесь НЕТ response_model
+def update_time_code(
+    code_id: int,
+    code_data: dict,  # Принимаем как словарь для гибкости
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    db_code = db.query(TimeCode).filter(TimeCode.id == code_id).first()
+    if not db_code:
         raise HTTPException(status_code=404, detail="Код не найден")
-    data = payload.model_dump(exclude_unset=True)
-    if "code" in data and data["code"]:
-        data["code"] = data["code"].strip()
-        if db.query(TimeCode).filter(TimeCode.code == data["code"], TimeCode.id != code_id).first():
-            raise HTTPException(status_code=400, detail="Такой код уже существует")
-    for k, v in data.items():
-        setattr(obj, k, v)
+    
+    db_code.name = code_data.get("name", db_code.name)
+    db_code.hours_day = code_data.get("hours_day", db_code.hours_day)
+    db_code.hours_night = code_data.get("hours_night", db_code.hours_night)
+    db_code.destinations = code_data.get("destinations", db_code.destinations)
+    
     db.commit()
-    db.refresh(obj)
-    return obj
+    db.refresh(db_code)
+    return db_code
 
 
 @router.delete("/{code_id}")
@@ -105,3 +109,25 @@ def delete_time_code(code_id: int, db: Session = Depends(get_db),
     db.delete(obj)
     db.commit()
     return {"ok": True}
+
+@router.put("/{code_id}")  # <--- Убрали response_model, чтобы избежать конфликта типов
+def update_time_code(
+    code_id: int,
+    code_data: dict,  # Принимаем как dict или используйте вашу схему, например TimeCodeCreate
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    db_code = db.query(TimeCode).filter(TimeCode.id == code_id).first()
+    if not db_code:
+        raise HTTPException(status_code=404, detail="Код не найден")
+    
+    # Если code_data это Pydantic модель, используем code_data.name, если dict - code_data.get("name")
+    # Для надежности используем getattr или прямое обращение, если это Pydantic схема:
+    db_code.name = getattr(code_data, 'name', code_data.get('name'))
+    db_code.hours_day = getattr(code_data, 'hours_day', code_data.get('hours_day'))
+    db_code.hours_night = getattr(code_data, 'hours_night', code_data.get('hours_night'))
+    db_code.destinations = getattr(code_data, 'destinations', code_data.get('destinations', []))
+    
+    db.commit()
+    db.refresh(db_code)
+    return db_code
