@@ -78,23 +78,22 @@ def create_time_code(payload: TimeCodeCreate, db: Session = Depends(get_db),
     db.refresh(obj)
     return obj
 
-
-@router.put("/{code_id}")  # <-- ВАЖНО: здесь НЕТ response_model
+@router.put("/{code_id}")
 def update_time_code(
     code_id: int,
-    code_data: dict,  # Принимаем как словарь для гибкости
+    code_data: dict,  # принимаем словарь для гибкости частичного обновления
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
+    """Обновление кода часов — только Администратору."""
     db_code = db.query(TimeCode).filter(TimeCode.id == code_id).first()
     if not db_code:
         raise HTTPException(status_code=404, detail="Код не найден")
-    
-    db_code.name = code_data.get("name", db_code.name)
-    db_code.hours_day = code_data.get("hours_day", db_code.hours_day)
-    db_code.hours_night = code_data.get("hours_night", db_code.hours_night)
-    db_code.destinations = code_data.get("destinations", db_code.destinations)
-    
+
+    for field in ("name", "hours_day", "hours_night", "is_active", "destinations"):
+        if field in code_data:
+            setattr(db_code, field, code_data[field])
+
     db.commit()
     db.refresh(db_code)
     return db_code
@@ -109,25 +108,3 @@ def delete_time_code(code_id: int, db: Session = Depends(get_db),
     db.delete(obj)
     db.commit()
     return {"ok": True}
-
-@router.put("/{code_id}")  # <--- Убрали response_model, чтобы избежать конфликта типов
-def update_time_code(
-    code_id: int,
-    code_data: dict,  # Принимаем как dict или используйте вашу схему, например TimeCodeCreate
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    db_code = db.query(TimeCode).filter(TimeCode.id == code_id).first()
-    if not db_code:
-        raise HTTPException(status_code=404, detail="Код не найден")
-    
-    # Если code_data это Pydantic модель, используем code_data.name, если dict - code_data.get("name")
-    # Для надежности используем getattr или прямое обращение, если это Pydantic схема:
-    db_code.name = getattr(code_data, 'name', code_data.get('name'))
-    db_code.hours_day = getattr(code_data, 'hours_day', code_data.get('hours_day'))
-    db_code.hours_night = getattr(code_data, 'hours_night', code_data.get('hours_night'))
-    db_code.destinations = getattr(code_data, 'destinations', code_data.get('destinations', []))
-    
-    db.commit()
-    db.refresh(db_code)
-    return db_code
