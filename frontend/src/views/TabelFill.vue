@@ -304,13 +304,29 @@ function shortLabel(v) {
   return String(v ?? '')
 }
 
+// Часы в виде «8ч15м» для отображения в списке кодов (без дробей вида 8.25)
+function hoursToHM(h) {
+  const total = Math.round((Number(h) || 0) * 60)
+  if (!total) return '0м'
+  const hh = Math.floor(total / 60)
+  const mm = total % 60
+  if (hh && mm) return `${hh}ч${mm}м`
+  if (hh) return `${hh}ч`
+  return `${mm}м`
+}
+
 // Список для ячеек: только коды из справочника timeCodes.
-// v-autocomplete фильтрует его по подстроке начала: наберите «8» — останутся 8, 8н, 8с и т.д.
+// Фильтр по началу строки: наберите «8» — останутся 8, 8н, 8с и т.д.
+// В названии часы показываются в формате «8ч15м», а не десятичной дробью.
 const cellItems = computed(() => {
-  return timeCodes.value.map(c => ({
-    title: `${c.code} — ${c.name} (день ${c.hours_day} / ночь ${c.hours_night})`,
-    value: c.code,
-  }))
+  return timeCodes.value.map(c => {
+    const h = (Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)
+    const hrs = h ? ` (${hoursToHM(h)})` : ''
+    return {
+      title: `${c.code} — ${c.name}${hrs}`,
+      value: c.code,
+    }
+  })
 })
 
 // поиск по началу кода/числа: «8» оставляет 8, 8н, 8с
@@ -378,17 +394,25 @@ function markDirty(empId, day) {
   const row = tabel.value.entries.find(r => r.employee_id === empId)
   dirty.value[`${empId}_${day}`] = row ? row.days[day] : ''
 }
+// Итог по строке: сумма часов в МИНУТАХ (чтобы «8ч15м» не превращалось в 8.15 или 8.25),
+// результат показываем в виде «166ч30м»
 function totalHours(row) {
-  let sum = 0
+  let minutes = 0
   for (let d = 1; d <= tabel.value.days_in_month; d++) {
     const v = (row.days[d] || '').trim().replace(',', '.')
-    if (/^\d+(\.\d+)?$/.test(v)) sum += parseFloat(v)
-    else if (v) {
+    if (!v) continue
+    // число часов: «8.5» = 8ч30м
+    if (/^\d+(\.\d+)?$/.test(v)) {
+      minutes += Math.round(parseFloat(v) * 60)
+    } else {
+      // код из справочника — берём часы дня + ночи
       const c = timeCodes.value.find(x => x.code.toLowerCase() === v.toLowerCase())
-      if (c) sum += (c.hours_day || 0) + (c.hours_night || 0)
+      if (c) minutes += Math.round(((Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)) * 60)
     }
   }
-  return Math.round(sum * 100) / 100
+  const hh = Math.floor(minutes / 60)
+  const mm = minutes % 60
+  return mm ? `${hh}ч${mm}м` : `${hh}ч`
 }
 
 async function loadTabel() {
