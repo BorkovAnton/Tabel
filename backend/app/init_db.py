@@ -11,6 +11,7 @@ MIGRATIONS = [
     ("tabel_entries", "position", "INTEGER DEFAULT 0"),
     ("users", "is_user", "BOOLEAN NOT NULL DEFAULT TRUE"),
     ("users", "allowed_departments", "TEXT DEFAULT ''"),
+    ("users", "is_report", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 

@@ -25,6 +25,10 @@ export const auth = reactive({
   get isHR() {
     return !!this.user && !!this.user.is_hr
   },
+  // Роль «Отчёт»: страница сводного отчёта часов (табель vs факт)
+  get isReport() {
+    return !!this.user && (!!this.user.is_report || !!this.user.is_admin || !!this.user.is_hr)
+  },
   // Только Администратор: справочник «Коды часов», пользователи и роли
   get isAdmin() {
     return !!this.user && !!this.user.is_admin

@@ -58,6 +58,7 @@ class UserOut(BaseModel):
     is_hr: bool
     timesheet_inspector: bool
     is_user: bool = True
+    is_report: bool = False
     allowed_departments: str = ""   # JSON-список id подразделений или "*" — все
 
     class Config:
@@ -78,6 +79,7 @@ class UserCreate(BaseModel):
     is_hr: bool = False
     timesheet_inspector: bool = False
     is_user: bool = True
+    is_report: bool = False
     allowed_departments: str = ""
 
 
@@ -88,6 +90,7 @@ class UserUpdate(BaseModel):
     is_hr: Optional[bool] = None
     timesheet_inspector: Optional[bool] = None
     is_user: Optional[bool] = None
+    is_report: Optional[bool] = None
     allowed_departments: Optional[str] = None
 
 

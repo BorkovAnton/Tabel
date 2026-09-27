@@ -18,6 +18,7 @@ class User(Base):
     is_hr: Mapped[bool] = mapped_column(Boolean, default=False)             # Кадровик
     timesheet_inspector: Mapped[bool] = mapped_column(Boolean, default=False)  # Инспектор табелей
     is_user: Mapped[bool] = mapped_column(Boolean, default=True)            # Пользователь (базовая роль)
+    is_report: Mapped[bool] = mapped_column(Boolean, default=False)         # Отчёт (страница сводного отчёта часов)
 
     # Права на подразделения: JSON-список id, напр. "[3, 7]".
     # Пусто/NULL — подразделений нет; "*" — все подразделения.

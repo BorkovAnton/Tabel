@@ -90,7 +90,7 @@ def allowed_department_id_set(user: User, db: Session) -> set[int] | None:
     """
     from app.models.department import Department
 
-    if user.is_admin or user.is_hr or user.timesheet_inspector or user.all_departments_allowed:
+    if user.is_admin or user.is_hr or user.timesheet_inspector or user.is_report or user.all_departments_allowed:
         return None
     base_ids = set(user.allowed_department_ids)
     if not base_ids:

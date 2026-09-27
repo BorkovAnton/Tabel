@@ -11,6 +11,7 @@ import Login from '../views/Login.vue'
 import Tabels from '../views/Tabels.vue'
 import TabelFill from '../views/TabelFill.vue'
 import Users from '../views/Users.vue'
+import HoursReport from '../views/HoursReport.vue'
 
 const routes = [
   // Модуль «Табель»: авторизация обязательна
@@ -18,6 +19,8 @@ const routes = [
   { path: '/tabels', name: 'Tabels', component: Tabels, meta: { requiresAuth: true } },
   { path: '/tabels/:id', name: 'TabelFill', component: TabelFill, meta: { requiresAuth: true } },
   { path: '/users', name: 'Users', component: Users, meta: { requiresAuth: true, requiresAdmin: true } },
+  // Сводный отчёт часов — роль «Отчёт» (а также администратор/кадровик)
+  { path: '/hours-report', name: 'HoursReport', component: HoursReport, meta: { requiresAuth: true, requiresReport: true } },
 
   { path: '/', name: 'Home', component: Home },
   { path: '/employees', name: 'Employees', component: Employees },
@@ -57,6 +60,13 @@ router.beforeEach((to) => {
     let user = null
     try { user = JSON.parse(localStorage.getItem('user') || 'null') } catch (e) { /* noop */ }
     if (!user || !user.is_admin) {
+      return { name: 'Tabels' }
+    }
+  }
+  if (to.meta.requiresReport) {
+    let user = null
+    try { user = JSON.parse(localStorage.getItem('user') || 'null') } catch (e) { /* noop */ }
+    if (!user || !(user.is_report || user.is_admin || user.is_hr)) {
       return { name: 'Tabels' }
     }
   }
