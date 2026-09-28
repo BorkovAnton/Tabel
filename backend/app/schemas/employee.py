@@ -11,6 +11,7 @@ class EmployeeCreate(BaseModel):
 
 
 class EmployeeUpdate(BaseModel):
+    tab_number: Optional[str] = None
     full_name: Optional[str] = None
     department_id: Optional[int] = None
     schedule_id: Optional[int] = None

@@ -15,7 +15,8 @@ from app.schemas.employee import (
     EmployeeImportResponse,
     EmployeeImportStats,
     EmployeeImportError,
-    EmployeeCreate
+    EmployeeCreate,
+    EmployeeUpdate
 )
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
@@ -99,6 +100,68 @@ def create_employee(
     db.refresh(new_employee)
     
     return new_employee
+
+@router.patch("/{employee_id}", response_model=EmployeeResponse)
+def update_employee(
+    employee_id: int,
+    employee_update: EmployeeUpdate,
+    db: Session = Depends(get_db),
+):
+    """Частичное обновление сотрудника (ФИО, подразделение, график)."""
+    emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+
+    data = employee_update.model_dump(exclude_unset=True)
+
+    # Если меняется табельный номер — проверяем уникальность
+    new_tab = data.get("tab_number")
+    if new_tab and new_tab != emp.tab_number:
+        existing = db.query(Employee).filter(
+            Employee.tab_number == new_tab,
+            Employee.id != employee_id
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Сотрудник с табельным номером {new_tab} уже существует"
+            )
+
+    for field, value in data.items():
+        setattr(emp, field, value)
+
+    db.commit()
+    db.refresh(emp)
+
+    dept_name = None
+    if emp.department_id:
+        dept = db.query(Department).filter(Department.id == emp.department_id).first()
+        if dept:
+            dept_name = dept.name
+
+    return {
+        "id": emp.id,
+        "tab_number": emp.tab_number,
+        "full_name": emp.full_name,
+        "department_id": emp.department_id,
+        "schedule_id": emp.schedule_id,
+        "department_name": dept_name,
+    }
+
+
+@router.delete("/{employee_id}")
+def delete_employee(
+    employee_id: int,
+    db: Session = Depends(get_db),
+):
+    """Удалить сотрудника."""
+    emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    db.delete(emp)
+    db.commit()
+    return {"ok": True}
+
 
 @router.post("/import", response_model=EmployeeImportResponse)
 async def import_employees_from_excel(
