@@ -36,17 +36,37 @@
             ></v-select>
           </v-col>
           <v-col cols="12" md="3">
-            <v-select
+            <v-autocomplete
               v-model="selectedDepartment"
-              :items="departments"
-              item-title="name"
+              :items="sortedDepartments"
+              item-title="title"
               item-value="id"
               label="Подразделение"
               variant="outlined"
               density="comfortable"
               clearable
               prepend-inner-icon="mdi-office-building"
-            ></v-select>
+              placeholder="Начните вводить название…"
+              no-data-text="Подразделение не найдено"
+            >
+              <template #item="{ props, item }">
+                <v-list-item v-bind="props" :title="item.raw.name">
+                  <template #prepend>
+                    <v-icon icon="mdi-office-building" size="small" class="mr-2" />
+                  </template>
+                  <template #append>
+                    <v-chip
+                      v-if="item.raw.employee_count != null"
+                      size="x-small"
+                      variant="tonal"
+                      color="grey"
+                    >
+                      {{ item.raw.employee_count }} сотр.
+                    </v-chip>
+                  </template>
+                </v-list-item>
+              </template>
+            </v-autocomplete>
           </v-col>
           <v-col cols="12" md="3" class="d-flex align-end">
             <v-btn 
@@ -191,6 +211,15 @@ const months = ref([
 ])
 const currentYear = new Date().getFullYear()
 const years = ref(Array.from({ length: 7 }, (_, i) => currentYear - 3 + i))
+
+// Подразделения: сортировка по алфавиту (регистронезависимо).
+// В title кладём также имя — v-autocomplete фильтрует по подстроке регистронезависимо,
+// поэтому «швейн» найдёт «Участок швейных».
+const sortedDepartments = computed(() => {
+  return [...departments.value]
+    .sort((a, b) => a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' }))
+    .map(d => ({ ...d, title: d.name }))
+})
 
 // Вычисляемые значения
 const totalHours = computed(() => {
