@@ -2,20 +2,43 @@
   <div style="padding: 20px;">
     <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 20px;">Сотрудники</h1>
 
-    <button 
-      @click="openAddDialog" 
-      style="background: #1976d2; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 20px; font-size: 14px;"
-    >
-      + Добавить сотрудника
-    </button>
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+      <div style="position: relative; flex: 1; min-width: 260px; max-width: 420px;">
+        <input
+          v-model="searchInput"
+          type="text"
+          placeholder="Поиск: ФИО, табельный номер или подразделение (мин. 2 символа)"
+          style="width: 100%; padding: 10px 32px 10px 12px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 14px;"
+        />
+        <button
+          v-if="searchInput"
+          @click="clearSearch"
+          title="Очистить поиск"
+          style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 16px; color: #999; line-height: 1; padding: 4px;"
+        >×</button>
+      </div>
+
+      <span v-if="searching" style="font-size: 13px; color: #1976d2;">🔍 Поиск...</span>
+
+      <button 
+        @click="openAddDialog" 
+        style="background: #1976d2; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;"
+      >
+        + Добавить сотрудника
+      </button>
+    </div>
 
     <div v-if="error" style="background: #ffebee; color: #c62828; padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; border: 1px solid #ffcdd2;">
       {{ error }}
       <button @click="error = ''" style="float: right; background: none; border: none; cursor: pointer; font-size: 18px;">×</button>
     </div>
 
-    <div v-if="loading" style="padding: 20px; text-align: center;">Загрузка...</div>
+    <div v-if="loading || searching" style="padding: 20px; text-align: center;">Загрузка...</div>
     
+    <div v-else-if="employees.length === 0 && search" style="padding: 20px; text-align: center; color: gray;">
+      Ничего не найдено по запросу «{{ search }}»
+    </div>
+
     <div v-else-if="employees.length === 0" style="padding: 20px; text-align: center; color: gray;">
       Нет сотрудников
     </div>
@@ -235,7 +258,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import api from '../api'
 
 const employees = ref([])
@@ -255,6 +278,34 @@ const departmentId = ref(null)
 const scheduleId = ref(null)
 const itemsPerPage = ref(10)
 const currentPage = ref(1)
+
+// Поиск
+const searchInput = ref('')   // то, что введено в поле (немедленно)
+const search = ref('')        // актуальный запрос после debounce
+const searching = ref(false)  // индикатор загрузки поиска
+let searchTimer = null
+
+watch(searchInput, (val) => {
+  // Сброс пагинации на 1 страницу при изменении поискового запроса
+  currentPage.value = 1
+  // Debounce 300 мс — не дёргаем API при каждом нажатии клавиши
+  if (searchTimer) clearTimeout(searchTimer)
+  searching.value = true
+  searchTimer = setTimeout(() => {
+    search.value = val.trim()
+    searching.value = false
+    loadEmployees()
+  }, 300)
+})
+
+function clearSearch() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchInput.value = ''
+  search.value = ''
+  searching.value = false
+  currentPage.value = 1
+  loadEmployees()
+}
 
 // Вычисляемые свойства для пагинации
 const totalPages = computed(() => Math.ceil(employees.value.length / itemsPerPage.value))
@@ -301,7 +352,12 @@ async function loadEmployees() {
   loading.value = true
   error.value = ''
   try {
-    const response = await api.get('/employees/')
+    const params = {}
+    // Поиск запускаем только при минимуме 2 символа
+    if (search.value && search.value.length >= 2) {
+      params.search = search.value
+    }
+    const response = await api.get('/employees/', { params })
     employees.value = response.data
   } catch (e) {
     error.value = 'Ошибка загрузки списка сотрудников'

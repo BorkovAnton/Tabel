@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from sqlalchemy import or_, and_, func
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import pandas as pd
 import io
 
@@ -21,9 +22,33 @@ router = APIRouter(prefix="/employees", tags=["Employees"])
 
 
 @router.get("/", response_model=List[EmployeeResponse])
-def get_employees(skip: int = 0, limit: int = 3000, db: Session = Depends(get_db)):
-    """Получить список всех сотрудников с пагинацией"""
-    employees = db.query(Employee).offset(skip).limit(limit).all()
+def get_employees(
+    skip: int = 0,
+    limit: int = 3000,
+    search: Optional[str] = Query(None, description="Поиск по ФИО / таб. номеру / подразделению"),
+    db: Session = Depends(get_db),
+):
+    """Получить список сотрудников с пагинацией и поиском.
+
+    Логика поиска (минимум 2 символа):
+      - ФИО — по началу строки;
+      - табельный номер — точное совпадение или по началу строки;
+      - название подразделения — по подстроке.
+    """
+    query = db.query(Employee)
+
+    if search and len(search.strip()) >= 2:
+        q = search.strip()
+        query = query.outerjoin(Department, Employee.department_id == Department.id).filter(
+            or_(
+                Employee.full_name.ilike(f"{q}%"),
+                Employee.tab_number == q,
+                Employee.tab_number.ilike(f"{q}%"),
+                Department.name.ilike(f"%{q}%"),
+            )
+        )
+
+    employees = query.offset(skip).limit(limit).all()
     
     # Добавляем названия подразделений
     result = []
