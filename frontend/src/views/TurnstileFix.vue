@@ -179,41 +179,99 @@
     </v-card>
 
     <!-- Диалог связывания ФИО -->
-    <v-dialog v-model="linkDialog" max-width="500">
+    <v-dialog v-model="linkDialog" max-width="700">
       <v-card>
-        <v-card-title>Связать ФИО с сотрудником</v-card-title>
+        <v-card-title>Связать «{{ selectedName?.raw_name }}» ({{ selectedName?.count }} записей)</v-card-title>
         <v-card-text>
-          <p class="mb-4">
-            <strong>{{ selectedName?.raw_name }}</strong>
-            ({{ selectedName?.count }} записей)
-          </p>
-          <v-autocomplete
-            v-model="selectedEmployee"
-            :items="employeeSearchResults"
-            item-title="display"
-            item-value="id"
-            label="Выберите сотрудника"
-            hint="Начните вводить фамилию (минимум 2 символа)"
-            persistent-hint
-            variant="outlined"
-            density="comfortable"
-            :loading="employeeSearchLoading"
-            no-filter
-            clearable
-            hide-no-data
-            return-object
-            @update:model-value="onEmployeeSelected"
-            @update:search="onEmployeeSearchInput"
-          >
-            <template #item="{ props, item }">
-              <v-list-item v-bind="props" :title="item.raw.display"></v-list-item>
-            </template>
-          </v-autocomplete>
           <v-checkbox
             v-model="applyToAll"
             label="Применить ко всем записям с этим ФИО"
             color="primary"
+            hide-details
+            class="mb-4"
           ></v-checkbox>
+
+          <transition name="fade" mode="out-in">
+            <!-- Режим 1: один сотрудник на все записи -->
+            <div v-if="applyToAll" key="all">
+              <v-autocomplete
+                v-model="selectedEmployee"
+                :items="employeeSearchResults"
+                item-title="display"
+                item-value="id"
+                label="Выберите сотрудника"
+                hint="Начните вводить фамилию (минимум 2 символа)"
+                persistent-hint
+                variant="outlined"
+                density="comfortable"
+                :loading="employeeSearchLoading"
+                no-filter
+                clearable
+                hide-no-data
+                return-object
+                @update:model-value="onEmployeeSelected"
+                @update:search="onEmployeeSearchInput"
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props" :title="item.raw.display"></v-list-item>
+                </template>
+              </v-autocomplete>
+            </div>
+
+            <!-- Режим 2: выбор сотрудника для каждого дня отдельно -->
+            <div v-else key="days">
+              <div class="text-caption text-grey mb-2">
+                Выберите сотрудника для каждого дня. Дни без выбора останутся нераспознанными.
+              </div>
+              <div v-if="unrecognizedDaysLoading" class="d-flex justify-center pa-6">
+                <v-progress-circular indeterminate color="primary"></v-progress-circular>
+              </div>
+              <v-alert v-else-if="unrecognizedDays.length === 0" type="info" density="compact">
+                Нет проходов этого ФИО в базе.
+              </v-alert>
+              <div v-else style="max-height: 380px; overflow-y: auto;">
+                <v-row
+                  v-for="day in unrecognizedDays"
+                  :key="day.date"
+                  dense
+                  align="center"
+                  class="mb-1"
+                >
+                  <v-col cols="12" md="5" class="py-0">
+                    <div class="text-body-2 font-weight-medium">{{ formatRuDate(day.date) }}</div>
+                    <div class="text-caption text-grey">
+                      Вход: {{ day.first_in || '—' }} / Выход: {{ day.last_out || '—' }} · {{ day.count }} событ.
+                    </div>
+                  </v-col>
+                  <v-col cols="12" md="7" class="py-0">
+                    <v-autocomplete
+                      v-model="day.employee"
+                      :items="getDayResults(day)"
+                      item-title="display"
+                      item-value="id"
+                      label="Сотрудник за этот день"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                      :loading="day.searching"
+                      no-filter
+                      clearable
+                      hide-no-data
+                      return-object
+                      @update:search="(q) => onDaySearch(day, q)"
+                    >
+                      <template #item="{ props, item }">
+                        <v-list-item v-bind="props" :title="item.raw.display"></v-list-item>
+                      </template>
+                    </v-autocomplete>
+                  </v-col>
+                </v-row>
+              </div>
+            </div>
+          </transition>
+
+          <v-alert v-if="linkError" type="error" density="compact" class="mt-3">{{ linkError }}</v-alert>
+          <v-alert v-if="linkWarning" type="warning" density="compact" class="mt-3">{{ linkWarning }}</v-alert>
         </v-card-text>
         <v-card-actions>
           <v-spacer></v-spacer>
@@ -268,7 +326,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '../api'
 
 const loading = ref(false)
@@ -302,6 +360,12 @@ const selectedEmployeeId = ref(null)
 const applyToAll = ref(true)
 const newEntryDatetime = ref('')
 const newEntryType = ref('in')
+const linkError = ref('')
+const linkWarning = ref('')
+
+// Режим «по дням»: список проходов нераспознанного ФИО, сгруппированных по датам
+const unrecognizedDays = ref([])
+const unrecognizedDaysLoading = ref(false)
 
 // ===== Поиск сотрудника в диалоге «Связать ФИО с сотрудником» =====
 // v-autocomplete управляется вручную: поиск по началу строки (фамилия),
@@ -375,6 +439,71 @@ function onEmployeeSearchInput(val) {
 function onEmployeeSelected(emp) {
   // v-model возвращает объект (return-object) — сохраняем id для отправки на бэкенд
   selectedEmployeeId.value = emp && typeof emp === 'object' ? emp.id : (emp || null)
+}
+
+// ===== Поиск сотрудника в режиме «по дням» (отдельный autocomplete на каждый день) =====
+function searchEmployeesForQuery(q) {
+  const query = (q || '').trim()
+  if (query.length < MIN_SEARCH_LENGTH) return []
+  const nq = query.toLowerCase().replace(/ё/g, 'е')
+  const matched = employees.value.filter(e =>
+    (e.full_name || '').toLowerCase().replace(/ё/g, 'е').startsWith(nq)
+  )
+  return sortEmployees(matched, query)
+    .slice(0, MAX_RESULTS)
+    .map(e => ({ id: e.id, display: employeeDisplay(e), full_name: e.full_name }))
+}
+
+function onDaySearch(day, q) {
+  day.query = q || ''
+  day.searching = true
+  clearTimeout(day.timer)
+  day.timer = setTimeout(() => {
+    day.results = searchEmployeesForQuery(day.query)
+    day.searching = false
+  }, DEBOUNCE_MS)
+}
+
+function getDayResults(day) {
+  // Показываем результаты поиска + уже выбранного сотрудника (чтобы v-autocomplete
+  // мог отобразить выбранный объект, даже если он не входит в текущие 10 результатов)
+  const results = day.results || []
+  if (day.employee && !results.some(r => r.id === day.employee.id)) {
+    return [day.employee, ...results]
+  }
+  return results
+}
+
+function formatRuDate(isoDate) {
+  if (!isoDate) return ''
+  const d = new Date(isoDate + 'T00:00:00')
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+async function loadUnrecognizedDays(rawName) {
+  unrecognizedDaysLoading.value = true
+  unrecognizedDays.value = []
+  try {
+    const response = await api.get('/api/turnstile-fix/unrecognized-events', {
+      params: { raw_name: rawName }
+    })
+    unrecognizedDays.value = response.data.map(d => ({
+      date: d.date,
+      count: d.count,
+      first_in: d.first_in,
+      last_out: d.last_out,
+      employee: null,
+      results: [],
+      query: '',
+      searching: false,
+      timer: null,
+    }))
+  } catch (e) {
+    console.error('Ошибка загрузки проходов по датам:', e)
+    linkError.value = 'Не удалось загрузить список проходов по датам'
+  } finally {
+    unrecognizedDaysLoading.value = false
+  }
 }
 
 const unrecognizedHeaders = [
@@ -468,32 +597,81 @@ function openLinkDialog(item) {
   employeeSearchQuery.value = ''
   employeeSearchResults.value = []
   applyToAll.value = true
+  linkError.value = ''
+  linkWarning.value = ''
+  unrecognizedDays.value = []
   linkDialog.value = true
 }
 
-async function linkEmployee() {
-  if (!selectedEmployeeId.value) {
-    alert('Выберите сотрудника')
-    return
+// При снятии галочки «Применить ко всем» — загружаем проходы по дням (без ошибки)
+watch(applyToAll, (val) => {
+  linkError.value = ''
+  linkWarning.value = ''
+  if (!val && selectedName.value && unrecognizedDays.value.length === 0 && !unrecognizedDaysLoading.value) {
+    loadUnrecognizedDays(selectedName.value.raw_name)
   }
-  
-  linking.value = true
-  try {
-    if (applyToAll.value) {
+})
+
+async function linkEmployee() {
+  linkError.value = ''
+  linkWarning.value = ''
+
+  if (applyToAll.value) {
+    // Режим «ко всем записям»: одно поле выбора сотрудника
+    if (!selectedEmployeeId.value) {
+      linkError.value = 'Выберите сотрудника'
+      return
+    }
+    linking.value = true
+    try {
       await api.patch('/api/turnstile-fix/bulk-link', {
         raw_name: selectedName.value.raw_name,
         employee_id: selectedEmployeeId.value
       })
-    } else {
-      await api.patch(`/api/turnstile-fix/${selectedName.value.id}/link`, {
-        employee_id: selectedEmployeeId.value
-      })
+      linkDialog.value = false
+      await loadIssues()
+    } catch (e) {
+      console.error('Ошибка связывания:', e)
+      linkError.value = e?.response?.data?.detail || 'Ошибка при связывании'
+    } finally {
+      linking.value = false
     }
-    linkDialog.value = false
+    return
+  }
+
+  // Режим «по дням»: собираем привязки для дней, где выбран сотрудник
+  const items = unrecognizedDays.value
+    .filter(d => d.employee)
+    .map(d => ({ date: d.date, employee_id: d.employee.id }))
+
+  if (items.length === 0) {
+    linkError.value = 'Не выбран сотрудник ни для одного дня'
+    return
+  }
+
+  const skipped = unrecognizedDays.value.length - items.length
+  if (skipped > 0) {
+    linkWarning.value = `Пропущено дней без выбора: ${skipped} — они останутся нераспознанными`
+  }
+
+  linking.value = true
+  try {
+    await api.post('/api/turnstile-fix/link-unrecognized', {
+      raw_name: selectedName.value.raw_name,
+      items
+    })
+    if (skipped === 0) {
+      // Всё связано — закрываем диалог
+      linkDialog.value = false
+    } else {
+      // Обновляем список дней, чтобы показать оставшиеся непровязанные
+      await loadUnrecognizedDays(selectedName.value.raw_name)
+      setTimeout(() => { linkWarning.value = '' }, 5000)
+    }
     await loadIssues()
   } catch (e) {
     console.error('Ошибка связывания:', e)
-    alert('Ошибка при связывании')
+    linkError.value = e?.response?.data?.detail || 'Ошибка при связывании'
   } finally {
     linking.value = false
   }
