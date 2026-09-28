@@ -1,10 +1,13 @@
 import io
+import calendar
+import urllib.parse
 from datetime import date, datetime, time, timedelta
 from typing import List, Optional
 
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -480,141 +483,178 @@ def get_timesheet_report(
         "employees": employee_reports
     }
 
-
 @router.get("/report/excel")
-def get_timesheet_report_excel(
+def export_timesheet_excel(
     month: int = Query(..., ge=1, le=12),
     year: int = Query(..., ge=2020),
     department_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Сгенерировать Excel файл с табелем"""
-    
-    _, days_in_month = monthrange(year, month)
-    
-    query = db.query(Employee)
-    allowed = allowed_department_id_set(user, db)
-    if allowed is not None:
-        # роль «Пользователь»: только сотрудники назначенных подразделений
-        if not allowed:
-            employees = []
+    """Экспорт отчета табеля в Excel"""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import PatternFill, Font, Alignment
+        import io
+        from datetime import date
+        from calendar import monthrange
+        import urllib.parse
+        
+        _, days_in_month = monthrange(year, month)
+        
+        # Функция форматирования времени в ЧЧ:ММ (как в веб-версии)
+        def format_time(decimal_hours):
+            hours = int(decimal_hours)
+            minutes = round((decimal_hours - hours) * 60)
+            if minutes == 60:
+                hours += 1
+                minutes = 0
+            return f"{hours}:{str(minutes).zfill(2)}"
+        
+        # Получаем сотрудников (та же логика, что в /report)
+        query = db.query(Employee)
+        allowed = allowed_department_id_set(user, db)
+        if allowed is not None:
+            if not allowed:
+                employees = []
+            else:
+                query = query.filter(Employee.department_id.in_(allowed))
+                if department_id and int(department_id) not in allowed:
+                    raise HTTPException(status_code=403, detail="Нет прав на это подразделение")
+                if department_id:
+                    all_dept_ids = get_all_department_ids(department_id, db)
+                    query = query.filter(Employee.department_id.in_(all_dept_ids))
+                employees = query.order_by(Employee.full_name).all()
         else:
-            query = query.filter(Employee.department_id.in_(allowed))
-            if department_id and int(department_id) not in allowed:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Нет прав на это подразделение (права выдаёт администратор)")
             if department_id:
                 all_dept_ids = get_all_department_ids(department_id, db)
                 query = query.filter(Employee.department_id.in_(all_dept_ids))
             employees = query.order_by(Employee.full_name).all()
-    else:
-        if department_id:
-            all_dept_ids = get_all_department_ids(department_id, db)
-            query = query.filter(Employee.department_id.in_(all_dept_ids))
-        employees = query.order_by(Employee.full_name).all()
-    
-    
-    wb = Workbook()
-    ws = wb.active
-    ws.title = f"Табель {month}-{year}"
-    
-    month_names = {
-        1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
-        5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
-        9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
-    }
-    
-    # Заголовок
-    ws.merge_cells('A1:C1')
-    ws.cell(row=1, column=1, value=f"Табель за {month_names[month]} {year}г.")
-    ws.cell(row=1, column=1).font = Font(bold=True, size=14)
-    
-    # Шапка
-    ws.cell(row=3, column=1, value="№ п/п")
-    ws.cell(row=3, column=2, value="Ф.И.О.")
-    ws.cell(row=3, column=3, value="Подразделение")
-    
-    for day in range(1, days_in_month + 1):
-        ws.cell(row=3, column=3 + day, value=str(day))
-        ws.column_dimensions[get_column_letter(3 + day)].width = 5
-    
-    ws.cell(row=3, column=4 + days_in_month, value="Итого")
-    ws.column_dimensions[get_column_letter(4 + days_in_month)].width = 10
-    
-    # Данные
-    for idx, emp in enumerate(employees, start=1):
-        ws.cell(row=4 + idx, column=1, value=idx)
-        ws.cell(row=4 + idx, column=2, value=emp.full_name)
         
-        dept_name = "-"
-        if emp.department_id:
-            dept = db.query(Department).filter(Department.id == emp.department_id).first()
-            if dept:
-                dept_name = dept.name
-        ws.cell(row=4 + idx, column=3, value=dept_name)
-        
-        month_start = date(year, month, 1)
-        if month == 12:
-            month_end = date(year + 1, 1, 1)
-        else:
-            month_end = date(year, month + 1, 1)
-        
-        records = db.query(TimesheetRecord).filter(
-            TimesheetRecord.employee_id == emp.id,
-            TimesheetRecord.date >= month_start,
-            TimesheetRecord.date < month_end
-        ).all()
-        
-        records_by_day = {record.date.day: record for record in records}
-        total_hours = 0.0
-        
+        # Создаем Excel
+        wb = Workbook()
+        ws = wb.active
+        ws.title = f"Табель {month}.{year}"
+
+        # Стили
+        header_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+        weekend_fill = PatternFill(start_color="E3F2FD", end_color="E3F2FD", fill_type="solid")
+        overtime_fill = PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")
+        review_fill = PatternFill(start_color="FFCDD2", end_color="FFCDD2", fill_type="solid")
+        bold_font = Font(bold=True)
+        center_align = Alignment(horizontal="center", vertical="center")
+
+        # Заголовки
+        headers = ["№", "Ф.И.О.", "Подразделение"]
         for day in range(1, days_in_month + 1):
-            record = records_by_day.get(day)
-            col = 3 + day
+            headers.append(str(day))
+        headers.append("Итого часов")
+        
+        for col, header in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.fill = header_fill
+            cell.font = bold_font
+            cell.alignment = center_align
+
+        # Данные
+        for idx, emp in enumerate(employees, start=1):
+            month_start = date(year, month, 1)
+            if month == 12:
+                month_end = date(year + 1, 1, 1)
+            else:
+                month_end = date(year, month + 1, 1)
             
-            if record:
-                if record.needs_review:
-                    value = "О6"
-                    fill = PatternFill(start_color="FFCDD2", end_color="FFCDD2", fill_type="solid")
-                elif record.overtime and record.overtime > 0:
-                    # Формат: "10.25 (2.25с)"
-                    fact = round(record.fact_hours, 2)
-                    overtime = round(record.overtime, 2)
-                    value = f"{fact} ({overtime}с)"
-                    fill = PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")
-                elif record.fact_hours > 0:
-                    value = str(round(record.fact_hours, 2))
-                    fill = None
+            records = db.query(TimesheetRecord).filter(
+                TimesheetRecord.employee_id == emp.id,
+                TimesheetRecord.date >= month_start,
+                TimesheetRecord.date < month_end
+            ).all()
+            
+            records_by_day = {record.date.day: record for record in records}
+            
+            # Формируем строку
+            row_num = idx + 1  # +1 потому что первая строка - заголовки
+            ws.cell(row=row_num, column=1, value=idx).alignment = center_align
+            ws.cell(row=row_num, column=2, value=emp.full_name)
+            
+            dept_name = emp.department.name if emp.department else "-"
+            ws.cell(row=row_num, column=3, value=dept_name)
+            
+            total_hours = 0.0
+            
+            for day in range(1, days_in_month + 1):
+                col_num = day + 3  # +3 потому что первые 3 колонки: №, ФИО, Подразделение
+                record = records_by_day.get(day)
+                
+                cell = ws.cell(row=row_num, column=col_num)
+                cell.alignment = center_align
+                
+                if record:
+                    if record.needs_review:
+                        value = "О6"
+                        cell.fill = review_fill
+                    elif record.overtime and record.overtime > 0:
+                        fact = round(record.fact_hours, 2)
+                        overtime = round(record.overtime, 2)
+                        value = f"{format_time(fact)} ({format_time(overtime)}с)"
+                        cell.fill = overtime_fill
+                        if not record.needs_review:
+                            total_hours += fact
+                    elif record.fact_hours > 0:
+                        value = format_time(round(record.fact_hours, 2))
+                        if not record.needs_review:
+                            total_hours += record.fact_hours
+                    else:
+                        value = "в"
                 else:
                     value = "в"
-                    fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
                 
-                ws.cell(row=4 + idx, column=col, value=value)
-                if fill:
-                    ws.cell(row=4 + idx, column=col).fill = fill
+                # Подсветка выходных
+                day_of_week = date(year, month, day).weekday()
+                if day_of_week >= 5:  # Суббота или Воскресенье
+                    if not cell.fill or cell.fill.start_color.rgb == "00000000":
+                        cell.fill = weekend_fill
                 
-                if not record.needs_review:
-                    total_hours += record.fact_hours
-            else:
-                cell = ws.cell(row=4 + idx, column=col, value="в")
-                cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")
-        
-        ws.cell(row=4 + idx, column=4 + days_in_month, value=round(total_hours, 2))
-        ws.cell(row=4 + idx, column=4 + days_in_month).font = Font(bold=True)
-    
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    
-    filename = f"табель_{month_names[month]}_{year}.xlsx"
-    filename_encoded = quote(filename)
+                cell.value = value
+            
+            # Итого часов
+            total_cell = ws.cell(row=row_num, column=days_in_month + 4, value=round(total_hours, 2))
+            total_cell.font = bold_font
+            total_cell.alignment = center_align
 
-    return StreamingResponse(
-        output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}"
-        }
-    )
+        # Автоподбор ширины колонок
+        for column in ws.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 30)  # Максимум 30 символов
+            ws.column_dimensions[column_letter].width = adjusted_width
+
+        # Сохраняем в BytesIO
+        excel_file = io.BytesIO()
+        wb.save(excel_file)
+        excel_file.seek(0)
+
+        month_names = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", 
+                       "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+        filename = f"Табель_{month_names[month]}_{year}.xlsx"
+        safe_filename = urllib.parse.quote(filename)
+
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}"
+            }
+        )
+        
+    except Exception as e:
+        import traceback
+        print(f"Ошибка экспорта Excel: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Ошибка генерации Excel: {str(e)}")

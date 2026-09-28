@@ -187,30 +187,35 @@
     <v-dialog v-model="codesDialog" max-width="900">
       <v-card title="Справочник «Коды часов»">
         <v-card-text>
-          <v-table density="compact">
+          <v-table density="compact" hover>
             <thead>
               <tr>
-                <th>Код</th>
+                <th style="width: 80px;">Код</th>
                 <th>Наименование</th>
-                <th>Часов день</th>
-                <th>Часов ночь</th>
-                <th style="min-width: 200px;">Направления</th>
-                <th v-if="auth.isAdmin"></th>
+                <th style="width: 90px;">Часов день</th>
+                <th style="width: 90px;">Часов ночь</th>
+                <th style="min-width: 250px; max-width: 400px;">Направления</th>
+                <th v-if="auth.isAdmin" style="width: 100px;">Действия</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="c in timeCodes" :key="c.id">
+              <tr v-for="c in timeCodes" :key="c.id" class="code-row">
                 <td><b>{{ c.code }}</b></td>
                 <td>{{ c.name }}</td>
-                <td>{{ c.hours_day }}</td>
-                <td>{{ c.hours_night }}</td>
-                <td>
-                  <v-chip v-for="dest in (c.destinations || [])" :key="dest" size="x-small" class="mr-1 mb-1">
-                    {{ summaryColumns.find(col => col.key === dest)?.label || dest }}
-                  </v-chip>
-                  <span v-if="!c.destinations || c.destinations.length === 0" class="text-grey text-caption">Не указано</span>
+                <td class="text-center">{{ c.hours_day }}</td>
+                <td class="text-center">{{ c.hours_night }}</td>
+                
+                <td style="white-space: normal !important; vertical-align: middle;">
+                  <div class="d-flex flex-wrap" style="gap: 4px;">
+                    <v-chip v-for="dest in (c.destinations || [])" :key="dest" size="x-small" variant="tonal" color="#2d5a3d">
+                      {{ summaryColumns.find(col => col.key === dest)?.label || dest }}
+                    </v-chip>
+                    <span v-if="!c.destinations || c.destinations.length === 0" class="text-grey text-caption">Не указано</span>
+                  </div>
                 </td>
-                <td v-if="auth.isAdmin">
+                
+                <td v-if="auth.isAdmin" class="text-center">
+                  <v-btn size="x-small" icon="mdi-pencil" color="blue" variant="text" @click="editCode(c)" class="mr-1" />
                   <v-btn size="x-small" icon="mdi-delete" color="red" variant="text" @click="deleteCode(c)" />
                 </td>
               </tr>
@@ -218,11 +223,50 @@
           </v-table>
           
           <template v-if="auth.isAdmin">
-            <v-form @submit.prevent="addCode" class="d-flex flex-wrap mt-4" style="gap:8px; align-items: flex-start;">
-              <v-text-field v-model="newCode.code" label="Код" density="compact" variant="outlined" style="max-width:100px;" hide-details />
-              <v-text-field v-model="newCode.name" label="Наименование" density="compact" variant="outlined" style="flex:1; min-width: 150px;" hide-details />
-              <v-text-field v-model.number="newCode.hours_day" label="День" type="number" step="0.01" density="compact" variant="outlined" style="max-width:80px;" hide-details />
-              <v-text-field v-model.number="newCode.hours_night" label="Ночь" type="number" step="0.01" density="compact" variant="outlined" style="max-width:80px;" hide-details />
+            <v-divider class="my-4" />
+            <div class="text-h6 mb-3">
+              {{ isEditing ? 'Редактирование кода' : 'Добавление нового кода' }}
+              <span v-if="isEditing" class="text-caption text-grey ml-2">({{ editingCode?.code }})</span>
+            </div>
+            
+            <v-form @submit.prevent="saveCode" class="d-flex flex-wrap" style="gap:8px; align-items: flex-start;">
+              <v-text-field 
+                v-model="newCode.code" 
+                :label="isEditing ? 'Код (нельзя изменить)' : 'Код'" 
+                :readonly="isEditing"
+                density="compact" 
+                variant="outlined" 
+                style="max-width:100px;" 
+                hide-details 
+              />
+              <v-text-field 
+                v-model="newCode.name" 
+                label="Наименование" 
+                density="compact" 
+                variant="outlined" 
+                style="flex:1; min-width: 150px;" 
+                hide-details 
+              />
+              <v-text-field 
+                v-model.number="newCode.hours_day" 
+                label="День" 
+                type="number" 
+                step="0.01" 
+                density="compact" 
+                variant="outlined" 
+                style="max-width:80px;" 
+                hide-details 
+              />
+              <v-text-field 
+                v-model.number="newCode.hours_night" 
+                label="Ночь" 
+                type="number" 
+                step="0.01" 
+                density="compact" 
+                variant="outlined" 
+                style="max-width:80px;" 
+                hide-details 
+              />
               
               <v-select
                 v-model="newCode.destinations"
@@ -237,8 +281,15 @@
                 hide-details
               />
               
-              <v-btn color="#2d5a3d" type="submit" prepend-icon="mdi-plus" class="align-self-end" style="height: 40px;">Добавить</v-btn>
+              <v-btn color="#2d5a3d" type="submit" prepend-icon="mdi-content-save" class="align-self-end" style="height: 40px;">
+                {{ isEditing ? 'Сохранить' : 'Добавить' }}
+              </v-btn>
+              
+              <v-btn v-if="isEditing" variant="outlined" color="grey" @click="cancelEdit" class="align-self-end" style="height: 40px;">
+                Отмена
+              </v-btn>
             </v-form>
+            
             <div v-if="codeError" class="text-red mt-2">{{ codeError }}</div>
           </template>
           <div v-else class="text-caption text-grey mt-2">
@@ -276,25 +327,26 @@ const saving = ref(false)
 const codesDialog = ref(false)
 const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, destinations: [] })
 const codeError = ref('')
+const isEditing = ref(false)
+const editingCode = ref(null)
 
-// Итоговые колонки — полные названия для вертикальных заголовков
-const summaryColumns = [
-  { key: 'fact_days', label: 'фактической работы' },
-  { key: 'total_hours', label: 'Итого часов' },
-  { key: 'vacation', label: 'трудовой отпуск' },
-  { key: 'sick', label: 'болезнь' },
-  { key: 'admin_leave', label: 'с разрешения администрации' },
-  { key: 'weekend_holiday', label: 'выходные и праздн.' },
-  { key: 'other_absence', label: 'Другие неявки' },
-  { key: 'overtime_days', label: 'сверхурочные дни' },
-  { key: 'overtime_hours', label: 'Сверхурочные часы' },
-  { key: 'night_hours', label: 'ночные часы' },
-  { key: 'tariff_hours', label: 'Итого часов по участку' },
-  { key: 'kdu_work_days', label: 'КДУ УШН' },
-  { key: 'kdu_weekend_days', label: 'КДУ, вых. дни УШН' }
-]
+// ИСПРАВЛЕНО: Добавлено свойство unit ('days' или 'hours') для точного расчета
+const summaryColumns = ref([
+  { key: 'fact_days', label: 'фактической работы', unit: 'days' },
+  { key: 'total_hours', label: 'Итого часов', unit: 'hours' },
+  { key: 'vacation', label: 'трудовой отпуск', unit: 'days' },
+  { key: 'sick', label: 'болезнь', unit: 'days' },
+  { key: 'admin_leave', label: 'с разрешения администрации', unit: 'days' },
+  { key: 'weekend_holiday', label: 'выходные и праздн.', unit: 'days' },
+  { key: 'other_absence', label: 'Другие неявки', unit: 'days' },
+  { key: 'overtime_days', label: 'сверхурочные дни', unit: 'days' },
+  { key: 'overtime_hours', label: 'Сверхурочные часы', unit: 'hours' },
+  { key: 'night_hours', label: 'ночные часы', unit: 'hours' },
+  { key: 'tariff_hours', label: 'Итого часов по участку', unit: 'hours' },
+  { key: 'kdu_work_days', label: 'КДУ УШН', unit: 'days' },
+  { key: 'kdu_weekend_days', label: 'КДУ, вых. дни УШН', unit: 'days' }
+])
 
-// Получить день недели для числа месяца
 function getDayOfWeek(day) {
   if (!tabel.value) return ''
   const date = new Date(tabel.value.year, tabel.value.month - 1, day)
@@ -463,9 +515,10 @@ function totalHours(row) {
   return mm ? `${hh}ч${mm}м` : `${hh}ч`
 }
 
+// ИСПРАВЛЕНО: Расчет теперь использует свойство unit из summaryColumns
 function calculateSummary(row) {
   const summary = {}
-  summaryColumns.forEach(col => summary[col.key] = 0)
+  summaryColumns.value.forEach(col => summary[col.key] = 0)
 
   for (let d = 1; d <= tabel.value.days_in_month; d++) {
     const val = String(row.days[d] || '').trim()
@@ -473,9 +526,14 @@ function calculateSummary(row) {
 
     if (/^\d{1,2}([.,]\d{1,2})?$/.test(val)) {
       const num = parseFloat(val.replace(',', '.'))
-      summary.total_hours += num
-      summary.fact_days += 1
-      summary.tariff_hours += num
+      summaryColumns.value.forEach(col => {
+        if (col.key === 'total_hours' || col.key === 'tariff_hours') {
+          summary[col.key] += num
+        }
+        if (col.key === 'fact_days') {
+          summary[col.key] += 1
+        }
+      })
       continue
     }
 
@@ -485,20 +543,27 @@ function calculateSummary(row) {
       const dests = codeObj.destinations || []
 
       dests.forEach(dest => {
-        if (summary.hasOwnProperty(dest)) {
-          const isDays = dest.includes('day') || dest.includes('дни') || dest.includes('days')
-          summary[dest] += isDays ? 1 : hours
+        const colDef = summaryColumns.value.find(c => c.key === dest)
+        if (colDef && summary.hasOwnProperty(dest)) {
+          if (colDef.unit === 'days') {
+            summary[dest] += 1 // Прибавляем 1 день
+          } else {
+            summary[dest] += hours // Прибавляем часы
+          }
         }
       })
     }
   }
 
+  // Округление на основе типа единицы измерения
   for (const key in summary) {
-    if (key.includes('hours') || key.includes('час')) {
-      summary[key] = Math.round(summary[key] * 100) / 100
-    }
-    if (key.includes('day') || key.includes('дни') || key.includes('days')) {
-      summary[key] = Math.round(summary[key])
+    const colDef = summaryColumns.value.find(c => c.key === key)
+    if (colDef) {
+      if (colDef.unit === 'hours') {
+        summary[key] = Math.round(summary[key] * 100) / 100
+      } else {
+        summary[key] = Math.round(summary[key]) // Дни всегда целые
+      }
     }
   }
 
@@ -590,15 +655,39 @@ async function loadCodes() {
   }
 }
 
-async function addCode() {
+function editCode(c) {
+  isEditing.value = true
+  editingCode.value = c
+  newCode.value = {
+    code: c.code,
+    name: c.name,
+    hours_day: c.hours_day,
+    hours_night: c.hours_night,
+    destinations: [...(c.destinations || [])]
+  }
+  codeError.value = ''
+}
+
+function cancelEdit() {
+  isEditing.value = false
+  editingCode.value = null
+  newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0, destinations: [] }
+  codeError.value = ''
+}
+
+async function saveCode() {
   codeError.value = ''
   try {
-    await api.post('/time-codes/', newCode.value)
-    newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0, destinations: [] }
+    if (isEditing.value && editingCode.value) {
+      await api.put(`/time-codes/${editingCode.value.id}`, newCode.value)
+    } else {
+      await api.post('/time-codes/', newCode.value)
+    }
+    cancelEdit()
     await loadCodes()
   } catch (e) {
     codeError.value = typeof e.response?.data?.detail === 'string'
-      ? e.response.data.detail : 'Ошибка добавления кода'
+      ? e.response.data.detail : 'Ошибка сохранения кода'
   }
 }
 
@@ -627,7 +716,6 @@ onMounted(async () => {
   padding: 2px;
 }
 
-/* Шапка таблицы */
 .tabel-table thead th {
   background-color: white !important;
   color: black !important;
@@ -636,183 +724,59 @@ onMounted(async () => {
   vertical-align: middle;
 }
 
-.col-no { 
-  width: 40px; 
-  text-align: center;
-  font-size: 11px;
-}
+.col-no { width: 40px; text-align: center; font-size: 11px; }
+.col-fio { min-width: 200px; text-align: left; padding-left: 6px !important; }
+.col-days-header { font-size: 13px; font-weight: bold; padding: 4px !important; }
+.col-day-header { width: 38px; min-width: 38px; max-width: 38px; padding: 2px 1px !important; font-size: 10px; }
+.day-name { font-size: 9px; font-weight: normal; color: #666; }
+.day-number { font-size: 11px; font-weight: bold; }
+.day-weekend-header { background-color: #f0f0f0 !important; }
+.day-holiday-header { background-color: #fff3cd !important; }
 
-.col-fio { 
-  min-width: 200px; 
-  text-align: left; 
-  padding-left: 6px !important;
-}
-
-/* Заголовок "Дни недели" */
-.col-days-header {
-  font-size: 13px;
-  font-weight: bold;
-  padding: 4px !important;
-}
-
-/* Ячейки дней в шапке */
-.col-day-header {
-  width: 38px;
-  min-width: 38px;
-  max-width: 38px;
-  padding: 2px 1px !important;
-  font-size: 10px;
-}
-
-.day-name {
-  font-size: 9px;
-  font-weight: normal;
-  color: #666;
-}
-
-.day-number {
-  font-size: 11px;
-  font-weight: bold;
-}
-
-/* Выходные и праздники в шапке */
-.day-weekend-header {
-  background-color: #f0f0f0 !important;
-}
-
-.day-holiday-header {
-  background-color: #fff3cd !important;
-}
-
-/* Итоговые колонки — вертикальные заголовки */
 .col-summary-header {
-  width: 28px;
-  min-width: 28px;
-  max-width: 28px;
-  padding: 8px 2px !important;
-  font-size: 10px;
-  font-weight: bold;
-  text-align: center;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  transform: rotate(180deg);
-  white-space: nowrap;
-  vertical-align: middle;
-  background-color: white !important;
-  border-left: 1px solid #000 !important;
+  width: 28px; min-width: 28px; max-width: 28px; padding: 8px 2px !important;
+  font-size: 10px; font-weight: bold; text-align: center;
+  writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
+  white-space: nowrap; vertical-align: middle;
+  background-color: white !important; border-left: 1px solid #000 !important;
 }
 
-/* Ячейки итоговых значений */
 .col-summary-cell {
-  width: 28px;
-  min-width: 28px;
-  max-width: 28px;
-  padding: 2px 1px !important;
-  font-size: 11px;
-  font-weight: normal;
-  text-align: center;
-  background-color: white !important;
-  border-left: 1px solid #000 !important;
+  width: 28px; min-width: 28px; max-width: 28px; padding: 2px 1px !important;
+  font-size: 11px; font-weight: normal; text-align: center;
+  background-color: white !important; border-left: 1px solid #000 !important;
 }
 
-.col-del { 
-  width: 40px;
-  background-color: white !important;
-}
+.col-del { width: 40px; background-color: white !important; }
+.cell-day { width: 38px; min-width: 38px; max-width: 38px; padding: 2px !important; }
+.cell-weekend { background-color: #f0f0f0; }
+.cell-holiday { background-color: #fff3cd; }
+.holiday-mark { font-size: 10px; margin-left: 1px; vertical-align: top; }
 
-/* Ячейки дней */
-.cell-day {
-  width: 38px;
-  min-width: 38px;
-  max-width: 38px;
-  padding: 2px !important;
-}
+.legend-box { display: inline-block; width: 14px; height: 14px; border-radius: 3px; border: 1px solid #c8e6c9; vertical-align: middle; margin-right: 4px; }
+.legend-weekend { background-color: #f0f0f0; }
+.legend-holiday { background-color: #fff3cd; }
 
-.cell-weekend { 
-  background-color: #f0f0f0; 
-}
-
-.cell-holiday { 
-  background-color: #fff3cd; 
-}
-
-.holiday-mark { 
-  font-size: 10px; 
-  margin-left: 1px; 
-  vertical-align: top; 
-}
-
-.legend-box { 
-  display: inline-block; 
-  width: 14px; 
-  height: 14px; 
-  border-radius: 3px;
-  border: 1px solid #c8e6c9; 
-  vertical-align: middle; 
-  margin-right: 4px; 
-}
-
-.legend-weekend { 
-  background-color: #f0f0f0; 
-}
-
-.legend-holiday { 
-  background-color: #fff3cd; 
-}
-
-/* Ячейка табеля */
-.cell-wrap { 
-  position: relative; 
-  width: 100%; 
-  height: 24px; 
-}
-
+.cell-wrap { position: relative; width: 100%; height: 24px; }
 .cell-input {
-  width: 100%;
-  height: 24px;
-  box-sizing: border-box;
-  border: none;
-  outline: none;
-  background: transparent;
-  text-align: center;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  color: rgba(0, 0, 0, 0.87);
+  width: 100%; height: 24px; box-sizing: border-box; border: none; outline: none;
+  background: transparent; text-align: center; font-size: 12px; font-family: inherit;
+  cursor: pointer; color: rgba(0, 0, 0, 0.87);
 }
+.cell-input:hover { background: #e8f5e9; }
+.cell-wrap.is-open .cell-input { background: #e8f5e9; box-shadow: inset 0 0 0 2px #2d5a3d; }
+.is-code { color: #1565c0; font-weight: bold; }
+.is-error, .is-error-cell { background: #ffebee !important; outline: 2px solid red; }
+.add-row td { border-top: 2px dashed #a5d6a7; background: #f9fbe7; }
+.add-cell { padding: 6px 8px !important; }
 
-.cell-input:hover { 
-  background: #e8f5e9; 
-}
-
-.cell-wrap.is-open .cell-input { 
-  background: #e8f5e9; 
-  box-shadow: inset 0 0 0 2px #2d5a3d; 
-}
-
-.is-code { 
-  color: #1565c0; 
-  font-weight: bold; 
-}
-
-.is-error, .is-error-cell { 
-  background: #ffebee !important; 
-  outline: 2px solid red; 
-}
-
-.add-row td { 
-  border-top: 2px dashed #a5d6a7; 
-  background: #f9fbe7; 
-}
-
-.add-cell { 
-  padding: 6px 8px !important; 
-}
+/* Стили для справочника кодов часов */
+.code-row { transition: background-color 0.2s ease; }
+.code-row:hover { background-color: #f5f5f5 !important; }
+.code-row .v-btn { opacity: 1 !important; transition: transform 0.2s ease, background-color 0.2s ease; }
+.code-row .v-btn:hover { transform: scale(1.15); background-color: rgba(0, 0, 0, 0.04) !important; }
 </style>
 
 <style>
-.cell-menu .v-overlay__content { 
-  background: white; 
-  border-radius: 8px; 
-}
+.cell-menu .v-overlay__content { background: white; border-radius: 8px; }
 </style>
