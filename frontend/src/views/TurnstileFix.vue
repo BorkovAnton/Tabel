@@ -187,14 +187,28 @@
             <strong>{{ selectedName?.raw_name }}</strong>
             ({{ selectedName?.count }} записей)
           </p>
-          <v-select
-            v-model="selectedEmployeeId"
-            :items="employees"
-            item-title="full_name"
+          <v-autocomplete
+            v-model="selectedEmployee"
+            :items="employeeSearchResults"
+            item-title="display"
             item-value="id"
             label="Выберите сотрудника"
+            hint="Начните вводить фамилию (минимум 2 символа)"
+            persistent-hint
             variant="outlined"
-          ></v-select>
+            density="comfortable"
+            :loading="employeeSearchLoading"
+            no-filter
+            clearable
+            hide-no-data
+            return-object
+            @update:model-value="onEmployeeSelected"
+            @update:search="onEmployeeSearchInput"
+          >
+            <template #item="{ props, item }">
+              <v-list-item v-bind="props" :title="item.raw.display"></v-list-item>
+            </template>
+          </v-autocomplete>
           <v-checkbox
             v-model="applyToAll"
             label="Применить ко всем записям с этим ФИО"
@@ -254,7 +268,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 
 const loading = ref(false)
@@ -288,6 +302,80 @@ const selectedEmployeeId = ref(null)
 const applyToAll = ref(true)
 const newEntryDatetime = ref('')
 const newEntryType = ref('in')
+
+// ===== Поиск сотрудника в диалоге «Связать ФИО с сотрудником» =====
+// v-autocomplete управляется вручную: поиск по началу строки (фамилия),
+// минимум 2 символа, debounce 300 мс, максимум 10 результатов.
+const MIN_SEARCH_LENGTH = 2
+const MAX_RESULTS = 10
+const DEBOUNCE_MS = 300
+
+const selectedEmployee = ref(null) // выбранный сотрудник (объект { id, display, ... })
+const employeeSearchQuery = ref('')
+const employeeSearchResults = ref([])
+const employeeSearchLoading = ref(false)
+let employeeSearchTimer = null
+
+// «Борков Антон Петрович» → «Борков А.П.»
+function shortFullName(fullName) {
+  const parts = (fullName || '').trim().split(/\s+/)
+  if (parts.length < 2) return fullName || ''
+  const last = parts[0]
+  const initials = parts.slice(1).map(p => (p[0] || '').toUpperCase() + '.').join('')
+  return `${last} ${initials}`
+}
+
+function employeeDisplay(emp) {
+  return `${shortFullName(emp.full_name)} — ${emp.tab_number} — ${emp.department_name || 'без подразделения'}`
+}
+
+// Сортировка: точное совпадение → начало строки → остальные
+function sortEmployees(list, query) {
+  const q = query.toLowerCase().trim()
+  const norm = s => (s || '').toLowerCase().replace(/ё/g, 'е')
+  const nq = norm(q)
+  return [...list].sort((a, b) => {
+    const fa = norm(a.full_name)
+    const fb = norm(b.full_name)
+    const exactA = fa === nq ? 0 : 1
+    const exactB = fb === nq ? 0 : 1
+    if (exactA !== exactB) return exactA - exactB
+    const prefA = fa.startsWith(nq) ? 0 : 1
+    const prefB = fb.startsWith(nq) ? 0 : 1
+    if (prefA !== prefB) return prefA - prefB
+    return fa.localeCompare(fb, 'ru')
+  })
+}
+
+function runEmployeeSearch() {
+  const q = employeeSearchQuery.value.trim()
+  employeeSearchLoading.value = true
+  if (q.length < MIN_SEARCH_LENGTH) {
+    // При пустом/коротком запросе — список пуст (не показываем всех сразу)
+    employeeSearchResults.value = []
+    employeeSearchLoading.value = false
+    return
+  }
+  const nq = q.toLowerCase().replace(/ё/g, 'е')
+  const matched = employees.value.filter(e =>
+    (e.full_name || '').toLowerCase().replace(/ё/g, 'е').startsWith(nq)
+  )
+  employeeSearchResults.value = sortEmployees(matched, q)
+    .slice(0, MAX_RESULTS)
+    .map(e => ({ id: e.id, display: employeeDisplay(e), full_name: e.full_name }))
+  employeeSearchLoading.value = false
+}
+
+function onEmployeeSearchInput(val) {
+  employeeSearchQuery.value = val || ''
+  clearTimeout(employeeSearchTimer)
+  employeeSearchTimer = setTimeout(runEmployeeSearch, DEBOUNCE_MS)
+}
+
+function onEmployeeSelected(emp) {
+  // v-model возвращает объект (return-object) — сохраняем id для отправки на бэкенд
+  selectedEmployeeId.value = emp && typeof emp === 'object' ? emp.id : (emp || null)
+}
 
 const unrecognizedHeaders = [
   { title: 'ФИО', key: 'raw_name' },
@@ -376,6 +464,9 @@ async function loadIssues() {
 function openLinkDialog(item) {
   selectedName.value = item
   selectedEmployeeId.value = null
+  selectedEmployee.value = null
+  employeeSearchQuery.value = ''
+  employeeSearchResults.value = []
   applyToAll.value = true
   linkDialog.value = true
 }
