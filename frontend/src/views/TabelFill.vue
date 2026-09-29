@@ -66,7 +66,7 @@
                   <template #activator="{ props: tooltipProps }">
                     <input
                       class="cell-input cell-tip-area"
-                      :class="{ 'is-code': isCodeText(row.days[d]), 'is-error-cell': hasError(row.employee_id, d) }"
+                      :class="{ 'is-code': isCodeText(row.days[d]), 'is-error-cell': hasError(row.employee_id, d), 'is-overtime-cell': isOvertimeCell(row, row.days[d]) }"
                       :value="row.days[d] || ''"
                       readonly
                       tabindex="-1"
@@ -75,18 +75,27 @@
                     />
                   </template>
                   <!-- Подсказка с деталями ячейки: код из справочника / числовые часы -->
-                  <div v-if="cellTipData(row.days[d])" class="day-tooltip">
+                  <div v-if="cellTipData(row.days[d], row)" class="day-tooltip">
                     <div class="font-weight-bold mb-1">{{ tooltipDateLabel(d) }}</div>
-                    <template v-if="cellTipData(row.days[d]).kind === 'code'">
-                      <div><v-icon size="x-small" icon="mdi-tag-text-outline" class="mr-1" />Код: {{ cellTipData(row.days[d]).code }}</div>
-                      <div><v-icon size="x-small" icon="mdi-information-outline" class="mr-1" />{{ cellTipData(row.days[d]).name }}</div>
+                    <template v-if="cellTipData(row.days[d], row).kind === 'code'">
+                      <div><v-icon size="x-small" icon="mdi-tag-text-outline" class="mr-1" />Код: {{ cellTipData(row.days[d], row).code }}</div>
+                      <div><v-icon size="x-small" icon="mdi-information-outline" class="mr-1" />{{ cellTipData(row.days[d], row).name }}</div>
                       <v-divider class="tooltip-divider my-1"></v-divider>
-                      <div><v-icon size="x-small" icon="mdi-weather-sunny" class="mr-1" />День: {{ fmtNum(cellTipData(row.days[d]).day) }}</div>
-                      <div><v-icon size="x-small" icon="mdi-weather-night" class="mr-1" />Ночь: {{ fmtNum(cellTipData(row.days[d]).night) }}</div>
-                      <div class="font-weight-bold"><v-icon size="x-small" icon="mdi-check-circle-outline" class="mr-1" />Итого часов: {{ fmtNum(cellTipData(row.days[d]).total) }}</div>
+                      <div><v-icon size="x-small" icon="mdi-weather-sunny" class="mr-1" />День: {{ fmtNum(cellTipData(row.days[d], row).day) }}</div>
+                      <div><v-icon size="x-small" icon="mdi-weather-night" class="mr-1" />Ночь: {{ fmtNum(cellTipData(row.days[d], row).night) }}</div>
+                      <div class="font-weight-bold"><v-icon size="x-small" icon="mdi-check-circle-outline" class="mr-1" />Итого часов: {{ fmtNum(cellTipData(row.days[d], row).total) }}</div>
+                      <div v-if="cellTipData(row.days[d], row).ot > 0" class="text-warning">
+                        <v-icon size="x-small" icon="mdi-alert-outline" class="mr-1" />Сверхурочно: {{ fmtNum(cellTipData(row.days[d], row).ot) }} (норма {{ fmtNum(normOf(row)) }})
+                      </div>
                     </template>
                     <template v-else>
-                      <div><v-icon size="x-small" icon="mdi-clock-outline" class="mr-1" />Отработано часов: {{ fmtNum(cellTipData(row.days[d]).hours) }}</div>
+                      <div><v-icon size="x-small" icon="mdi-clock-outline" class="mr-1" />Введено: {{ fmtNum(cellTipData(row.days[d], row).hours) }} ч.</div>
+                      <div><v-icon size="x-small" icon="mdi-target" class="mr-1" />Норма: {{ fmtNum(cellTipData(row.days[d], row).norm) }} ч.</div>
+                      <v-divider class="tooltip-divider my-1"></v-divider>
+                      <div><v-icon size="x-small" icon="mdi-briefclockcase-outline" class="mr-1" />Обычные: {{ fmtNum(cellTipData(row.days[d], row).regular) }} ч.</div>
+                      <div v-if="cellTipData(row.days[d], row).ot > 0" class="text-warning font-weight-bold">
+                        <v-icon size="x-small" icon="mdi-alert-outline" class="mr-1" />Сверхурочные: {{ fmtNum(cellTipData(row.days[d], row).ot) }} ч.
+                      </div>
                     </template>
                   </div>
                   <!-- Пустая ячейка: tooltip отключён (:disabled), текст доступен через cellTipText -->
@@ -472,19 +481,36 @@ function rawToHours(s) {
   return null
 }
 
-// Данные для содержимого tooltip: код из справочника или числовое значение
-function cellTipData(val) {
+// Данные для содержимого tooltip: код из справочника или числовое значение.
+// Для числовых значений дополнительно показываем разбивку по норме (norm_hours):
+// введено / норма / сверхурочные.
+function cellTipData(val, row) {
   if (!val) return null
   const s = String(val).trim()
   const codeObj = timeCodes.value.find(c => c.code.toLowerCase() === s.toLowerCase())
   if (codeObj) {
     const day = Number(codeObj.hours_day) || 0
     const night = Number(codeObj.hours_night) || 0
-    return { kind: 'code', code: codeObj.code, name: codeObj.name, day, night, total: day + night }
+    const total = day + night
+    let ot = 0
+    if (row && total > 0 && !(codeObj.destinations || []).includes('overtime_hours')) {
+      ot = Math.max(0, total - normOf(row))
+    }
+    return { kind: 'code', code: codeObj.code, name: codeObj.name, day, night, total, ot }
   }
   const hours = rawToHours(s)
-  if (hours !== null) return { kind: 'number', hours }
+  if (hours !== null) {
+    const norm = row ? normOf(row) : 8
+    const ot = Math.max(0, hours - norm)
+    return { kind: 'number', hours, norm, regular: Math.min(hours, norm), ot }
+  }
   return null
+}
+
+// Фоновая подсветка ячейки, если часов больше нормы (жёлтый — есть сверхурочные)
+function isOvertimeCell(row, val) {
+  const data = cellTipData(val, row)
+  return !!data && data.ot > 0
 }
 
 // Текст для пустой ячейки (доступен программно; tooltip для пустых ячеек отключён через :disabled)
@@ -606,24 +632,46 @@ function totalHours(row) {
 
 // ИСПРАВЛЕНО: Расчет теперь использует свойство unit из summaryColumns
 // Колонки с unit === 'manual' (КДУ) заполняются вручную и здесь не считаются.
+// Часы сверх нормы (norm_hours, по умолчанию 8) автоматически уходят в сверхурочные:
+// «Итого часов» = все часы; «по тарифу/участку» = только обычные; превышение — в overtime_*.
+function cellHoursForDay(row, val) {
+  const s = String(val ?? '').trim()
+  if (!s) return null
+  const codeObj = timeCodes.value.find(c => c.code.toLowerCase() === s.toLowerCase())
+  if (codeObj) {
+    // код справочника НЕ считаем числовыми часами (например «7» — это Выходной)
+    return null
+  }
+  return rawToHours(s)
+}
+
+function normOf(row) {
+  const n = Number(row.norm_hours)
+  return n > 0 ? n : 8
+}
+
 function calculateSummary(row) {
   const summary = {}
   summaryColumns.value.forEach(col => { if (col.unit !== 'manual') summary[col.key] = 0 })
+
+  const norm = normOf(row)
 
   for (let d = 1; d <= tabel.value.days_in_month; d++) {
     const val = String(row.days[d] || '').trim()
     if (!val) continue
 
-    if (/^\d{1,2}([.,]\d{1,2})?$/.test(val)) {
-      const num = parseFloat(val.replace(',', '.'))
-      summaryColumns.value.forEach(col => {
-        if (col.key === 'total_hours' || col.key === 'tariff_hours') {
-          summary[col.key] += num
-        }
-        if (col.key === 'fact_days') {
-          summary[col.key] += 1
-        }
-      })
+    const hours = cellHoursForDay(row, val)
+    if (hours !== null && hours > 0) {
+      // числовой ввод: обычные часы + сверхурочные сверх нормы
+      const regular = Math.min(hours, norm)
+      const ot = Math.max(0, hours - norm)
+      summary.total_hours += hours
+      summary.fact_days += 1
+      summary.tariff_hours += regular
+      if (ot > 0) {
+        summary.overtime_hours += ot
+        summary.overtime_days += 1
+      }
       continue
     }
 
@@ -642,6 +690,19 @@ function calculateSummary(row) {
           }
         }
       })
+
+      // Распределение по норме для кодов, дающих часы (кроме явно сверхурочных/ночных кодов)
+      const isOvertimeCode = dests.includes('overtime_hours') || dests.includes('overtime_days')
+      if (hours > 0 && !isOvertimeCode) {
+        const ot = Math.max(0, hours - norm)
+        if (ot > 0) {
+          summary.overtime_hours += ot
+          summary.overtime_days += 1
+          // из колонок обычных часов вычитаем превышение, если код туда попал
+          if (dests.includes('tariff_hours')) summary.tariff_hours -= ot
+          if (dests.includes('total_hours')) summary.total_hours = summary.total_hours // итого остаётся полным
+        }
+      }
     }
   }
 
@@ -702,6 +763,9 @@ async function loadTabel() {
     ;(data.entries || []).forEach(e => {
       if (!('kdu_work_days' in e)) e.kdu_work_days = null
       if (!('kdu_weekend_days' in e)) e.kdu_weekend_days = null
+      // Норма часов в день: из employees.norm_hours, по умолчанию 8
+      if (!('norm_hours' in e)) e.norm_hours = null
+      e.norm_hours = Number(e.norm_hours) > 0 ? Number(e.norm_hours) : 8
     })
     tabel.value = data
     dirty.value = {}
@@ -923,6 +987,8 @@ onMounted(async () => {
 .cell-input:hover { background: #e8f5e9; }
 .cell-wrap.is-open .cell-input { background: #e8f5e9; box-shadow: inset 0 0 0 2px #2d5a3d; }
 .is-code { color: #1565c0; font-weight: bold; }
+/* Ячейка с часами сверх нормы (есть сверхурочные) — жёлтая подсветка */
+.is-overtime-cell { background: #fff9c4 !important; box-shadow: inset 0 -2px 0 #f9a825; }
 .is-error, .is-error-cell { background: #ffebee !important; outline: 2px solid red; }
 .add-row td { border-top: 2px dashed #a5d6a7; background: #f9fbe7; }
 .add-cell { padding: 6px 8px !important; }

@@ -8,6 +8,7 @@ class EmployeeCreate(BaseModel):
     full_name: str
     department_id: Optional[int] = None
     schedule_id: Optional[int] = None
+    norm_hours: Optional[float] = 8
 
 
 class EmployeeUpdate(BaseModel):
@@ -15,6 +16,7 @@ class EmployeeUpdate(BaseModel):
     full_name: Optional[str] = None
     department_id: Optional[int] = None
     schedule_id: Optional[int] = None
+    norm_hours: Optional[float] = None
 
 
 class EmployeeResponse(BaseModel):
@@ -24,6 +26,7 @@ class EmployeeResponse(BaseModel):
     department_id: Optional[int]
     department_name: Optional[str] = None
     schedule_id: Optional[int]
+    norm_hours: Optional[float] = None
 
     class Config:
         from_attributes = True

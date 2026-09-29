@@ -15,6 +15,8 @@ MIGRATIONS = [
     # Ручные итоговые колонки «КДУ» в табеле заполнения
     ("tabel_entries", "kdu_work_days", "NUMERIC(4,2)"),
     ("tabel_entries", "kdu_weekend_days", "NUMERIC(4,2)"),
+    # Норма часов в день для распределения сверхурочных
+    ("employees", "norm_hours", "NUMERIC(5,2) DEFAULT 8"),
 ]
 
 

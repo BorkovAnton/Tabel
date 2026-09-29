@@ -83,6 +83,8 @@ class EntryRow(BaseModel):
     # Ручные итоговые колонки «КДУ» (0..5, точность до сотых)
     kdu_work_days: Optional[float] = None
     kdu_weekend_days: Optional[float] = None
+    # Норма часов в день (для распределения сверхурочных); NULL => 8 по умолчанию
+    norm_hours: Optional[float] = None
 
     @field_validator("full_name", "tab_number", mode="before")
     @classmethod
@@ -298,6 +300,7 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             days=entry_days(e, dim),
             kdu_work_days=float(e.kdu_work_days) if e.kdu_work_days is not None else None,
             kdu_weekend_days=float(e.kdu_weekend_days) if e.kdu_weekend_days is not None else None,
+            norm_hours=float(e.employee.norm_hours) if (e.employee and e.employee.norm_hours is not None) else None,
         ))
     return TabelDetailOut(
         id=tabel.id, year=tabel.year, month=tabel.month, days_in_month=dim,

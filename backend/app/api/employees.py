@@ -60,6 +60,7 @@ def get_employees(
             "full_name": emp.full_name,
             "department_id": emp.department_id,
             "schedule_id": emp.schedule_id,
+            "norm_hours": float(emp.norm_hours) if emp.norm_hours is not None else None,
             "department_name": None
         }
         
@@ -93,7 +94,8 @@ def create_employee(
         tab_number=employee.tab_number,
         full_name=employee.full_name,
         department_id=employee.department_id,
-        schedule_id=employee.schedule_id
+        schedule_id=employee.schedule_id,
+        norm_hours=employee.norm_hours if employee.norm_hours is not None else 8
     )
     db.add(new_employee)
     db.commit()
@@ -145,6 +147,7 @@ def update_employee(
         "full_name": emp.full_name,
         "department_id": emp.department_id,
         "schedule_id": emp.schedule_id,
+        "norm_hours": float(emp.norm_hours) if emp.norm_hours is not None else None,
         "department_name": dept_name,
     }
 
