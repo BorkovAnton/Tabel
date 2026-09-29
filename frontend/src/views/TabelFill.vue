@@ -178,15 +178,19 @@
                   item-title="label"
                   item-value="id"
                   :menu-icon="null"
-                  label="Добавить сотрудника (поиск по фамилии)"
+                  label="Добавить сотрудника (поиск по ФИО, таб. номеру, подразделению)"
                   prepend-inner-icon="mdi-magnify"
                   density="compact"
                   variant="outlined"
                   clearable
                   hide-details
                   auto-select-first
+                  no-filter
+                  :filter="filterEmployees"
+                  no-data-text="Ничего не найдено"
                   style="min-width: 320px; max-width: 420px;"
                   @update:model-value="onEmployeePicked"
+                  @update:search="onEmpSearch"
                 >
                   <template #item="{ props, item }">
                     <v-list-item v-bind="props" :title="item.raw.label"
@@ -208,15 +212,19 @@
             item-title="label"
             item-value="id"
             :menu-icon="null"
-            label="Добавить сотрудника (поиск по фамилии)"
+            label="Добавить сотрудника (поиск по ФИО, таб. номеру, подразделению)"
             prepend-inner-icon="mdi-magnify"
             density="compact"
             variant="outlined"
             clearable
             hide-details
             auto-select-first
+            no-filter
+            :filter="filterEmployees"
+            no-data-text="Ничего не найдено"
             style="min-width: 320px; max-width: 420px;"
             @update:model-value="onEmployeePicked"
+            @update:search="onEmpSearch"
           >
             <template #item="{ props, item }">
               <v-list-item v-bind="props" :title="item.raw.label"
@@ -413,18 +421,48 @@ const calendarNotLoaded = computed(() =>
 const allEmployees = ref([])
 const selectedEmployee = ref(null)
 let addingInProgress = false
+let empSearchTimer = null
+
+// Нормализация для поиска: нижний регистр + Ё->Е
+const normSearch = s => String(s ?? '').toLowerCase().replace(/ё/g, 'е')
+
+// Поиск по подстроке по всем полям: ФИО, табельный номер, подразделение.
+// Регистронезависимо: «роман» находит и «Романов», и «Бельков Роман».
+function empMatches(e, term) {
+  const t = normSearch(term)
+  return (
+    normSearch(e.full_name).includes(t) ||
+    normSearch(e.tab_number).includes(t) ||
+    normSearch(e.department_name).includes(t)
+  )
+}
+
+// Фильтрация внутри v-autocomplete (не через startsWith по умолчанию)
+function filterEmployees(items, query) {
+  if (!query || !query.trim()) return items.slice(0, 50)
+  return items.filter(e => empMatches(e.raw ?? e, query)).slice(0, 50)
+}
 
 const employeeOptions = computed(() =>
   allEmployees.value.map(e => ({
     ...e,
-    label: `${e.full_name}${e.department_name ? ' — ' + e.department_name : ''}`
+    label: `${e.full_name}${e.tab_number ? ' — Таб. ' + e.tab_number : ''}${e.department_name ? ' — ' + e.department_name : ''}`
   }))
 )
 
-async function loadEmployees() {
-  const { data } = await api.get('/tabels/search/employees', { params: { q: '' } })
+async function loadEmployees(q = '') {
+  const { data } = await api.get('/tabels/search/employees', { params: { q } })
   const inTabel = new Set((tabel.value?.entries || []).map(r => r.employee_id))
   allEmployees.value = data.filter(e => !inTabel.has(e.id))
+}
+
+// Серверный поиск с debounce 300мс (минимум 1 символ)
+function onEmpSearch(q) {
+  clearTimeout(empSearchTimer)
+  if (!q || q.trim().length < 1) return
+  empSearchTimer = setTimeout(async () => {
+    try { await loadEmployees(q.trim()) } catch (e) { /* ignore */ }
+  }, 300)
 }
 
 async function onEmployeePicked(empId) {

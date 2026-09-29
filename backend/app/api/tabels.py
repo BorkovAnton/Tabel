@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import func
+from sqlalchemy import String, func, or_
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 
@@ -205,9 +205,18 @@ def search_employees(q: str = Query("", min_length=0), db: Session = Depends(get
         query = query.filter(Employee.department_id.in_(allowed))
     term = q.strip()
     if term:
-        like = f"%{term}%"
-        query = query.filter(
-            (Employee.full_name.ilike(like)) | (Employee.tab_number.ilike(like)))
+        # Регистронезависимый поиск по подстроке (роман находит и «Романов»,
+        # и «Бельков Роман»), с нормализацией Ё->Е. Поля: ФИО, табельный номер,
+        # название подразделения.
+        norm = lambda expr: func.lower(func.replace(expr, 'Ё', 'Е'))
+        like = f"%{term.lower().replace('ё', 'е')}%"
+        query = query.outerjoin(Department, Employee.department_id == Department.id).filter(
+            or_(
+                norm(Employee.full_name).like(like),
+                norm(func.cast(Employee.tab_number, String)).like(like),
+                norm(Department.name).like(like),
+            )
+        )
     emps = query.order_by(Employee.full_name).limit(50).all()
     return [
         {"id": e.id, "full_name": e.full_name, "tab_number": e.tab_number,

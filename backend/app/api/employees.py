@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from sqlalchemy import or_, and_, func
+from sqlalchemy import or_, and_, func, String
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import pandas as pd
@@ -31,21 +31,22 @@ def get_employees(
 ):
     """Получить список сотрудников с пагинацией и поиском.
 
-    Логика поиска (минимум 2 символа):
-      - ФИО — по началу строки;
-      - табельный номер — точное совпадение или по началу строки;
-      - название подразделения — по подстроке.
+    Логика поиска (минимум 1 символ):
+      - регистронезависимо по подстроке (роман находит и «Романов»,
+        и «Бельков Роман»), с нормализацией Ё->Е;
+      - поля: ФИО, табельный номер, название подразделения.
     """
     query = db.query(Employee)
 
-    if search and len(search.strip()) >= 2:
+    if search and len(search.strip()) >= 1:
         q = search.strip()
+        norm = lambda expr: func.lower(func.replace(expr, 'Ё', 'Е'))
+        like = f"%{q.lower().replace('ё', 'е')}%"
         query = query.outerjoin(Department, Employee.department_id == Department.id).filter(
             or_(
-                Employee.full_name.ilike(f"{q}%"),
-                Employee.tab_number == q,
-                Employee.tab_number.ilike(f"{q}%"),
-                Department.name.ilike(f"%{q}%"),
+                norm(Employee.full_name).like(like),
+                norm(func.cast(Employee.tab_number, String)).like(like),
+                norm(Department.name).like(like),
             )
         )
 
