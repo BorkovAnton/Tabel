@@ -8,7 +8,8 @@ class EmployeeCreate(BaseModel):
     full_name: str
     department_id: Optional[int] = None
     schedule_id: Optional[int] = None
-    norm_hours: Optional[float] = 8
+    # Резервная норма часов (fallback без графика). По умолчанию NULL — норма берётся из графика.
+    norm_hours: Optional[float] = None
 
 
 class EmployeeUpdate(BaseModel):

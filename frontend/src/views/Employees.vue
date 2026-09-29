@@ -213,16 +213,6 @@
           </select>
         </div>
 
-        <div style="margin-bottom: 20px;">
-          <label style="display: block; margin-bottom: 5px; font-weight: bold;">Норма часов в день</label>
-          <input
-            v-model.number="normHours"
-            type="number" min="0" max="24" step="0.25" placeholder="8"
-            style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;"
-          />
-          <small style="color: #777;">По умолчанию 8. Часы сверх нормы автоматически считаются сверхурочными в табеле.</small>
-        </div>
-        
         <div style="display: flex; justify-content: flex-end; gap: 10px;">
           <button 
             @click="dialog = false"
@@ -286,7 +276,6 @@ const tabNumber = ref('')
 const fullName = ref('')
 const departmentId = ref(null)
 const scheduleId = ref(null)
-const normHours = ref(null)
 const itemsPerPage = ref(10)
 const currentPage = ref(1)
 
@@ -403,7 +392,6 @@ function openAddDialog() {
   fullName.value = ''
   departmentId.value = null
   scheduleId.value = null
-  normHours.value = null
   dialog.value = true
 }
 
@@ -414,7 +402,6 @@ function openEditDialog(item) {
   fullName.value = item.full_name
   departmentId.value = item.department_id
   scheduleId.value = item.schedule_id
-  normHours.value = item.norm_hours ?? null
   dialog.value = true
 }
 
@@ -431,9 +418,7 @@ async function saveEmployee() {
     tab_number: tabNumber.value,
     full_name: fullName.value,
     department_id: departmentId.value || null,
-    schedule_id: scheduleId.value || null,
-    norm_hours: (normHours.value === '' || normHours.value === null || Number.isNaN(Number(normHours.value)))
-      ? null : Math.min(24, Math.max(0, Number(normHours.value)))
+    schedule_id: scheduleId.value || null
   }
   
   try {

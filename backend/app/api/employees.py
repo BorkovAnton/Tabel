@@ -95,7 +95,7 @@ def create_employee(
         full_name=employee.full_name,
         department_id=employee.department_id,
         schedule_id=employee.schedule_id,
-        norm_hours=employee.norm_hours if employee.norm_hours is not None else 8
+        norm_hours=employee.norm_hours
     )
     db.add(new_employee)
     db.commit()

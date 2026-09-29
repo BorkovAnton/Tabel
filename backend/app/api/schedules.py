@@ -257,3 +257,21 @@ def get_schedule_day(
         "is_day_off": day.is_day_off,
         "norm_hours": calculate_day_norm(day.start_time, day.end_time, day.lunch_minutes, day.is_day_off)
     }
+
+
+@router.get("/{schedule_id}/day-norms")
+def get_schedule_day_norms(schedule_id: int, db: Session = Depends(get_db)):
+    """Нормы часов по дням недели для графика (0=Пн ... 6=Вс).
+
+    Используется табелем для распределения обычных/сверхурочных часов.
+    """
+    sched = db.query(WorkSchedule).filter(WorkSchedule.id == schedule_id).first()
+    if not sched:
+        raise HTTPException(status_code=404, detail="График не найден")
+    norms = {d: None for d in range(7)}
+    for day in sched.days:
+        if 0 <= day.day_of_week <= 6:
+            norms[day.day_of_week] = calculate_day_norm(
+                day.start_time, day.end_time, day.lunch_minutes, day.is_day_off
+            )
+    return {"schedule_id": sched.id, "name": sched.name, "norms": norms}

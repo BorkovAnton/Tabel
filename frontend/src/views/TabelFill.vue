@@ -66,7 +66,7 @@
                   <template #activator="{ props: tooltipProps }">
                     <input
                       class="cell-input cell-tip-area"
-                      :class="{ 'is-code': isCodeText(row.days[d]), 'is-error-cell': hasError(row.employee_id, d), 'is-overtime-cell': isOvertimeCell(row, row.days[d]) }"
+                      :class="{ 'is-code': isCodeText(row.days[d]), 'is-error-cell': hasError(row.employee_id, d), 'is-overtime-cell': isOvertimeCell(row, row.days[d], d) }"
                       :value="row.days[d] || ''"
                       readonly
                       tabindex="-1"
@@ -75,26 +75,26 @@
                     />
                   </template>
                   <!-- Подсказка с деталями ячейки: код из справочника / числовые часы -->
-                  <div v-if="cellTipData(row.days[d], row)" class="day-tooltip">
+                  <div v-if="cellTipData(row.days[d], row, d)" class="day-tooltip">
                     <div class="font-weight-bold mb-1">{{ tooltipDateLabel(d) }}</div>
-                    <template v-if="cellTipData(row.days[d], row).kind === 'code'">
-                      <div><v-icon size="x-small" icon="mdi-tag-text-outline" class="mr-1" />Код: {{ cellTipData(row.days[d], row).code }}</div>
-                      <div><v-icon size="x-small" icon="mdi-information-outline" class="mr-1" />{{ cellTipData(row.days[d], row).name }}</div>
+                    <template v-if="cellTipData(row.days[d], row, d).kind === 'code'">
+                      <div><v-icon size="x-small" icon="mdi-tag-text-outline" class="mr-1" />Код: {{ cellTipData(row.days[d], row, d).code }}</div>
+                      <div><v-icon size="x-small" icon="mdi-information-outline" class="mr-1" />{{ cellTipData(row.days[d], row, d).name }}</div>
                       <v-divider class="tooltip-divider my-1"></v-divider>
-                      <div><v-icon size="x-small" icon="mdi-weather-sunny" class="mr-1" />День: {{ fmtNum(cellTipData(row.days[d], row).day) }}</div>
-                      <div><v-icon size="x-small" icon="mdi-weather-night" class="mr-1" />Ночь: {{ fmtNum(cellTipData(row.days[d], row).night) }}</div>
-                      <div class="font-weight-bold"><v-icon size="x-small" icon="mdi-check-circle-outline" class="mr-1" />Итого часов: {{ fmtNum(cellTipData(row.days[d], row).total) }}</div>
-                      <div v-if="cellTipData(row.days[d], row).ot > 0" class="text-warning">
-                        <v-icon size="x-small" icon="mdi-alert-outline" class="mr-1" />Сверхурочно: {{ fmtNum(cellTipData(row.days[d], row).ot) }} (норма {{ fmtNum(normOf(row)) }})
+                      <div><v-icon size="x-small" icon="mdi-weather-sunny" class="mr-1" />День: {{ fmtNum(cellTipData(row.days[d], row, d).day) }}</div>
+                      <div><v-icon size="x-small" icon="mdi-weather-night" class="mr-1" />Ночь: {{ fmtNum(cellTipData(row.days[d], row, d).night) }}</div>
+                      <div class="font-weight-bold"><v-icon size="x-small" icon="mdi-check-circle-outline" class="mr-1" />Итого часов: {{ fmtNum(cellTipData(row.days[d], row, d).total) }}</div>
+                      <div v-if="cellTipData(row.days[d], row, d).ot > 0" class="text-warning">
+                        <v-icon size="x-small" icon="mdi-alert-outline" class="mr-1" />Сверхурочно: {{ fmtNum(cellTipData(row.days[d], row, d).ot) }} (норма по графику {{ fmtNum(getDayNorm(row, d)) }})
                       </div>
                     </template>
                     <template v-else>
-                      <div><v-icon size="x-small" icon="mdi-clock-outline" class="mr-1" />Введено: {{ fmtNum(cellTipData(row.days[d], row).hours) }} ч.</div>
-                      <div><v-icon size="x-small" icon="mdi-target" class="mr-1" />Норма: {{ fmtNum(cellTipData(row.days[d], row).norm) }} ч.</div>
+                      <div><v-icon size="x-small" icon="mdi-clock-outline" class="mr-1" />Введено: {{ fmtNum(cellTipData(row.days[d], row, d).hours) }} ч.</div>
+                      <div><v-icon size="x-small" icon="mdi-target" class="mr-1" />Норма по графику: {{ fmtNum(cellTipData(row.days[d], row, d).norm) }} ч.</div>
                       <v-divider class="tooltip-divider my-1"></v-divider>
-                      <div><v-icon size="x-small" icon="mdi-briefclockcase-outline" class="mr-1" />Обычные: {{ fmtNum(cellTipData(row.days[d], row).regular) }} ч.</div>
-                      <div v-if="cellTipData(row.days[d], row).ot > 0" class="text-warning font-weight-bold">
-                        <v-icon size="x-small" icon="mdi-alert-outline" class="mr-1" />Сверхурочные: {{ fmtNum(cellTipData(row.days[d], row).ot) }} ч.
+                      <div><v-icon size="x-small" icon="mdi-briefclockcase-outline" class="mr-1" />Обычные: {{ fmtNum(cellTipData(row.days[d], row, d).regular) }} ч.</div>
+                      <div v-if="cellTipData(row.days[d], row, d).ot > 0" class="text-warning font-weight-bold">
+                        <v-icon size="x-small" icon="mdi-alert-outline" class="mr-1" />Сверхурочные: {{ fmtNum(cellTipData(row.days[d], row, d).ot) }} ч.
                       </div>
                     </template>
                   </div>
@@ -484,7 +484,15 @@ function rawToHours(s) {
 // Данные для содержимого tooltip: код из справочника или числовое значение.
 // Для числовых значений дополнительно показываем разбивку по норме (norm_hours):
 // введено / норма / сверхурочные.
-function cellTipData(val, row) {
+// Норма часов для конкретного дня месяца: из графика работы по дню недели.
+// Если графика нет — fallback: employees.norm_hours, иначе 8.
+function getDayNorm(row, d) {
+  const dn = row && row.day_norms ? row.day_norms[d] : undefined
+  if (dn !== undefined && dn !== null) return Number(dn) || 0
+  return normOf(row)
+}
+
+function cellTipData(val, row, d) {
   if (!val) return null
   const s = String(val).trim()
   const codeObj = timeCodes.value.find(c => c.code.toLowerCase() === s.toLowerCase())
@@ -494,13 +502,13 @@ function cellTipData(val, row) {
     const total = day + night
     let ot = 0
     if (row && total > 0 && !(codeObj.destinations || []).includes('overtime_hours')) {
-      ot = Math.max(0, total - normOf(row))
+      ot = Math.max(0, total - getDayNorm(row, d))
     }
     return { kind: 'code', code: codeObj.code, name: codeObj.name, day, night, total, ot }
   }
   const hours = rawToHours(s)
   if (hours !== null) {
-    const norm = row ? normOf(row) : 8
+    const norm = row ? getDayNorm(row, d) : 8
     const ot = Math.max(0, hours - norm)
     return { kind: 'number', hours, norm, regular: Math.min(hours, norm), ot }
   }
@@ -508,8 +516,8 @@ function cellTipData(val, row) {
 }
 
 // Фоновая подсветка ячейки, если часов больше нормы (жёлтый — есть сверхурочные)
-function isOvertimeCell(row, val) {
-  const data = cellTipData(val, row)
+function isOvertimeCell(row, val, d) {
+  const data = cellTipData(val, row, d)
   return !!data && data.ot > 0
 }
 
@@ -646,7 +654,7 @@ function cellHoursForDay(row, val) {
 }
 
 function normOf(row) {
-  const n = Number(row.norm_hours)
+  const n = Number(row && row.norm_hours)
   return n > 0 ? n : 8
 }
 
@@ -654,15 +662,16 @@ function calculateSummary(row) {
   const summary = {}
   summaryColumns.value.forEach(col => { if (col.unit !== 'manual') summary[col.key] = 0 })
 
-  const norm = normOf(row)
-
   for (let d = 1; d <= tabel.value.days_in_month; d++) {
     const val = String(row.days[d] || '').trim()
     if (!val) continue
 
+    // Норма по графику работы для этого дня недели (fallback: employees.norm_hours или 8)
+    const norm = getDayNorm(row, d)
+
     const hours = cellHoursForDay(row, val)
     if (hours !== null && hours > 0) {
-      // числовой ввод: обычные часы + сверхурочные сверх нормы
+      // числовой ввод: обычные часы + сверхурочные сверх нормы по графику
       const regular = Math.min(hours, norm)
       const ot = Math.max(0, hours - norm)
       summary.total_hours += hours
@@ -763,9 +772,10 @@ async function loadTabel() {
     ;(data.entries || []).forEach(e => {
       if (!('kdu_work_days' in e)) e.kdu_work_days = null
       if (!('kdu_weekend_days' in e)) e.kdu_weekend_days = null
-      // Норма часов в день: из employees.norm_hours, по умолчанию 8
+      // Норма часов: основная — из графика (day_norms по дням месяца);
+      // norm_hours сотрудника — только fallback, если график не назначен.
       if (!('norm_hours' in e)) e.norm_hours = null
-      e.norm_hours = Number(e.norm_hours) > 0 ? Number(e.norm_hours) : 8
+      if (!e.day_norms) e.day_norms = {}
     })
     tabel.value = data
     dirty.value = {}

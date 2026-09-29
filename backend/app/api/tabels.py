@@ -83,8 +83,12 @@ class EntryRow(BaseModel):
     # Ручные итоговые колонки «КДУ» (0..5, точность до сотых)
     kdu_work_days: Optional[float] = None
     kdu_weekend_days: Optional[float] = None
-    # Норма часов в день (для распределения сверхурочных); NULL => 8 по умолчанию
+    # Резервная норма часов в день из сотрудника (fallback, если график не назначен); NULL => 8
     norm_hours: Optional[float] = None
+    # График работы сотрудника (для норм по дням недели)
+    schedule_id: Optional[int] = None
+    # Норма часов для каждого дня месяца {1: 8.25, ...}; пустой dict => нет графика (используйте fallback)
+    day_norms: Dict[int, float] = {}
 
     @field_validator("full_name", "tab_number", mode="before")
     @classmethod
@@ -291,16 +295,38 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
     tabel = _get_tabel_or_404(tabel_id, db)
     _check_access(tabel, user)
     dim = calendar.monthrange(tabel.year, tabel.month)[1]
+    # Нормы часов по дням недели из графиков работы (0=Пн ... 6=Вс)
+    from app.models.work_schedule import WorkScheduleDay
+    sched_ids = {e.employee.schedule_id for e in tabel.entries
+                 if e.employee and e.employee.schedule_id}
+    schedule_norms: Dict[int, Dict[int, float]] = {}
+    if sched_ids:
+        from app.api.schedules import calculate_day_norm
+        rows = db.query(WorkScheduleDay).filter(WorkScheduleDay.schedule_id.in_(sched_ids)).all()
+        for r in rows:
+            schedule_norms.setdefault(r.schedule_id, {})[r.day_of_week] = calculate_day_norm(
+                r.start_time, r.end_time, r.lunch_minutes, r.is_day_off
+            )
     entries = []
     for e in sorted(tabel.entries, key=lambda x: (x.position or 0, x.id)):
+        emp = e.employee
+        # Норма для каждого дня месяца: из графика по дню недели; fallback — employees.norm_hours или 8
+        day_norms: Dict[int, float] = {}
+        if emp and emp.schedule_id and emp.schedule_id in schedule_norms:
+            norms_by_dow = schedule_norms[emp.schedule_id]
+            for d in range(1, dim + 1):
+                dow = date(tabel.year, tabel.month, d).weekday()  # 0=Пн ... 6=Вс
+                day_norms[d] = float(norms_by_dow.get(dow, 0.0))
         entries.append(EntryRow(
             employee_id=e.employee_id,
-            full_name=e.employee.full_name if e.employee else "",
-            tab_number=e.employee.tab_number if e.employee else "",
+            full_name=emp.full_name if emp else "",
+            tab_number=emp.tab_number if emp else "",
             days=entry_days(e, dim),
             kdu_work_days=float(e.kdu_work_days) if e.kdu_work_days is not None else None,
             kdu_weekend_days=float(e.kdu_weekend_days) if e.kdu_weekend_days is not None else None,
-            norm_hours=float(e.employee.norm_hours) if (e.employee and e.employee.norm_hours is not None) else None,
+            norm_hours=float(emp.norm_hours) if (emp and emp.norm_hours is not None) else None,
+            schedule_id=emp.schedule_id if emp else None,
+            day_norms=day_norms,
         ))
     return TabelDetailOut(
         id=tabel.id, year=tabel.year, month=tabel.month, days_in_month=dim,
