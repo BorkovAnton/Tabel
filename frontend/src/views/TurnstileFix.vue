@@ -339,6 +339,13 @@
             class="mb-3"
             closable
           >{{ addError }}</v-alert>
+          <v-alert
+            v-if="addSuccess"
+            type="success"
+            density="compact"
+            class="mb-3"
+            closable
+          >{{ addSuccess }}</v-alert>
           <v-row dense class="mb-1">
             <v-col cols="7">
               <v-text-field
@@ -380,6 +387,14 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Зелёное уведомление об успешном добавлении отметки -->
+    <v-snackbar v-model="showAddSnackbar" :timeout="3000" color="success">
+      {{ addSuccess }}
+      <template #actions>
+        <v-btn variant="text" @click="showAddSnackbar = false">Закрыть</v-btn>
+      </template>
+    </v-snackbar>
   </v-container>
 </template>
 
@@ -412,6 +427,8 @@ const selectedDuplicates = ref([]) // ← Новое: выбранные дуб�
 
 const linkDialog = ref(false)
 const addEntryDialog = ref(false)
+const addSuccess = ref('')
+const showAddSnackbar = ref(false)
 
 const selectedName = ref(null)
 const selectedMissing = ref(null)
@@ -799,6 +816,9 @@ async function addMissingEntry() {
     // Отметка реально сохранена на сервере — закрываем диалог и обновляем списки.
     addEntryDialog.value = false
     await loadIssues()
+    // Показываем зелёное уведомление об успехе (автоскрытие через snackbar).
+    addSuccess.value = 'Отметка успешно добавлена'
+    showAddSnackbar.value = true
     console.log('Отметка добавлена:', response.data)
   } catch (e) {
     console.error('Ошибка добавления отметки:', e)

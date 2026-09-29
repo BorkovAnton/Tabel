@@ -260,6 +260,15 @@ def get_issues(
             # Ночная смена может начаться вчера — не показываем её как проблему сегодня
             if s["shift_start"].date() < from_date.date():
                 continue
+            # Если для смены уже добавлена ручная отметка (is_manual), закрывающая
+            # «нет входа» (ручной вход в этот день) — проблема решена, не показываем.
+            manual_in = any(
+                e.is_manual and e.event_type == "in"
+                and e.datetime.date().isoformat() == s["date"]
+                for e in s["events"]
+            )
+            if manual_in:
+                continue
             if not s["has_in"]:
                 out_times = sorted(set(
                     e.datetime.strftime("%H:%M:%S") for e in s["events"] if e.event_type == "out"
@@ -290,6 +299,15 @@ def get_issues(
             if s["shift_start"].date() < from_date.date():
                 continue
             if s["has_in"] and not s["has_out"]:
+                # Ручная отметка «выход» (is_manual), добавленная пользователем,
+                # решает проблему — не показываем смену. Отдельный случай: выход
+                # слишком поздний (> MAX_SHIFT_HOURS) — _pair_shifts считает его
+                # отсутствующим, но если это ручная отметка — проблема закрыта.
+                manual_out = any(
+                    e.is_manual and e.event_type == "out" for e in s["events"]
+                )
+                if manual_out:
+                    continue
                 in_times = sorted(set(
                     e.datetime.strftime("%H:%M:%S") for e in s["events"] if e.event_type == "in"
                 ))
