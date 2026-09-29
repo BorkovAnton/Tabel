@@ -245,85 +245,101 @@ def get_issues(
             "event_type": e.event_type
         } for e in events]
     
-    elif issue_type == "missing_entry":
+    elif issue_type in ("missing_entry", "missing_exit"):
+        want_entry = issue_type == "missing_entry"
         # События берём с запасом на сутки назад — чтобы находить вход ночной смены
-        # предыдущего вечером.
+        # предыдущим вечером.
         events = db.query(TurnstileEvent).filter(
             TurnstileEvent.datetime >= from_date - timedelta(days=1),
             TurnstileEvent.datetime < to_date
         ).order_by(TurnstileEvent.datetime).all()
 
-        shifts = _pair_shifts(events)
+        # Исключаем нераспознанные ФИО («Гость 1», «Забывчивый 2» и т.п.) —
+        # у них нет employee_id; они обрабатываются на вкладке «Нераспознанные ФИО».
+        recognized_events = [e for e in events if e.employee_id is not None]
 
-        result = []
+        # Ручные отметки (is_manual=True) — это исправления, внесённые
+        # пользователем через диалог «Добавить пропущенную отметку». Они не
+        # участвуют в спаривании смен, а служат для закрытия проблем:
+        # ручной вход закрывает «Нет входа», ручной выход — «Нет выхода».
+        manual_ins = {}   # (emp_id, date) -> True
+        manual_outs = {}  # (emp_id, date) -> True
+        for e in recognized_events:
+            if not getattr(e, "is_manual", False):
+                continue
+            d = e.datetime.date().isoformat()
+            if e.event_type == "in":
+                manual_ins[(e.employee_id, d)] = True
+            elif e.event_type == "out":
+                manual_outs[(e.employee_id, d)] = True
+
+        shifts = _pair_shifts([e for e in recognized_events if not getattr(e, "is_manual", False)])
+
+        # Группируем проблемы по сотруднику + дата + тип: одна строка на
+        # сотрудника за день вместо множества строк с разными минутами.
+        grouped = {}
         for s in shifts:
             # Ночная смена может начаться вчера — не показываем её как проблему сегодня
             if s["shift_start"].date() < from_date.date():
                 continue
-            # Если для смены уже добавлена ручная отметка (is_manual), закрывающая
-            # «нет входа» (ручной вход в этот день) — проблема решена, не показываем.
-            manual_in = any(
-                e.is_manual and e.event_type == "in"
-                and e.datetime.date().isoformat() == s["date"]
+            emp_key = (s["employee_id"], s["date"])
+            if want_entry:
+                if s["has_in"]:
+                    continue
+                # Проблема решена, если для этого дня добавлен ручной вход
+                if emp_key in manual_ins:
+                    continue
+            else:
+                if not (s["has_in"] and not s["has_out"]):
+                    continue
+                # Проблема решена, если для этого дня добавлен ручной выход
+                if emp_key in manual_outs:
+                    continue
+
+            times = set(
+                e.datetime.strftime("%H:%M:%S")
                 for e in s["events"]
+                if e.event_type == ("out" if want_entry else "in")
             )
-            if manual_in:
-                continue
-            if not s["has_in"]:
-                out_times = sorted(set(
-                    e.datetime.strftime("%H:%M:%S") for e in s["events"] if e.event_type == "out"
-                ))
-                result.append({
-                    "employee_id": s["employee_id"],
-                    "date": s["date"],
-                    "is_night": s["is_night"],
-                    "duration_hours": s["duration_hours"],
-                    "first_in": None,
-                    "last_out": s["last_out"].strftime("%H:%M:%S") if s["last_out"] else None,
-                    "issue": "Нет входа",
-                    "existing_time": " | ".join(out_times),
-                    "existing_type": "out",
-                })
-        return result
-
-    elif issue_type == "missing_exit":
-        events = db.query(TurnstileEvent).filter(
-            TurnstileEvent.datetime >= from_date - timedelta(days=1),
-            TurnstileEvent.datetime < to_date
-        ).order_by(TurnstileEvent.datetime).all()
-
-        shifts = _pair_shifts(events)
+            key = (s["employee_id"], s["date"], "Нет входа" if want_entry else "Нет выхода")
+            g = grouped.setdefault(key, {
+                "employee_id": s["employee_id"],
+                "date": s["date"],
+                "is_night": s["is_night"],
+                "duration_hours": s["duration_hours"],
+                "first_in": None,
+                "last_out": None,
+                "issue": key[2],
+                "_times": set(),
+                "_count": 0,
+            })
+            g["_times"].update(times)
+            g["_count"] += len(s["events"])
+            if want_entry:
+                if s["last_out"]:
+                    lo = s["last_out"].strftime("%H:%M:%S")
+                    g["last_out"] = max(filter(None, [g["last_out"], lo]))
+            else:
+                if s["first_in"]:
+                    fi = s["first_in"].strftime("%H:%M:%S")
+                    g["first_in"] = min(filter(None, [g["first_in"], fi]))
 
         result = []
-        for s in shifts:
-            if s["shift_start"].date() < from_date.date():
-                continue
-            if s["has_in"] and not s["has_out"]:
-                # Ручная отметка «выход» (is_manual), добавленная пользователем,
-                # решает проблему — не показываем смену. Отдельный случай: выход
-                # слишком поздний (> MAX_SHIFT_HOURS) — _pair_shifts считает его
-                # отсутствующим, но если это ручная отметка — проблема закрыта.
-                manual_out = any(
-                    e.is_manual and e.event_type == "out" for e in s["events"]
-                )
-                if manual_out:
-                    continue
-                in_times = sorted(set(
-                    e.datetime.strftime("%H:%M:%S") for e in s["events"] if e.event_type == "in"
-                ))
-                result.append({
-                    "employee_id": s["employee_id"],
-                    "date": s["date"],
-                    "is_night": s["is_night"],
-                    "duration_hours": s["duration_hours"],
-                    "first_in": s["first_in"].strftime("%H:%M:%S") if s["first_in"] else None,
-                    "last_out": None,
-                    "issue": "Нет выхода",
-                    "existing_time": " | ".join(in_times),
-                    "existing_type": "in",
-                })
-        return result
-    
+        for g in grouped.values():
+            times = sorted(g.pop("_times"))
+            count = g.pop("_count")
+            existing_type = "out" if want_entry else "in"
+            # Не перегружаем строку: показываем первые несколько времен + количество
+            shown = times[:5]
+            existing_time = " | ".join(shown)
+            if len(times) > 5:
+                existing_time += f" … ({len(times)} отметок)"
+            g["existing_time"] = existing_time
+            g["existing_type"] = existing_type
+            g["event_count"] = count
+            result.append(g)
+        return sorted(result, key=lambda r: (r["date"], r["employee_id"]))
+
     elif issue_type == "duplicate":
         events = db.query(TurnstileEvent).filter(
             TurnstileEvent.datetime >= from_date,

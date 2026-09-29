@@ -647,25 +647,50 @@ async function loadIssues() {
     
     const allMissing = [...missingEntryResponse.data, ...missingExitResponse.data]
     
-    missingEntries.value = allMissing.map(item => {
+    // Финальная группировка на фронтенде: одна строка на сотрудника + дату + тип
+    // проблемы (страховка от дублей, если бэкенд вернёт несколько строк).
+    const groupedMap = new Map()
+    for (const item of allMissing) {
+      const gkey = `${item.employee_id}|${item.date}|${item.issue}`
+      const exist = groupedMap.get(gkey)
+      if (!exist) {
+        groupedMap.set(gkey, { ...item })
+        continue
+      }
+      const mergeTimes = (a, b) => {
+        const set = new Set([...(a || '').split(' | '), ...(b || '').split(' | ')].filter(Boolean))
+        return [...set].sort().join(' | ')
+      }
+      exist.existing_time = mergeTimes(exist.existing_time, item.existing_time)
+      exist.event_count = (exist.event_count || 1) + (item.event_count || 1)
+    }
+
+    missingEntries.value = [...groupedMap.values()].map(item => {
       const emp = employees.value.find(e => e.id === item.employee_id)
       // Убираем дубликаты времени через Set и сортируем
-      const uniqueTimes = item.existing_time 
-        ? [...new Set(item.existing_time.split(' | '))].sort().join(' | ')
-        : ''
-      
-      const existingInfo = uniqueTimes
-        ? `${item.existing_type === 'in' ? 'Вход' : 'Выход'}: ${uniqueTimes}`
+      const times = item.existing_time
+        ? [...new Set(item.existing_time.split(' | '))].filter(Boolean).sort()
+        : []
+      const shown = times.slice(0, 5).join(' | ')
+      const timesText = times.length > 5 ? `${shown} … (${times.length} отметок)` : shown
+
+      const existingInfo = timesText
+        ? `${item.existing_type === 'in' ? 'Вход' : 'Выход'}: ${timesText}`
         : 'Нет данных'
-      
+
+      // Количество записей без пары: "Нет входа (24 записи)"
+      const count = item.event_count || 1
+      const issueLabel = count > 1 ? `${item.issue} (${count} записи)` : item.issue
+
       return {
         ...item,
         employee_name: emp?.full_name || `ID: ${item.employee_id}`,
-        existing_info: existingInfo
+        existing_info: existingInfo,
+        issue: issueLabel,
       }
     })
-    
-    stats.value.missing = allMissing.length
+
+    stats.value.missing = missingEntries.value.length
     
     // Загружаем дубликаты
     const duplicateResponse = await api.get('/api/turnstile-fix/issues', {
