@@ -125,7 +125,7 @@ class BulkLinkRequest(BaseModel):
 class FixMissingRequest(BaseModel):
     employee_id: int
     datetime: str
-    event_type: str
+    event_type: Optional[str] = None  # "in" | "out"; если не указан — тип определится автоматически
 
 
 class UnrecognizedDayItem(BaseModel):
@@ -412,22 +412,43 @@ def fix_missing(request: FixMissingRequest, db: Session = Depends(get_db)):
     employee = db.query(Employee).filter(Employee.id == request.employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail="Сотрудник не найден")
-    
-    event_datetime = datetime.fromisoformat(request.datetime)
-    
+
+    try:
+        event_datetime = datetime.fromisoformat(request.datetime)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Некорректный формат даты и времени")
+
+    if request.event_type not in (None, "", "in", "out"):
+        raise HTTPException(status_code=400, detail="Тип отметки должен быть 'in' или 'out'")
+
+    event_type = request.event_type
+    if not event_type:
+        # Автоопределение: до полудня — вход, после — выход.
+        event_type = "in" if event_datetime.hour < 12 else "out"
+
+    # Защита от дубля: такое же событие уже есть (та же секунда).
+    dup = db.query(TurnstileEvent).filter(
+        TurnstileEvent.employee_id == request.employee_id,
+        TurnstileEvent.datetime == event_datetime,
+        TurnstileEvent.event_type == event_type,
+    ).first()
+    if dup:
+        raise HTTPException(status_code=409, detail="Такое событие уже существует")
+
     event = TurnstileEvent(
         raw_name=employee.full_name,
         employee_id=request.employee_id,
-        event_type=request.event_type,
+        event_type=event_type,
         datetime=event_datetime,
-        is_recognized=True
+        is_manual=True,
+        is_recognized=True,
     )
-    
+
     db.add(event)
     db.commit()
     db.refresh(event)
-    
-    return {"status": "ok", "id": event.id}
+
+    return {"status": "ok", "id": event.id, "event_type": event_type}
 
 
 @router.delete("/{event_id}")

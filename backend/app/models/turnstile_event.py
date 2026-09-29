@@ -13,6 +13,7 @@ class TurnstileEvent(Base):
     event_type: Mapped[str] = mapped_column(String(10), nullable=False)
     datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     is_recognized: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_manual: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationships
     employee: Mapped['Employee'] = relationship('Employee')

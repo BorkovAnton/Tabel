@@ -332,12 +332,33 @@
             <br>
             Проблема: {{ selectedMissing?.issue }}
           </p>
-          <v-text-field
-            v-model="newEntryDatetime"
-            label="Дата и время"
-            type="datetime-local"
-            variant="outlined"
-          ></v-text-field>
+          <v-alert
+            v-if="addError"
+            type="error"
+            density="compact"
+            class="mb-3"
+            closable
+          >{{ addError }}</v-alert>
+          <v-row dense class="mb-1">
+            <v-col cols="7">
+              <v-text-field
+                v-model="newEntryDate"
+                label="Дата"
+                type="date"
+                variant="outlined"
+                density="compact"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="5">
+              <v-text-field
+                v-model="newEntryTime"
+                label="Время"
+                type="time"
+                variant="outlined"
+                density="compact"
+              ></v-text-field>
+            </v-col>
+          </v-row>
           <v-select
             v-model="newEntryType"
             :items="[
@@ -396,7 +417,9 @@ const selectedName = ref(null)
 const selectedMissing = ref(null)
 const selectedEmployeeId = ref(null)
 const applyToAll = ref(true)
-const newEntryDatetime = ref('')
+const newEntryDate = ref('')
+const newEntryTime = ref('')
+const addError = ref('')
 const newEntryType = ref('in')
 const linkError = ref('')
 const linkWarning = ref('')
@@ -742,31 +765,56 @@ async function linkEmployee() {
 
 function openAddEntryDialog(item) {
   selectedMissing.value = item
+  addError.value = ''
   const baseDate = item.date
   const suggestedTime = item.existing_type === 'in' ? '17:00' : '08:00'
-  newEntryDatetime.value = `${baseDate}T${suggestedTime}`
+  newEntryDate.value = baseDate
+  newEntryTime.value = suggestedTime
   newEntryType.value = item.existing_type === 'in' ? 'out' : 'in'
   addEntryDialog.value = true
 }
 
 async function addMissingEntry() {
-  if (!newEntryDatetime.value || !newEntryType.value) {
-    alert('Заполните все поля')
+  if (!selectedMissing.value || !selectedMissing.value.employee_id) {
+    addError.value = 'Не выбран сотрудник для добавления отметки'
     return
   }
-  
+  if (!newEntryDate.value || !newEntryTime.value || !newEntryType.value) {
+    addError.value = 'Заполните дату, время и тип отметки'
+    return
+  }
+
+  // Собираем ISO-строку из отдельных полей даты и времени.
+  const time = newEntryTime.value.length === 5 ? `${newEntryTime.value}:00` : newEntryTime.value
+  const dt = `${newEntryDate.value}T${time}`
+
   adding.value = true
+  addError.value = ''
   try {
-    await api.post('/api/turnstile-fix/fix-missing', {
+    const response = await api.post('/api/turnstile-fix/fix-missing', {
       employee_id: selectedMissing.value.employee_id,
-      datetime: newEntryDatetime.value,
+      datetime: dt,
       event_type: newEntryType.value
     })
+    // Отметка реально сохранена на сервере — закрываем диалог и обновляем списки.
     addEntryDialog.value = false
     await loadIssues()
+    console.log('Отметка добавлена:', response.data)
   } catch (e) {
     console.error('Ошибка добавления отметки:', e)
-    alert('Ошибка при добавлении отметки')
+    const status = e?.response?.status
+    const detail = e?.response?.data?.detail
+    if (status === 422) {
+      addError.value = 'Проверьте формат даты и времени'
+    } else if (status === 404) {
+      addError.value = typeof detail === 'string' ? detail : 'Сотрудник не найден на сервере'
+    } else if (status === 409) {
+      addError.value = detail || 'Такое событие уже существует'
+    } else if (status === 400) {
+      addError.value = detail || 'Некорректные данные отметки'
+    } else {
+      addError.value = 'Ошибка при добавлении отметки' + (typeof detail === 'string' ? `: ${detail}` : '')
+    }
   } finally {
     adding.value = false
   }

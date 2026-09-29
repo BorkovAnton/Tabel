@@ -17,6 +17,8 @@ MIGRATIONS = [
     ("tabel_entries", "kdu_weekend_days", "NUMERIC(4,2)"),
     # Резервная норма часов (fallback; основная норма берётся из графика по дню недели)
     ("employees", "norm_hours", "NUMERIC(5,2) DEFAULT NULL"),
+    # Ручные отметки проходной (добавлены вручную на странице «Пропущенные отметки»)
+    ("turnstile_events", "is_manual", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 
