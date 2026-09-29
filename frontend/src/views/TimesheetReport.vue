@@ -162,13 +162,37 @@
                 <td class="sticky-col-2 font-weight-medium">{{ emp.full_name }}</td>
                 <td class="sticky-col-3 text-grey">{{ emp.department }}</td>
                 
-                <td 
-                  v-for="day in reportData.days_in_month" 
-                  :key="day" 
+                <td
+                  v-for="day in reportData.days_in_month"
+                  :key="day"
                   class="text-center timesheet-cell"
                   :class="getCellClasses(emp.days[day], day)"
-                  v-html="formatCellValue(emp.days[day])"
                 >
+                  <v-tooltip location="bottom" :max-width="200">
+                    <template #activator="{ props: tooltipProps }">
+                      <span v-bind="tooltipProps" class="cell-content" v-html="formatCellValue(emp.days[day])"></span>
+                    </template>
+                    <div class="day-tooltip">
+                      <div class="font-weight-bold mb-1">{{ tooltipDateLabel(day) }}</div>
+                      <div class="d-flex align-center ga-1">
+                        <v-icon size="x-small" icon="mdi-login" color="green-darken-2"></v-icon>
+                        Вход: {{ emp.days[day]?.first_in || '—' }}
+                      </div>
+                      <div class="d-flex align-center ga-1">
+                        <v-icon size="x-small" icon="mdi-logout" color="red-darken-2"></v-icon>
+                        Выход: {{ emp.days[day]?.last_out || '—' }}
+                      </div>
+                      <div v-if="emp.days[day]?.overtime" class="d-flex align-center ga-1 text-orange-darken-2">
+                        <v-icon size="x-small" icon="mdi-clock-alert-outline"></v-icon>
+                        Сверхурочно: {{ formatTime(emp.days[day].overtime) }}
+                      </div>
+                      <v-divider class="my-1"></v-divider>
+                      <div class="d-flex align-center ga-1 font-weight-medium">
+                        <v-icon size="x-small" icon="mdi-calendar-clock" color="blue-darken-2"></v-icon>
+                        {{ emp.days[day]?.hours ? ('Всего: ' + formatTime(emp.days[day].hours)) : 'Данные отсутствуют' }}
+                      </div>
+                    </div>
+                  </v-tooltip>
                 </td>
                 
                 <td class="sticky-col-end text-center font-weight-bold bg-grey-lighten-4">
@@ -366,6 +390,22 @@ function getDayOfWeek(day, year, month) {
   return days[date.getDay()]
 }
 
+// Название месяца для tooltip (полное, с родительным падежом)
+const MONTH_NAMES_GENITIVE = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+]
+
+// Метка даты в tooltip: «Понедельник, 28 сентября 2026»
+function tooltipDateLabel(day) {
+  if (!reportData.value) return ''
+  const y = reportData.value.year
+  const m = reportData.value.month
+  const date = new Date(y, m - 1, day)
+  const weekdays = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+  return `${weekdays[date.getDay()]}, ${day} ${MONTH_NAMES_GENITIVE[m - 1]} ${y}`
+}
+
 onMounted(() => {
   loadDepartments()
 })
@@ -453,6 +493,22 @@ onMounted(() => {
 .sticky-col-end td {
   font-weight: bold !important;
   white-space: nowrap !important;
+}
+
+/* Содержимое ячейки дня (activator для tooltip) — растягиваем на всю ячейку,
+   чтобы tooltip открывался при наведении в любом месте ячейки */
+.cell-content {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+}
+
+/* Содержимое tooltip с деталями дня */
+.day-tooltip {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 /* Цвета ячеек */

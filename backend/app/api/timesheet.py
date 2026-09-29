@@ -449,7 +449,11 @@ def get_timesheet_report(
                 days_data[str(day)] = {
                     "value": value,
                     "hours": record.fact_hours,
-                    "needs_review": record.needs_review
+                    "needs_review": record.needs_review,
+                    # Детали для tooltip на фронтенде: время входа/выхода, сверхурочные
+                    "first_in": record.first_in.strftime("%H:%M") if record.first_in else None,
+                    "last_out": record.last_out.strftime("%H:%M") if record.last_out else None,
+                    "overtime": round(record.overtime, 2) if record.overtime else None,
                 }
                 
                 if not record.needs_review:
@@ -458,7 +462,10 @@ def get_timesheet_report(
                 days_data[str(day)] = {
                     "value": "в",
                     "hours": 0.0,
-                    "needs_review": False
+                    "needs_review": False,
+                    "first_in": None,
+                    "last_out": None,
+                    "overtime": None,
                 }
         
         # Получаем название подразделения
