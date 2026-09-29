@@ -12,6 +12,9 @@ MIGRATIONS = [
     ("users", "is_user", "BOOLEAN NOT NULL DEFAULT TRUE"),
     ("users", "allowed_departments", "TEXT DEFAULT ''"),
     ("users", "is_report", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # Ручные итоговые колонки «КДУ» в табеле заполнения
+    ("tabel_entries", "kdu_work_days", "NUMERIC(4,2)"),
+    ("tabel_entries", "kdu_weekend_days", "NUMERIC(4,2)"),
 ]
 
 

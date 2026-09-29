@@ -136,7 +136,18 @@
             </td>
             <!-- ЗНАЧЕНИЯ ИТОГОВЫХ КОЛОНОК -->
             <td v-for="col in summaryColumns" :key="col.key" class="col-summary-cell text-center">
-              {{ calculateSummary(row)[col.key] || 0 }}
+              <!-- Ручные колонки КДУ: редактируемый input (0..5, шаг 0.01) -->
+              <input
+                v-if="col.unit === 'manual'"
+                type="number"
+                class="kdu-input"
+                min="0" max="5" step="0.01"
+                :value="row[col.key] ?? ''"
+                @input="onKduInput(row, col.key, $event)"
+                @blur="onKduBlur(row, col.key)"
+                @click.stop
+              />
+              <template v-else>{{ calculateSummary(row)[col.key] || 0 }}</template>
             </td>
             <td class="col-del">
               <span class="code-chips" v-if="codesForRow(row).length">
@@ -344,6 +355,7 @@ const dayOfWeekNames = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
 const tabel = ref(null)
 const timeCodes = ref([])
 const dirty = ref({})
+const dirtyKdu = ref({})   // изменённые ручные значения КДУ: key = `${employee_id}_${field}`
 const cellErrors = ref({})
 const message = ref('')
 const messageType = ref('success')
@@ -368,8 +380,8 @@ const summaryColumns = ref([
   { key: 'overtime_hours', label: 'Сверхурочные часы', unit: 'hours' },
   { key: 'night_hours', label: 'ночные часы', unit: 'hours' },
   { key: 'tariff_hours', label: 'Итого часов по участку', unit: 'hours' },
-  { key: 'kdu_work_days', label: 'КДУ УШН', unit: 'days' },
-  { key: 'kdu_weekend_days', label: 'КДУ, вых. дни УШН', unit: 'days' }
+  { key: 'kdu_work_days', label: 'КДУ', unit: 'manual' },
+  { key: 'kdu_weekend_days', label: 'КДУ вых. дня', unit: 'manual' }
 ])
 
 function getDayOfWeek(day) {
@@ -593,9 +605,10 @@ function totalHours(row) {
 }
 
 // ИСПРАВЛЕНО: Расчет теперь использует свойство unit из summaryColumns
+// Колонки с unit === 'manual' (КДУ) заполняются вручную и здесь не считаются.
 function calculateSummary(row) {
   const summary = {}
-  summaryColumns.value.forEach(col => summary[col.key] = 0)
+  summaryColumns.value.forEach(col => { if (col.unit !== 'manual') summary[col.key] = 0 })
 
   for (let d = 1; d <= tabel.value.days_in_month; d++) {
     const val = String(row.days[d] || '').trim()
@@ -647,6 +660,33 @@ function calculateSummary(row) {
   return summary
 }
 
+// ===== Ручные колонки КДУ (0..5, точность до сотых) =====
+function clampKdu(raw) {
+  if (raw === '' || raw === null || raw === undefined) return null
+  let n = parseFloat(String(raw).replace(',', '.'))
+  if (Number.isNaN(n)) return null
+  // автокоррекция: <0 → 0, >5 → 5, округление до сотых (2.567 → 2.57)
+  n = Math.min(5, Math.max(0, n))
+  return Math.round(n * 100) / 100
+}
+
+function onKduInput(row, field, event) {
+  const raw = event.target.value
+  const clamped = clampKdu(raw)
+  row[field] = clamped
+  // мгновенная автокоррекция значений вне диапазона (6 → 5)
+  if (clamped !== null && String(clamped) !== raw.replace(',', '.')) {
+    event.target.value = clamped
+  }
+  dirtyKdu.value[`${row.employee_id}_${field}`] = clamped
+}
+
+function onKduBlur(row, field) {
+  const clamped = clampKdu(row[field])
+  row[field] = clamped
+  dirtyKdu.value[`${row.employee_id}_${field}`] = clamped
+}
+
 async function loadTabel() {
   const raw = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id
   const id = Number(raw)
@@ -658,8 +698,14 @@ async function loadTabel() {
   }
   try {
     const { data } = await api.get(`/tabels/${id}`)
+    // инициализация полей КДУ, если их нет (старые данные)
+    ;(data.entries || []).forEach(e => {
+      if (!('kdu_work_days' in e)) e.kdu_work_days = null
+      if (!('kdu_weekend_days' in e)) e.kdu_weekend_days = null
+    })
     tabel.value = data
     dirty.value = {}
+    dirtyKdu.value = {}
     cellErrors.value = {}
   } catch (e) {
     const status = e.response?.status
@@ -687,7 +733,11 @@ async function save(showMsg = true) {
     const [empId, day] = key.split('_')
     return { employee_id: Number(empId), day: Number(day), value }
   })
-  if (!updates.length) return true
+  const kduUpdates = Object.entries(dirtyKdu.value).map(([key, value]) => {
+    const idx = key.lastIndexOf('_')
+    return { employee_id: Number(key.slice(0, idx)), field: key.slice(idx + 1), value }
+  })
+  if (!updates.length && !kduUpdates.length) return true
   if (Object.keys(cellErrors.value).length) {
     message.value = 'Есть некорректные ячейки — исправьте их перед сохранением'
     messageType.value = 'error'
@@ -695,8 +745,10 @@ async function save(showMsg = true) {
   }
   saving.value = true
   try {
-    await api.put(`/tabels/${route.params.id}/cells`, updates)
+    if (updates.length) await api.put(`/tabels/${route.params.id}/cells`, updates)
+    if (kduUpdates.length) await api.put(`/tabels/${route.params.id}/kdu`, kduUpdates)
     dirty.value = {}
+    dirtyKdu.value = {}
     if (showMsg) {
       message.value = 'Сохранено'
       messageType.value = 'success'
@@ -837,6 +889,20 @@ onMounted(async () => {
   font-size: 11px; font-weight: normal; text-align: center;
   background-color: white !important; border-left: 1px solid #000 !important;
 }
+
+/* Ручные колонки КДУ — визуально отличаются (зелёный фон input) */
+.kdu-input {
+  width: 100%; box-sizing: border-box;
+  border: 1px solid #a5d6a7; border-radius: 4px;
+  background-color: #e8f5e9;
+  font-size: 11px; text-align: center; padding: 2px 1px;
+  outline: none;
+}
+.kdu-input:focus { border-color: #2e7d32; background-color: #f1f8e9; }
+/* скрыть стрелки number-инпута, чтобы не ломать узкую колонку */
+.kdu-input::-webkit-outer-spin-button,
+.kdu-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.kdu-input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 
 .col-del { width: 40px; background-color: white !important; }
 .cell-day { width: 38px; min-width: 38px; max-width: 38px; padding: 2px !important; }

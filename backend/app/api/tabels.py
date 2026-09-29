@@ -80,6 +80,9 @@ class EntryRow(BaseModel):
     full_name: str
     tab_number: str
     days: Dict[int, str]
+    # Ручные итоговые колонки «КДУ» (0..5, точность до сотых)
+    kdu_work_days: Optional[float] = None
+    kdu_weekend_days: Optional[float] = None
 
     @field_validator("full_name", "tab_number", mode="before")
     @classmethod
@@ -108,6 +111,32 @@ class CellUpdate(BaseModel):
     employee_id: int
     day: int
     value: str
+
+
+class KduUpdate(BaseModel):
+    """Ручное значение итоговой колонки КДУ (0..5, точность до сотых)."""
+    employee_id: int
+    field: str  # 'kdu_work_days' | 'kdu_weekend_days'
+    value: Optional[float] = None
+
+    @field_validator("value")
+    @classmethod
+    def _clamp(cls, v):
+        if v is None:
+            return None
+        v = round(float(v), 2)
+        if v < 0:
+            raise ValueError("Значение КДУ не может быть меньше 0")
+        if v > 5:
+            raise ValueError("Значение КДУ не может быть больше 5")
+        return v
+
+    @field_validator("field")
+    @classmethod
+    def _allowed_field(cls, v):
+        if v not in ("kdu_work_days", "kdu_weekend_days"):
+            raise ValueError("Недопустимое поле КДУ")
+        return v
 
 
 class EntriesAdd(BaseModel):
@@ -267,6 +296,8 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             full_name=e.employee.full_name if e.employee else "",
             tab_number=e.employee.tab_number if e.employee else "",
             days=entry_days(e, dim),
+            kdu_work_days=float(e.kdu_work_days) if e.kdu_work_days is not None else None,
+            kdu_weekend_days=float(e.kdu_weekend_days) if e.kdu_weekend_days is not None else None,
         ))
     return TabelDetailOut(
         id=tabel.id, year=tabel.year, month=tabel.month, days_in_month=dim,
@@ -374,6 +405,24 @@ def update_cells(tabel_id: int, updates: List[CellUpdate], db: Session = Depends
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))
     return {"saved": len(updates)}
+
+
+@router.put("/{tabel_id}/kdu")
+def update_kdu(tabel_id: int, updates: List[KduUpdate], db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """Сохранить ручные значения КДУ (0..5, до сотых) для строк табеля."""
+    tabel = _get_tabel_or_404(tabel_id, db)
+    _check_access(tabel, user)
+    saved = 0
+    for up in updates:
+        entry = db.query(TabelEntry).filter(
+            TabelEntry.tabel_id == tabel_id, TabelEntry.employee_id == up.employee_id).first()
+        if not entry:
+            raise HTTPException(status_code=404, detail=f"Запись сотрудника {up.employee_id} не найдена")
+        setattr(entry, up.field, up.value)
+        saved += 1
+    db.commit()
+    return {"saved": saved}
 
 
 @router.delete("/{tabel_id}/entries/{employee_id}")

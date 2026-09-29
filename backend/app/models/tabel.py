@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -74,6 +74,10 @@ class TabelEntry(Base):
     day_31: Mapped[str | None] = mapped_column(String(8))
 
     comment: Mapped[str | None] = mapped_column(Text)
+
+    # Ручные итоговые колонки «КДУ» (заполняются пользователем, 0..5, точность до сотых)
+    kdu_work_days: Mapped[float | None] = mapped_column(Numeric(4, 2))
+    kdu_weekend_days: Mapped[float | None] = mapped_column(Numeric(4, 2))
 
     tabel: Mapped["Tabel"] = relationship("Tabel", back_populates="entries")
     employee: Mapped["Employee"] = relationship("Employee")
