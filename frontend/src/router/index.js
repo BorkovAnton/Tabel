@@ -12,6 +12,7 @@ import Tabels from '../views/Tabels.vue'
 import TabelFill from '../views/TabelFill.vue'
 import Users from '../views/Users.vue'
 import HoursReport from '../views/HoursReport.vue'
+import Settings from '../views/Settings.vue'
 
 const routes = [
   // Модуль «Табель»: авторизация обязательна
@@ -30,7 +31,9 @@ const routes = [
   { path: '/timesheet-report', name: 'TimesheetReport', component: TimesheetReport },
   { path: '/turnstile-fix', name: 'TurnstileFix', component: TurnstileFix },
   { path: '/departments', name: 'Departments', component: Departments },
-  { path: '/schedules', name: 'Schedules', component: Schedules }
+  { path: '/schedules', name: 'Schedules', component: Schedules },
+  // Настройки предприятия — только Администратор
+  { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true, requiresAdmin: true } }
 ]
 
 const router = createRouter({

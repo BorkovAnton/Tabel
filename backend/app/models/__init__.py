@@ -8,6 +8,7 @@ from .unrecognized_mapping import UnrecognizedMapping
 from .user import User
 from .time_code import TimeCode
 from .tabel import Tabel, TabelEntry
+from .company_setting import CompanySetting
 
 __all__ = [
     "Department",
@@ -21,4 +22,5 @@ __all__ = [
     "TimeCode",
     "Tabel",
     "TabelEntry",
+    "CompanySetting",
 ]

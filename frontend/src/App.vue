@@ -77,6 +77,7 @@ const allNavItems = [
   { title: 'Отчёт по часам', path: '/hours-report', icon: 'mdi-chart-box', auth: true, reportRole: true },
   { title: 'Подразделения', path: '/departments', icon: 'mdi-office-building', auth: false },
   { title: 'Графики', path: '/schedules', icon: 'mdi-clock-outline', auth: false },
+  { title: 'Настройки', path: '/settings', icon: 'mdi-cog', admin: true },
   { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true, userRole: true },
   { title: 'Пользователи', path: '/users', icon: 'mdi-account-key', admin: true }
 ]
