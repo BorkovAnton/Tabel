@@ -12,6 +12,106 @@ from app.models.department import Department
 
 router = APIRouter(prefix="/api/turnstile-fix", tags=["Turnstile Fix"])
 
+# Ночная смена: вход вечером (после этого часа) может закрываться выходом
+# следующего дня до полудня.
+NIGHT_IN_HOUR = 20
+NIGHT_OUT_MAX_HOUR = 12
+# Если выхода нет в течение стольких часов после входа — считаем, что выхода нет.
+MAX_SHIFT_HOURS = 16
+
+
+def _pair_shifts(events):
+    """Связать события «вход-выход» в смены с учётом ночных переходов через полночь.
+
+    Логика:
+      * События для каждого сотрудника сортируются по времени.
+      * Вход после NIGHT_IN_HOUR (20:00) ожидает выход до NIGHT_OUT_MAX_HOUR (12:00)
+        следующего дня — это одна ночная смена (например, 22:47 -> 07:02).
+      * Обычный вход закрывается ближайшим выходом; если выход найден позже чем
+        через MAX_SHIFT_HOURS часов (или не найден) — помечаем «Нет выхода».
+      * Выход без предшествующего входа — «Нет входа».
+
+    Возвращает список смен, отсортированных по дате начала и сотруднику.
+    """
+    by_emp = {}
+    for e in events:
+        if e.employee_id is None:
+            continue
+        by_emp.setdefault(e.employee_id, []).append(e)
+
+    shifts = []
+    for emp_id, evs in by_emp.items():
+        evs = sorted(evs, key=lambda e: e.datetime)
+        open_in = None       # datetime незакрытого входа
+        open_events = []     # события текущей открытой смены
+        pending_outs = []    # выходы, не нашедшие свой вход
+
+        def close_shift(start, end, shift_events, is_night):
+            duration = round((end - start).total_seconds() / 3600.0, 2) if end else None
+            shifts.append({
+                "employee_id": emp_id,
+                "date": start.date().isoformat(),
+                "shift_start": start,
+                "first_in": start,
+                "last_out": end,
+                "has_in": True,
+                "has_out": end is not None,
+                "is_night": is_night,
+                "duration_hours": duration,
+                "events": shift_events,
+            })
+
+        for e in evs:
+            dt = e.datetime
+            if e.event_type == "in":
+                if open_in is not None:
+                    # Новый вход раньше закрытия предыдущей смены — фиксируем
+                    # предыдущую как «нет выхода» и открываем новую.
+                    close_shift(open_in, None, open_events, open_in.hour >= NIGHT_IN_HOUR)
+                open_in = dt
+                open_events = [e]
+                # Присоединяем ранее «висящие» выходы этой же ночной смены
+                for pe in list(pending_outs):
+                    if pe.datetime > open_in and pe.datetime.hour < NIGHT_OUT_MAX_HOUR \
+                            and (pe.datetime - open_in) <= timedelta(hours=MAX_SHIFT_HOURS):
+                        open_events.append(pe)
+                        close_shift(open_in, pe.datetime, open_events, True)
+                        pending_outs.remove(pe)
+                        open_in = None
+                        open_events = []
+                        break
+            elif e.event_type == "out":
+                if open_in is not None and dt > open_in \
+                        and (dt - open_in) <= timedelta(hours=MAX_SHIFT_HOURS):
+                    is_night = (dt.date() > open_in.date() and dt.hour < NIGHT_OUT_MAX_HOUR) \
+                        or open_in.hour >= NIGHT_IN_HOUR
+                    open_events.append(e)
+                    close_shift(open_in, dt, open_events, is_night)
+                    open_in = None
+                    open_events = []
+                elif open_in is None:
+                    pending_outs.append(e)
+                # если dt <= open_in — случайный выброс, игнорируем в составе смены
+
+        if open_in is not None:
+            close_shift(open_in, None, open_events, open_in.hour >= NIGHT_IN_HOUR)
+
+        for pe in pending_outs:
+            shifts.append({
+                "employee_id": emp_id,
+                "date": pe.datetime.date().isoformat(),
+                "shift_start": pe.datetime,
+                "first_in": None,
+                "last_out": pe.datetime,
+                "has_in": False,
+                "has_out": True,
+                "is_night": pe.datetime.hour < NIGHT_OUT_MAX_HOUR,
+                "duration_hours": None,
+                "events": [pe],
+            })
+
+    return sorted(shifts, key=lambda s: (s["shift_start"], s["employee_id"]))
+
 
 class LinkRequest(BaseModel):
     employee_id: int
@@ -146,56 +246,63 @@ def get_issues(
         } for e in events]
     
     elif issue_type == "missing_entry":
+        # События берём с запасом на сутки назад — чтобы находить вход ночной смены
+        # предыдущего вечером.
         events = db.query(TurnstileEvent).filter(
-            TurnstileEvent.datetime >= from_date,
+            TurnstileEvent.datetime >= from_date - timedelta(days=1),
             TurnstileEvent.datetime < to_date
-        ).all()
-        
-        by_employee_day = {}
-        for e in events:
-            day = e.datetime.date()
-            key = (e.employee_id, day)
-            if key not in by_employee_day:
-                by_employee_day[key] = {"in": [], "out": []}
-            by_employee_day[key][e.event_type].append(e)
-        
+        ).order_by(TurnstileEvent.datetime).all()
+
+        shifts = _pair_shifts(events)
+
         result = []
-        for (emp_id, day), data in by_employee_day.items():
-            if data["out"] and not data["in"]:
-                out_times = sorted(list(set(e.datetime.strftime("%H:%M:%S") for e in data["out"])))
+        for s in shifts:
+            # Ночная смена может начаться вчера — не показываем её как проблему сегодня
+            if s["shift_start"].date() < from_date.date():
+                continue
+            if not s["has_in"]:
+                out_times = sorted(set(
+                    e.datetime.strftime("%H:%M:%S") for e in s["events"] if e.event_type == "out"
+                ))
                 result.append({
-                    "employee_id": emp_id,
-                    "date": day.isoformat(),
+                    "employee_id": s["employee_id"],
+                    "date": s["date"],
+                    "is_night": s["is_night"],
+                    "duration_hours": s["duration_hours"],
+                    "first_in": None,
+                    "last_out": s["last_out"].strftime("%H:%M:%S") if s["last_out"] else None,
                     "issue": "Нет входа",
                     "existing_time": " | ".join(out_times),
-                    "existing_type": "out"
+                    "existing_type": "out",
                 })
         return result
-    
+
     elif issue_type == "missing_exit":
         events = db.query(TurnstileEvent).filter(
-            TurnstileEvent.datetime >= from_date,
+            TurnstileEvent.datetime >= from_date - timedelta(days=1),
             TurnstileEvent.datetime < to_date
-        ).all()
-        
-        by_employee_day = {}
-        for e in events:
-            day = e.datetime.date()
-            key = (e.employee_id, day)
-            if key not in by_employee_day:
-                by_employee_day[key] = {"in": [], "out": []}
-            by_employee_day[key][e.event_type].append(e)
-        
+        ).order_by(TurnstileEvent.datetime).all()
+
+        shifts = _pair_shifts(events)
+
         result = []
-        for (emp_id, day), data in by_employee_day.items():
-            if data["in"] and not data["out"]:
-                in_times = sorted(list(set(e.datetime.strftime("%H:%M:%S") for e in data["in"])))
+        for s in shifts:
+            if s["shift_start"].date() < from_date.date():
+                continue
+            if s["has_in"] and not s["has_out"]:
+                in_times = sorted(set(
+                    e.datetime.strftime("%H:%M:%S") for e in s["events"] if e.event_type == "in"
+                ))
                 result.append({
-                    "employee_id": emp_id,
-                    "date": day.isoformat(),
+                    "employee_id": s["employee_id"],
+                    "date": s["date"],
+                    "is_night": s["is_night"],
+                    "duration_hours": s["duration_hours"],
+                    "first_in": s["first_in"].strftime("%H:%M:%S") if s["first_in"] else None,
+                    "last_out": None,
                     "issue": "Нет выхода",
                     "existing_time": " | ".join(in_times),
-                    "existing_type": "in"
+                    "existing_type": "in",
                 })
         return result
     
@@ -223,6 +330,50 @@ def get_issues(
         return duplicates
     
     return []
+
+
+@router.get("/shifts")
+def get_shifts(
+    date_from: str = Query(...),
+    date_to: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Список смен (пар вход-выход) с учётом ночных переходов через полночь."""
+    from_date = datetime.fromisoformat(date_from)
+    to_date = datetime.fromisoformat(date_to) + timedelta(days=1)
+
+    events = db.query(TurnstileEvent).filter(
+        TurnstileEvent.datetime >= from_date - timedelta(days=1),
+        TurnstileEvent.datetime < to_date
+    ).order_by(TurnstileEvent.datetime).all()
+
+    emp_names = {
+        e.id: e.full_name
+        for e in db.query(Employee).filter(Employee.id.isnot(None)).all()
+    }
+
+    result = []
+    for s in _pair_shifts(events):
+        if s["shift_start"].date() < from_date.date():
+            continue
+        if s["has_in"] and s["has_out"]:
+            status, ok = "OK", True
+        elif s["has_in"]:
+            status, ok = "Нет выхода", False
+        else:
+            status, ok = "Нет входа", False
+        result.append({
+            "employee_id": s["employee_id"],
+            "employee_name": emp_names.get(s["employee_id"], f"ID: {s['employee_id']}"),
+            "date": s["date"],
+            "is_night": s["is_night"],
+            "first_in": s["first_in"].strftime("%d.%m %H:%M:%S") if s["first_in"] else None,
+            "last_out": s["last_out"].strftime("%d.%m %H:%M:%S") if s["last_out"] else None,
+            "duration_hours": s["duration_hours"],
+            "status": status,
+            "ok": ok,
+        })
+    return result
 
 
 @router.patch("/bulk-link")

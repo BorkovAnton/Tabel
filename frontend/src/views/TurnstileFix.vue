@@ -92,6 +92,10 @@
           <v-icon start>mdi-content-duplicate</v-icon>
           Дубликаты
         </v-tab>
+        <v-tab value="shifts">
+          <v-icon start>mdi-weather-night</v-icon>
+          Смены
+        </v-tab>
       </v-tabs>
 
       <v-card-text>
@@ -170,6 +174,39 @@
               <template v-slot:item.event_type="{ item }">
                 <v-chip :color="item.event_type === 'in' ? 'green' : 'red'" size="small">
                   {{ item.event_type === 'in' ? 'Вход' : 'Выход' }}
+                </v-chip>
+              </template>
+            </v-data-table>
+          </v-window-item>
+
+          <!-- Вкладка: Смены (пары вход-выход, включая ночные через полночь) -->
+          <v-window-item value="shifts">
+            <div class="text-caption text-grey mb-2">
+              Ночные смены (вход после 20:00, выход до 12:00 следующего дня) связываются
+              в одну смену и выделяются голубым фоном с иконкой 🌙.
+            </div>
+            <v-data-table
+              :headers="shiftHeaders"
+              :items="shifts"
+              :loading="loading"
+              :row-class="shiftRowClass"
+              class="elevation-1"
+            >
+              <template v-slot:item.date="{ item }">
+                <span>{{ formatRuDate(item.date) }}</span>
+                <span v-if="item.is_night" class="night-badge ml-1" title="Ночная смена">🌙</span>
+              </template>
+              <template v-slot:item.shift_times="{ item }">
+                <div class="text-body-2">Вход: {{ item.first_in || '—' }}</div>
+                <div class="text-body-2">Выход: {{ item.last_out || '—' }}</div>
+              </template>
+              <template v-slot:item.duration_hours="{ item }">
+                {{ item.duration_hours != null ? `${item.duration_hours} ч` : '—' }}
+              </template>
+              <template v-slot:item.status="{ item }">
+                <v-chip :color="item.ok ? 'green' : 'red'" size="small">
+                  <v-icon start size="small">{{ item.ok ? 'mdi-check' : 'mdi-close' }}</v-icon>
+                  {{ item.status }}
                 </v-chip>
               </template>
             </v-data-table>
@@ -348,6 +385,7 @@ const stats = ref({
 const unrecognizedNames = ref([])
 const missingEntries = ref([])
 const duplicates = ref([])
+const shifts = ref([])
 const employees = ref([])
 const selectedDuplicates = ref([]) // ← Новое: выбранные дубликаты
 
@@ -528,6 +566,19 @@ const duplicateHeaders = [
   { title: 'Дубликат ID', key: 'duplicate_of', width: '120px' }
 ]
 
+const shiftHeaders = [
+  { title: 'Сотрудник', key: 'employee_name' },
+  { title: 'Дата', key: 'date', width: '140px' },
+  { title: 'Смена', key: 'shift_times', width: '220px' },
+  { title: 'Длительность', key: 'duration_hours', width: '130px' },
+  { title: 'Статус', key: 'status', width: '150px' }
+]
+
+// Голубой фон для ночных смен
+function shiftRowClass({ item }) {
+  return item.is_night ? 'night-shift-row' : ''
+}
+
 async function loadEmployees() {
   try {
     const response = await api.get('/employees/')
@@ -583,6 +634,18 @@ async function loadIssues() {
     duplicates.value = duplicateResponse.data
     stats.value.duplicates = duplicateResponse.data.length
     
+    // Загружаем смены (пары вход-выход с учётом ночных через полночь)
+    try {
+      const shiftsResponse = await api.get('/api/turnstile-fix/shifts', {
+        params: { date_from: dateFrom.value, date_to: dateTo.value }
+      })
+      shifts.value = shiftsResponse.data
+      stats.value.longShifts = shiftsResponse.data.filter(s => s.duration_hours != null && s.duration_hours > 12).length
+    } catch (shiftsErr) {
+      console.error('Ошибка загрузки смен:', shiftsErr)
+      shifts.value = []
+    }
+
   } catch (e) {
     console.error('Ошибка загрузки проблем:', e)
   } finally {
@@ -803,5 +866,16 @@ onMounted(() => {
 /* Увеличиваем специфичность для гарантированного применения */
 .v-application .v-data-table .v-checkbox-btn.v-selection-control--dirty {
   color: #4caf50 !important;
+}
+
+/* Ночные смены — голубой фон строки */
+.v-data-table tr.night-shift-row td {
+  background-color: #e3f2fd !important;
+}
+.v-data-table tr.night-shift-row:hover td {
+  background-color: #d1e7fb !important;
+}
+.night-badge {
+  font-size: 14px;
 }
 </style>
