@@ -62,14 +62,39 @@
             <td v-for="d in tabel.days_in_month" :key="d" class="cell-day"
                 :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
               <div class="cell-wrap" :class="{ 'is-open': openCell === row.employee_id + '_' + d }">
-                <input
-                  class="cell-input"
-                  :class="{ 'is-code': isCodeText(row.days[d]), 'is-error-cell': hasError(row.employee_id, d) }"
-                  :value="row.days[d] || ''"
-                  readonly
-                  tabindex="-1"
-                  @click="openCellPicker(row.employee_id, d, $event)"
-                />
+                <v-tooltip location="bottom" :max-width="220" :disabled="!row.days[d]">
+                  <template #activator="{ props: tooltipProps }">
+                    <input
+                      class="cell-input cell-tip-area"
+                      :class="{ 'is-code': isCodeText(row.days[d]), 'is-error-cell': hasError(row.employee_id, d) }"
+                      :value="row.days[d] || ''"
+                      readonly
+                      tabindex="-1"
+                      v-bind="tooltipProps"
+                      @click="openCellPicker(row.employee_id, d, $event)"
+                    />
+                  </template>
+                  <!-- Подсказка с деталями ячейки: код из справочника / числовые часы -->
+                  <div v-if="cellTipData(row.days[d])" class="day-tooltip">
+                    <div class="font-weight-bold mb-1">{{ tooltipDateLabel(d) }}</div>
+                    <template v-if="cellTipData(row.days[d]).kind === 'code'">
+                      <div><v-icon size="x-small" icon="mdi-tag-text-outline" class="mr-1" />Код: {{ cellTipData(row.days[d]).code }}</div>
+                      <div><v-icon size="x-small" icon="mdi-information-outline" class="mr-1" />{{ cellTipData(row.days[d]).name }}</div>
+                      <v-divider class="tooltip-divider my-1"></v-divider>
+                      <div><v-icon size="x-small" icon="mdi-weather-sunny" class="mr-1" />День: {{ fmtNum(cellTipData(row.days[d]).day) }}</div>
+                      <div><v-icon size="x-small" icon="mdi-weather-night" class="mr-1" />Ночь: {{ fmtNum(cellTipData(row.days[d]).night) }}</div>
+                      <div class="font-weight-bold"><v-icon size="x-small" icon="mdi-check-circle-outline" class="mr-1" />Итого часов: {{ fmtNum(cellTipData(row.days[d]).total) }}</div>
+                    </template>
+                    <template v-else>
+                      <div><v-icon size="x-small" icon="mdi-clock-outline" class="mr-1" />Отработано часов: {{ fmtNum(cellTipData(row.days[d]).hours) }}</div>
+                    </template>
+                  </div>
+                  <!-- Пустая ячейка: tooltip отключён (:disabled), текст доступен через cellTipText -->
+                  <div v-else class="day-tooltip">
+                    <div class="font-weight-bold mb-1">{{ tooltipDateLabel(d) }}</div>
+                    <div class="text-caption">{{ cellTipText(null) }}</div>
+                  </div>
+                </v-tooltip>
                 <v-menu
                   :model-value="openCell === row.employee_id + '_' + d"
                   :positioned="true"
@@ -404,6 +429,58 @@ function isCodeText(v) {
   return !!v && codeSet().has(String(v).trim().toLowerCase())
 }
 
+// ===== Tooltip для ячеек табеля =====
+const MONTH_NAMES_RU_GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+const DAY_NAMES_RU_FULL = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+
+// Дата в tooltip: «Понедельник, 28 сентября 2026»
+function tooltipDateLabel(day) {
+  const t = tabel.value
+  if (!t) return ''
+  const date = new Date(t.year, t.month - 1, day)
+  return `${DAY_NAMES_RU_FULL[date.getDay()]}, ${day} ${MONTH_NAMES_RU_GENITIVE[t.month - 1]} ${t.year}`
+}
+
+// Число без хвостовых нулей: 8.50 → «8.5», 8 → «8»
+function fmtNum(n) {
+  const v = Number(n) || 0
+  return String(Number(v.toFixed(2)))
+}
+
+// Разбор числового значения ячейки («8.5», «8ч15м», «8:15») в часы
+function rawToHours(s) {
+  const str = String(s ?? '').trim().replace(',', '.')
+  let m = str.match(/^(\d+(?:\.\d+)?)\s*ч\s*(\d+)?\s*м?$/)
+  if (m) return Number(m[1]) + (Number(m[2] || 0) / 60)
+  m = str.match(/^(\d+)\s*:\s*(\d+)$/)
+  if (m) return Number(m[1]) + Number(m[2]) / 60
+  m = str.match(/^(\d+(?:\.\d+)?)$/)
+  if (m) return Number(m[1])
+  return null
+}
+
+// Данные для содержимого tooltip: код из справочника или числовое значение
+function cellTipData(val) {
+  if (!val) return null
+  const s = String(val).trim()
+  const codeObj = timeCodes.value.find(c => c.code.toLowerCase() === s.toLowerCase())
+  if (codeObj) {
+    const day = Number(codeObj.hours_day) || 0
+    const night = Number(codeObj.hours_night) || 0
+    return { kind: 'code', code: codeObj.code, name: codeObj.name, day, night, total: day + night }
+  }
+  const hours = rawToHours(s)
+  if (hours !== null) return { kind: 'number', hours }
+  return null
+}
+
+// Текст для пустой ячейки (доступен программно; tooltip для пустых ячеек отключён через :disabled)
+function cellTipText(val) {
+  if (!val) return 'Ячейка пустая. Кликните для выбора кода.'
+  return ''
+}
+
 function hoursToHM(h) {
   const total = Math.round((Number(h) || 0) * 60)
   if (!total) return '0м'
@@ -706,6 +783,20 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* Tooltip для ячеек табеля */
+.day-tooltip {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 4px 2px;
+}
+.tooltip-divider {
+  opacity: 0.3;
+}
+.cell-tip-area {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .tabel-table {
   border-collapse: collapse;
   font-size: 12px;
