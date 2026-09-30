@@ -790,16 +790,21 @@ function calculateSummary(row) {
         }
       })
 
-      // Распределение по норме для кодов, дающих часы (кроме явно сверхурочных/ночных кодов)
+      // ИСПРАВЛЕНО: распределение по норме для кодов, дающих часы.
+      // Раньше здесь использовалась необъявленная переменная `hours` (ReferenceError),
+      // из-за чего сверхурочные считались только для tooltip, а в итоговую колонку
+      // «Сверхурочные часы» не попадали (всегда 0). Теперь берём totalHours —
+      // те же часы и ту же норму по графику (getDayNorm), что и в cellTipData,
+      // поэтому tooltip и итоговая колонка показывают одинаковые значения.
       const isOvertimeCode = dests.includes('overtime_hours') || dests.includes('overtime_days')
-      if (hours > 0 && !isOvertimeCode) {
-        const ot = Math.max(0, hours - norm)
+      if (totalHours > 0 && !isOvertimeCode) {
+        const ot = Math.max(0, totalHours - norm)
         if (ot > 0) {
           summary.overtime_hours += ot
           summary.overtime_days += 1
           // из колонок обычных часов вычитаем превышение, если код туда попал
-          if (dests.includes('tariff_hours')) summary.tariff_hours -= ot
-          if (dests.includes('total_hours')) summary.total_hours = summary.total_hours // итого остаётся полным
+          if (dests.includes('tariff_hours')) summary.tariff_hours = Math.max(0, summary.tariff_hours - ot)
+          // «Итого часов» остаётся полным (все введённые часы)
         }
       }
     }
