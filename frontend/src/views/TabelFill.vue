@@ -194,7 +194,7 @@
                   @update:search="onEmpSearch"
                 >
                   <template #item="{ props, item }">
-                    <v-list-item v-bind="props" :title="item.raw.label"
+                    <v-list-item v-bind="props" class="emp-search-item" :title="item.raw.label"
                                  :subtitle="item.raw.tab_number ? 'Таб. ' + item.raw.tab_number : ''" />
                   </template>
                 </v-autocomplete>
@@ -228,7 +228,7 @@
             @update:search="onEmpSearch"
           >
             <template #item="{ props, item }">
-              <v-list-item v-bind="props" :title="item.raw.label"
+              <v-list-item v-bind="props" class="emp-search-item" :title="item.raw.label"
                            :subtitle="item.raw.tab_number ? 'Таб. ' + item.raw.tab_number : ''" />
             </template>
           </v-autocomplete>
@@ -1203,4 +1203,22 @@ onMounted(async () => {
 
 <style>
 .cell-menu .v-overlay__content { background: white; border-radius: 8px; }
+
+/* Выделение в поиске сотрудников (v-autocomplete): вместо серого — еле заметный оранжевый */
+.v-list-item.emp-search-item:hover,
+.v-list-item.emp-search-item:focus,
+.v-list-item.emp-search-item:focus-visible,
+.v-list-item.emp-search-item.v-list-item--hover {
+  background-color: #fff3e0 !important; /* amber-50 — очень светло-оранжевый (hover мышью) */
+}
+/* Навигация клавишами вверх/вниз (активная строка) — чуть более заметный оранжевый */
+.v-list-item.emp-search-item.v-list-item--active,
+.v-list-item.emp-search-item.v-list-item--link.v-list-item--active {
+  background-color: #ffe0b2 !important; /* amber-100 — для активного элемента */
+  color: inherit !important;
+}
+/* Если элемент одновременно активен и под курсором */
+.v-list-item.emp-search-item.v-list-item--active:hover {
+  background-color: #ffcc80 !important; /* amber-200 — если нужно заметнее */
+}
 </style>
