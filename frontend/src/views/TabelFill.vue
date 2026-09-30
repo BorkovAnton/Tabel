@@ -1207,21 +1207,106 @@ onMounted(async () => {
 <style>
 .cell-menu .v-overlay__content { background: white; border-radius: 8px; }
 
-/* Выделение в поиске сотрудников (v-autocomplete): вместо серого — еле заметный оранжевый */
-.v-list-item.emp-search-item:hover,
-.v-list-item.emp-search-item:focus,
-.v-list-item.emp-search-item:focus-visible,
-.v-list-item.emp-search-item.v-list-item--hover {
-  background-color: #fff3e0 !important; /* amber-50 — очень светло-оранжевый (hover мышью) */
+/* Выделение в поиске сотрудников (v-autocomplete): вместо серого/тёмного — еле заметный оранжевый.
+
+   Корень проблемы: Vuetify 3 рисует hover/active-фон не на самом .v-list-item, а на дочернем
+   span.v-list-item__overlay с background-color = var(--v-hover-opacity) (rgba(0,0,0,...)) —
+   тёмно-серый/чёрный слой поверх нашего цвета. Поэтому переопределяем и фон элемента,
+   и overlay (цвет + opacity), и ::before, с запасом специфичности против polspo-theme.css
+   (.v-list-item--active — почти чёрный зелёный фон). */
+
+/* 1) Базовый фон элементов списка — всегда белый, текст тёмный (никакого чёрного фона) */
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item,
+.v-select .v-list-item.emp-search-item,
+.v-autocomplete .v-list-item.emp-search-item {
+  background-color: #ffffff !important;
+  color: rgba(0, 0, 0, 0.87) !important;
 }
-/* Навигация клавишами вверх/вниз (активная строка) — чуть более заметный оранжевый */
-.v-list-item.emp-search-item.v-list-item--active,
-.v-list-item.emp-search-item.v-list-item--link.v-list-item--active {
-  background-color: #ffe0b2 !important; /* amber-100 — для активного элемента */
+
+/* 2) Убираем тёмный state-overlay Vuetify во всех состояниях покоя/фокуса */
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item > .v-list-item__overlay,
+.v-select .v-list-item.emp-search-item > .v-list-item__overlay {
+  --v-hover-opacity: rgba(255, 243, 224, 1);
+  --v-focus-opacity: rgba(255, 243, 224, 1);
+  --v-activated-opacity: rgba(255, 224, 178, 1);
+  --v-selected-opacity: rgba(255, 224, 178, 1);
+  --v-pressed-opacity: rgba(255, 204, 128, 1);
+  background-color: transparent !important;
+  opacity: 0 !important;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+/* 3) Hover мышью — очень светло-оранжевый (amber-50) */
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item:hover,
+.v-select .v-list-item.emp-search-item:hover,
+.v-autocomplete .v-list-item.emp-search-item:hover,
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item:focus-visible,
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--hover {
+  background-color: #fff3e0 !important;
+  color: rgba(0, 0, 0, 0.87) !important;
+}
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item:hover > .v-list-item__overlay,
+.v-select .v-list-item.emp-search-item:hover > .v-list-item__overlay,
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--hover > .v-list-item__overlay,
+.v-select .v-list-item.emp-search-item.v-list-item--hover > .v-list-item__overlay {
+  background-color: #fff3e0 !important;
+  opacity: 1 !important;
+}
+
+/* 4) Навигация клавишами вверх/вниз (активный элемент) — чуть более заметный оранжевый (amber-100).
+   Специфичность заведомо выше, чем у .v-list-item--active из polspo-theme.css. */
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--active,
+.v-select .v-list-item.emp-search-item.v-list-item--active,
+.v-autocomplete .v-list-item.emp-search-item.v-list-item--active,
+.v-select .v-list-item.emp-search-item.v-list-item--selected {
+  background-color: #ffe0b2 !important;
+  color: rgba(0, 0, 0, 0.87) !important;
+}
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--active > .v-list-item__overlay,
+.v-select .v-list-item.emp-search-item.v-list-item--active > .v-list-item__overlay,
+.v-select .v-list-item.emp-search-item.v-list-item--selected > .v-list-item__overlay {
+  background-color: #ffe0b2 !important;
+  opacity: 1 !important;
+}
+
+/* Активный + под курсором — amber-200 */
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--active:hover,
+.v-select .v-list-item.emp-search-item.v-list-item--active:hover {
+  background-color: #ffcc80 !important;
+  color: rgba(0, 0, 0, 0.87) !important;
+}
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--active:hover > .v-list-item__overlay,
+.v-select .v-list-item.emp-search-item.v-list-item--active:hover > .v-list-item__overlay {
+  background-color: #ffcc80 !important;
+  opacity: 1 !important;
+}
+
+/* Дочерние span/title — без тёмного фона, читаемый тёмный текст */
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item > *:not(.v-list-item__overlay),
+.v-select .v-list-item.emp-search-item > *:not(.v-list-item__overlay) {
+  background-color: transparent !important;
   color: inherit !important;
 }
-/* Если элемент одновременно активен и под курсором */
-.v-list-item.emp-search-item.v-list-item--active:hover {
-  background-color: #ffcc80 !important; /* amber-200 — если нужно заметнее */
+
+/* Псевдоэлемент ::before (старый hover-слой Vuetify) — скрыт в покое, оранжевый при наведении */
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item::before,
+.v-select .v-list-item.emp-search-item::before {
+  background-color: transparent !important;
+  opacity: 0 !important;
+}
+.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item:hover::before,
+.v-select .v-list-item.emp-search-item:hover::before {
+  background-color: #fff3e0 !important;
+  opacity: 1 !important;
+}
+
+/* Тёмная тема: если у списка вдруг окажется dark-класс (наследие темы) — принудительно светлый фон */
+.v-theme--dark .v-list-item.emp-search-item {
+  background-color: #ffffff !important;
+  color: rgba(0, 0, 0, 0.87) !important;
+}
+.v-theme--dark .v-list-item.emp-search-item.v-list-item--active {
+  background-color: #ffe0b2 !important;
+  color: rgba(0, 0, 0, 0.87) !important;
 }
 </style>
