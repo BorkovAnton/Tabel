@@ -724,16 +724,22 @@ function calculateSummary(row) {
 
     const codeObj = timeCodes.value.find(c => c.code.toLowerCase() === val.toLowerCase())
     if (codeObj) {
-      const hours = (Number(codeObj.hours_day) || 0) + (Number(codeObj.hours_night) || 0)
+      const hoursDay = Number(codeObj.hours_day) || 0
+      const hoursNight = Number(codeObj.hours_night) || 0
+      const totalHours = hoursDay + hoursNight
       const dests = codeObj.destinations || []
 
       dests.forEach(dest => {
         const colDef = summaryColumns.value.find(c => c.key === dest)
         if (colDef && summary.hasOwnProperty(dest)) {
           if (colDef.unit === 'days') {
-            summary[dest] += 1 // Прибавляем 1 день
+            summary[dest] += 1
+          } else if (dest === 'night_hours') {
+            summary[dest] += hoursNight
+          } else if (dest === 'day_hours') {
+            summary[dest] += hoursDay
           } else {
-            summary[dest] += hours // Прибавляем часы
+            summary[dest] += totalHours
           }
         }
       })
