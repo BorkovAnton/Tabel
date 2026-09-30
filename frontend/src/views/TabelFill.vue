@@ -11,7 +11,7 @@
       <v-btn variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
         Коды часов
       </v-btn>
-      <v-btn color="green darken-1" prepend-icon="mdi-content-save" :loading="saving" @click="save(false)">
+      <v-btn color="green darken-1" prepend-icon="mdi-content-save" :loading="saving" @click="save(true)">
         Сохранить
       </v-btn>
     </div>
@@ -784,6 +784,16 @@ function clampKdu(raw) {
   return Math.round(n * 100) / 100
 }
 
+// Отметка изменения КДУ. Ключ — `${employee_id}_${field}`, где employee_id
+// обязательно приводится к числу: если в данных строки id пришёл строкой ("12"),
+// шаблонный ключ давал бы "NaN_kdu_work_days" и employee_id в payload становился
+// null → 422 «Input should be a valid integer» на /tabels/{id}/kdu.
+function markKduDirty(row, field, value) {
+  const empId = Number(row.employee_id)
+  if (!Number.isInteger(empId)) return
+  dirtyKdu.value[`${empId}_${field}`] = value
+}
+
 function onKduInput(row, field, event) {
   const raw = event.target.value
   const clamped = clampKdu(raw)
@@ -792,13 +802,13 @@ function onKduInput(row, field, event) {
   if (clamped !== null && String(clamped) !== raw.replace(',', '.')) {
     event.target.value = clamped
   }
-  dirtyKdu.value[`${row.employee_id}_${field}`] = clamped
+  markKduDirty(row, field, clamped)
 }
 
 function onKduBlur(row, field) {
   const clamped = clampKdu(row[field])
   row[field] = clamped
-  dirtyKdu.value[`${row.employee_id}_${field}`] = clamped
+  markKduDirty(row, field, clamped)
 }
 
 async function loadTabel() {
@@ -889,6 +899,11 @@ async function saveKdu() {
     if (e.response?.status === 404 || e.response?.status === 405) {
       throw new Error('Бэкенд не поддерживает сохранение КДУ (endpoint /tabels/{id}/kdu не найден). Обновите серверную часть.')
     }
+    // 422 — значит на сервер ушёл некорректный payload или там крутится старая
+    // версия бэкенда без валидной схемы KduUpdate.
+    if (e.response?.status === 422) {
+      throw new Error('Сервер отклонил данные КДУ (422). Проверьте, что backend обновлён: PUT /tabels/{id}/kdu принимает [{employee_id, field, value}].')
+    }
     throw e
   }
   dirtyKdu.value = {}
@@ -898,7 +913,14 @@ async function saveKdu() {
 async function save(showMsg = true) {
   const hasCellChanges = Object.keys(dirty.value).length > 0
   const hasKduChanges = Object.keys(dirtyKdu.value).length > 0
-  if (!hasCellChanges && !hasKduChanges) return true
+  if (!hasCellChanges && !hasKduChanges) {
+    if (showMsg) {
+      message.value = 'Нет несохранённых изменений'
+      messageType.value = 'success'
+      setTimeout(() => { if (message.value === 'Нет несохранённых изменений') message.value = '' }, 2000)
+    }
+    return true
+  }
   if (Object.keys(cellErrors.value).length) {
     message.value = 'Есть некорректные ячейки — исправьте их перед сохранением'
     messageType.value = 'error'
@@ -1010,7 +1032,12 @@ async function deleteCode(c) {
   await loadCodes()
 }
 
-setInterval(() => { if (Object.keys(dirty.value).length) save(false) }, 30000)
+// Авто-сохранение раз в 30 секунд (только ячеек дней и КДУ, без всплывающего
+// сообщения). Ошибки автосохранения не перекрывают уже показанное сообщение
+// об успехе ручного сохранения.
+setInterval(() => {
+  if (Object.keys(dirty.value).length || Object.keys(dirtyKdu.value).length) save(false)
+}, 30000)
 
 onMounted(async () => {
   await Promise.all([loadTabel(), loadCodes()])
