@@ -841,13 +841,20 @@ async function removeEmployee(row) {
 }
 
 // Сохранение изменённых ячеек дней через PUT /tabels/{id}/cells.
+// Отбираются ТОЛЬКО корректные записи с числовым employee_id и day — защита от
+// случайного попадания в payload ячеек/полей другого типа (например, КДУ).
 // Возвращает true при успехе (или если изменений нет), иначе выбрасывает ошибку.
 async function saveDayCells() {
-  const updates = Object.entries(dirty.value).map(([key, value]) => {
-    const [empId, day] = key.split('_')
-    return { employee_id: Number(empId), day: Number(day), value }
-  })
-  if (!updates.length) return true
+  const updates = []
+  for (const [key, value] of Object.entries(dirty.value)) {
+    const parts = String(key).split('_')
+    if (parts.length !== 2) continue
+    const empId = Number(parts[0])
+    const day = Number(parts[1])
+    if (!Number.isInteger(empId) || !Number.isInteger(day)) continue
+    updates.push({ employee_id: empId, day, value: String(value ?? '') })
+  }
+  if (!updates.length) { dirty.value = {}; return true }
   await api.put(`/tabels/${route.params.id}/cells`, updates)
   dirty.value = {}
   return true
@@ -855,11 +862,17 @@ async function saveDayCells() {
 
 // Сохранение ручных значений КДУ отдельно от ячеек дней — через PUT /tabels/{id}/kdu.
 async function saveKdu() {
-  const kduUpdates = Object.entries(dirtyKdu.value).map(([key, value]) => {
-    const idx = key.lastIndexOf('_')
-    return { employee_id: Number(key.slice(0, idx)), field: key.slice(idx + 1), value }
-  })
-  if (!kduUpdates.length) return true
+  const validFields = ['kdu_work_days', 'kdu_weekend_days']
+  const kduUpdates = []
+  for (const [key, value] of Object.entries(dirtyKdu.value)) {
+    const idx = String(key).lastIndexOf('_')
+    const empId = Number(key.slice(0, idx))
+    const field = key.slice(idx + 1)
+    // В payload попадают только допустимые поля КДУ и корректный employee_id
+    if (!validFields.includes(field) || !Number.isInteger(empId)) continue
+    kduUpdates.push({ employee_id: empId, field, value })
+  }
+  if (!kduUpdates.length) { dirtyKdu.value = {}; return true }
   try {
     await api.put(`/tabels/${route.params.id}/kdu`, kduUpdates)
   } catch (e) {
