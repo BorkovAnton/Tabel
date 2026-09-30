@@ -840,16 +840,43 @@ async function removeEmployee(row) {
   await loadEmployees()
 }
 
-async function save(showMsg = true) {
+// Сохранение изменённых ячеек дней через PUT /tabels/{id}/cells.
+// Возвращает true при успехе (или если изменений нет), иначе выбрасывает ошибку.
+async function saveDayCells() {
   const updates = Object.entries(dirty.value).map(([key, value]) => {
     const [empId, day] = key.split('_')
     return { employee_id: Number(empId), day: Number(day), value }
   })
+  if (!updates.length) return true
+  await api.put(`/tabels/${route.params.id}/cells`, updates)
+  dirty.value = {}
+  return true
+}
+
+// Сохранение ручных значений КДУ отдельно от ячеек дней — через PUT /tabels/{id}/kdu.
+async function saveKdu() {
   const kduUpdates = Object.entries(dirtyKdu.value).map(([key, value]) => {
     const idx = key.lastIndexOf('_')
     return { employee_id: Number(key.slice(0, idx)), field: key.slice(idx + 1), value }
   })
-  if (!updates.length && !kduUpdates.length) return true
+  if (!kduUpdates.length) return true
+  try {
+    await api.put(`/tabels/${route.params.id}/kdu`, kduUpdates)
+  } catch (e) {
+    // Понятная ошибка, если бэкенд ещё не поддерживает endpoint /kdu
+    if (e.response?.status === 404 || e.response?.status === 405) {
+      throw new Error('Бэкенд не поддерживает сохранение КДУ (endpoint /tabels/{id}/kdu не найден). Обновите серверную часть.')
+    }
+    throw e
+  }
+  dirtyKdu.value = {}
+  return true
+}
+
+async function save(showMsg = true) {
+  const hasCellChanges = Object.keys(dirty.value).length > 0
+  const hasKduChanges = Object.keys(dirtyKdu.value).length > 0
+  if (!hasCellChanges && !hasKduChanges) return true
   if (Object.keys(cellErrors.value).length) {
     message.value = 'Есть некорректные ячейки — исправьте их перед сохранением'
     messageType.value = 'error'
@@ -857,10 +884,9 @@ async function save(showMsg = true) {
   }
   saving.value = true
   try {
-    if (updates.length) await api.put(`/tabels/${route.params.id}/cells`, updates)
-    if (kduUpdates.length) await api.put(`/tabels/${route.params.id}/kdu`, kduUpdates)
-    dirty.value = {}
-    dirtyKdu.value = {}
+    // Ячейки дней и КДУ отправляются раздельно на свои endpoints
+    if (hasCellChanges) await saveDayCells()
+    if (hasKduChanges) await saveKdu()
     if (showMsg) {
       message.value = 'Сохранено'
       messageType.value = 'success'
@@ -868,7 +894,7 @@ async function save(showMsg = true) {
     }
     return true
   } catch (e) {
-    message.value = e.response?.data?.detail || 'Ошибка сохранения'
+    message.value = e.response?.data?.detail || e.message || 'Ошибка сохранения'
     messageType.value = 'error'
     return false
   } finally {
