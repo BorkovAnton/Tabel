@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt as _bcrypt
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,20 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change-me-secret")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "720"))
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+
+def _extract_token(authorization: str | None, token_param: str | None) -> str | None:
+    """JWT из заголовка Authorization: Bearer ... либо из query-параметра access_token.
+
+    Query-параметр нужен для запросов navigator.sendBeacon (автосохранение КДУ
+    при закрытии вкладки), которые не могут отправить заголовок Authorization.
+    """
+    if authorization:
+        scheme, _, param = authorization.partition(" ")
+        if scheme.lower() == "bearer" and param:
+            return param
+    return token_param or None
 
 
 def hash_password(password: str) -> str:
@@ -35,14 +48,23 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+def get_current_user(
+    token: str | None = Depends(oauth2_scheme),
+    access_token: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Не удалось подтвердить учётные данные",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    # Заголовок Authorization: Bearer в приоритете; query-параметр access_token
+    # используется как fallback для navigator.sendBeacon (не может ставить заголовки).
+    raw_token = _extract_token(None, token or access_token)
+    if not raw_token:
+        raise credentials_exception
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str | None = payload.get("sub")
         if username is None:
             raise credentials_exception

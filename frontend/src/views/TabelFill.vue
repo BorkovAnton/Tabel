@@ -154,6 +154,7 @@
                 :value="row[col.key] ?? ''"
                 @input="onKduInput(row, col.key, $event)"
                 @blur="onKduBlur(row, col.key)"
+                @keyup.enter="onKduBlur(row, col.key); $event.target.blur()"
                 @click.stop
               />
               <template v-else>{{ calculateSummary(row)[col.key] || 0 }}</template>
@@ -360,7 +361,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 import { auth } from '../auth'
@@ -1035,9 +1036,46 @@ async function deleteCode(c) {
 // Авто-сохранение раз в 30 секунд (только ячеек дней и КДУ, без всплывающего
 // сообщения). Ошибки автосохранения не перекрывают уже показанное сообщение
 // об успехе ручного сохранения.
-setInterval(() => {
+const autoSaveTimer = setInterval(() => {
   if (Object.keys(dirty.value).length || Object.keys(dirtyKdu.value).length) save(false)
 }, 30000)
+
+// При уходе со страницы (SPA-навигация) — если есть несохранённые изменения
+// (в т.ч. КДУ), сохраняем их, чтобы значения не «сбрасывались» после перезахода.
+onBeforeUnmount(() => {
+  clearInterval(autoSaveTimer)
+  window.removeEventListener('beforeunload', onWindowUnload)
+  if (Object.keys(dirty.value).length || Object.keys(dirtyKdu.value).length) save(false)
+})
+
+// Если пользователь закрыл вкладку/перезагрузил страницу с несохранённым КДУ —
+// пробуем отправить изменения до выгрузки страницы. Обычный async-запрос в этот
+// момент браузером прерывается, поэтому используется navigator.sendBeacon.
+// Важно: endpoint /kdu требует аутентификацию, а sendBeacon не может добавить
+// заголовок Authorization — вместо этого токен передаётся через query-параметр
+// access_token (FastAPI OAuth2PasswordBearer его принимает).
+function onWindowUnload() {
+  const kduEntries = Object.entries(dirtyKdu.value)
+  if (!kduEntries.length) return
+  const validFields = ['kdu_work_days', 'kdu_weekend_days']
+  const payload = []
+  for (const [key, value] of kduEntries) {
+    const idx = String(key).lastIndexOf('_')
+    const empId = Number(key.slice(0, idx))
+    const field = key.slice(idx + 1)
+    if (!validFields.includes(field) || !Number.isInteger(empId)) continue
+    payload.push({ employee_id: empId, field, value })
+  }
+  if (!payload.length) return
+  try {
+    const raw = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id
+    const token = localStorage.getItem('token') || ''
+    const url = `${api.defaults.baseURL}/tabels/${raw}/kdu?access_token=${encodeURIComponent(token)}`
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+    navigator.sendBeacon(url, blob)
+  } catch (e) { /* ignore */ }
+}
+window.addEventListener('beforeunload', onWindowUnload)
 
 onMounted(async () => {
   await Promise.all([loadTabel(), loadCodes()])

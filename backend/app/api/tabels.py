@@ -130,12 +130,13 @@ class KduUpdate(BaseModel):
     def _clamp(cls, v):
         if v is None:
             return None
+        # Нормализация как на фронтенде (clampKdu): округляем до сотых и
+        # обрезаем до диапазона 0..5. Это защищает колонки NUMERIC(4,2) от
+        # переполнения и гарантирует, что сохранённое значение совпадает с тем,
+        # что ввёл пользователь (значения вне диапазона приходят, например, из
+        # sendBeacon-автосохранения со старых версий страницы).
         v = round(float(v), 2)
-        if v < 0:
-            raise ValueError("Значение КДУ не может быть меньше 0")
-        if v > 5:
-            raise ValueError("Значение КДУ не может быть больше 5")
-        return v
+        return min(5.0, max(0.0, v))
 
     @field_validator("field")
     @classmethod
@@ -448,19 +449,48 @@ def update_cells(tabel_id: int, updates: List[CellUpdate], db: Session = Depends
 @router.put("/{tabel_id}/kdu")
 def update_kdu(tabel_id: int, updates: List[KduUpdate], db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
-    """Сохранить ручные значения КДУ (0..5, до сотых) для строк табеля."""
+    """Сохранить ручные значения КДУ (0..5, до сотых) для строк табеля.
+
+    Значения нормализуются так же, как на фронтенде (clampKdu): вне диапазона
+    0..5 обрезаются, округляются до сотых. Это защищает колонки NUMERIC(4,2)
+    от переполнения и гарантирует, что сохранённое значение совпадает с тем,
+    что ввёл пользователь.
+    """
     tabel = _get_tabel_or_404(tabel_id, db)
     _check_access(tabel, user)
+    # Кэш записей по employee_id: повторные изменения одного сотрудника
+    # применяются к одному объекту (последнее значение побеждает).
+    cache: Dict[int, TabelEntry] = {}
     saved = 0
     for up in updates:
-        entry = db.query(TabelEntry).filter(
-            TabelEntry.tabel_id == tabel_id, TabelEntry.employee_id == up.employee_id).first()
-        if not entry:
-            raise HTTPException(status_code=404, detail=f"Запись сотрудника {up.employee_id} не найдена")
-        setattr(entry, up.field, up.value)
+        value = up.value
+        if value is not None:
+            value = min(5.0, max(0.0, float(value)))
+            value = round(value + 0.0, 2)
+        key = up.employee_id
+        if key not in cache:
+            entry = db.query(TabelEntry).filter(
+                TabelEntry.tabel_id == tabel_id, TabelEntry.employee_id == key).first()
+            if not entry:
+                raise HTTPException(status_code=404, detail=f"Запись сотрудника {key} не найдена")
+            cache[key] = entry
+        setattr(cache[key], up.field, value)
         saved += 1
-    db.commit()
+    try:
+        db.commit()
+    except Exception as exc:  # например, переполнение NUMERIC(4,2) на старых данных
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Не удалось сохранить КДУ: {exc}")
     return {"saved": saved}
+
+
+@router.post("/{tabel_id}/kdu")
+def update_kdu_beacon(tabel_id: int, updates: List[KduUpdate], db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """Дубликат PUT /kdu для navigator.sendBeacon (закрывает несохранённое КДУ
+    при закрытии вкладки; sendBeacon умеет отправлять только POST и не может
+    ставить заголовок Authorization — токен передаётся query-параметром)."""
+    return update_kdu(tabel_id, updates, db, user)
 
 
 @router.delete("/{tabel_id}/entries/{employee_id}")
