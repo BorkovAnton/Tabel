@@ -194,7 +194,7 @@
                   @update:search="onEmpSearch"
                 >
                   <template #item="{ props, item }">
-                    <v-list-item v-bind="props" class="emp-search-item" :title="item.raw.label"
+                    <v-list-item v-bind="props" :title="item.raw.label"
                                  :subtitle="item.raw.tab_number ? 'Таб. ' + item.raw.tab_number : ''" />
                   </template>
                 </v-autocomplete>
@@ -228,7 +228,7 @@
             @update:search="onEmpSearch"
           >
             <template #item="{ props, item }">
-              <v-list-item v-bind="props" class="emp-search-item" :title="item.raw.label"
+              <v-list-item v-bind="props" :title="item.raw.label"
                            :subtitle="item.raw.tab_number ? 'Таб. ' + item.raw.tab_number : ''" />
             </template>
           </v-autocomplete>
@@ -1224,111 +1224,228 @@ onMounted(async () => {
 .code-row:hover { background-color: #f5f5f5 !important; }
 .code-row .v-btn { opacity: 1 !important; transition: transform 0.2s ease, background-color 0.2s ease; }
 .code-row .v-btn:hover { transform: scale(1.15); background-color: rgba(0, 0, 0, 0.04) !important; }
+
+/* Принудительное применение стилей выпадающего списка поиска сотрудников
+   (дублируем переопределение через :deep() — на случай, если часть DOM
+   рендерится внутри scoped-области компонента). */
+:deep(.v-autocomplete .v-list-item),
+:deep(.v-select .v-list-item),
+:deep(.v-menu .v-overlay__content .v-list-item) {
+  --v-hover-opacity: rgba(255, 243, 224, 1) !important;
+  --v-focus-opacity: rgba(255, 243, 224, 1) !important;
+  --v-activated-opacity: rgba(255, 224, 178, 1) !important;
+  --v-selected-opacity: rgba(255, 224, 178, 1) !important;
+  --v-pressed-opacity: rgba(255, 204, 128, 1) !important;
+  background-color: #ffffff !important;
+  color: #212121 !important;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+:deep(.v-autocomplete .v-list-item > .v-list-item__overlay),
+:deep(.v-select .v-list-item > .v-list-item__overlay),
+:deep(.v-menu .v-overlay__content .v-list-item > .v-list-item__overlay) {
+  background-color: transparent !important;
+  opacity: 0 !important;
+}
+:deep(.v-autocomplete .v-list-item::before),
+:deep(.v-select .v-list-item::before),
+:deep(.v-menu .v-overlay__content .v-list-item::before) {
+  background-color: transparent !important;
+  opacity: 0 !important;
+}
+:deep(.v-autocomplete .v-list-item:hover),
+:deep(.v-select .v-list-item:hover),
+:deep(.v-menu .v-overlay__content .v-list-item:hover) {
+  background-color: #fff3e0 !important;
+  color: #212121 !important;
+}
+:deep(.v-autocomplete .v-list-item:hover > .v-list-item__overlay),
+:deep(.v-select .v-list-item:hover > .v-list-item__overlay),
+:deep(.v-menu .v-overlay__content .v-list-item:hover > .v-list-item__overlay) {
+  background-color: #fff3e0 !important;
+  opacity: 1 !important;
+}
+:deep(.v-autocomplete .v-list-item.v-list-item--active),
+:deep(.v-select .v-list-item.v-list-item--active),
+:deep(.v-menu .v-overlay__content .v-list-item.v-list-item--active) {
+  background-color: #ffe0b2 !important;
+  color: #212121 !important;
+}
+:deep(.v-autocomplete .v-list-item.v-list-item--active > .v-list-item__overlay),
+:deep(.v-select .v-list-item.v-list-item--active > .v-list-item__overlay),
+:deep(.v-menu .v-overlay__content .v-list-item.v-list-item--active > .v-list-item__overlay) {
+  background-color: #ffe0b2 !important;
+  opacity: 1 !important;
+}
+:deep(.v-autocomplete .v-list-item-title),
+:deep(.v-select .v-list-item-title) {
+  color: #212121 !important;
+}
+:deep(.v-autocomplete .v-list-item-subtitle),
+:deep(.v-select .v-list-item-subtitle) {
+  color: #616161 !important;
+}
 </style>
 
 <style>
 .cell-menu .v-overlay__content { background: white; border-radius: 8px; }
 
-/* Выделение в поиске сотрудников (v-autocomplete): вместо серого/тёмного — еле заметный оранжевый.
+/* ============================================================================
+   ВЫПАДАЮЩИЙ СПИСОК ПОИСКА СОТРУДНИКОВ — АГРЕССИВНОЕ ПЕРЕОПРЕДЕЛЕНИЕ СТИЛЕЙ
+   БЕЗ ПРИВЯЗКИ К КЛАССУ .emp-search-item (он мог не применяться / перебиваться).
 
-   Корень проблемы: Vuetify 3 рисует hover/active-фон не на самом .v-list-item, а на дочернем
-   span.v-list-item__overlay с background-color = var(--v-hover-opacity) (rgba(0,0,0,...)) —
-   тёмно-серый/чёрный слой поверх нашего цвета. Поэтому переопределяем и фон элемента,
-   и overlay (цвет + opacity), и ::before, с запасом специфичности против polspo-theme.css
-   (.v-list-item--active — почти чёрный зелёный фон). */
+   Стилизуются ВСЕ .v-list-item внутри выпадающих меню v-autocomplete/v-select
+   (контент лежит в оверлей-портале: .v-menu__content / .v-overlay__content).
 
-/* 1) Базовый фон элементов списка — всегда белый, текст тёмный (никакого чёрного фона) */
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item,
-.v-select .v-list-item.emp-search-item,
-.v-autocomplete .v-list-item.emp-search-item {
+   Корень «чёрного фона»: Vuetify 3 рисует hover/active-фон не на самом
+   .v-list-item, а на дочернем span.v-list-item__overlay с цветом
+   var(--v-hover-opacity) = rgba(0,0,0,...) (тёмный/чёрный слой поверх нашего
+   цвета), плюс псевдоэлемент ::before и правила темы (.v-list-item--active —
+   почти чёрный фон). Поэтому переопределяем ВСЕ слои сразу: сам элемент,
+   overlay (::after), ::before, CSS-переменные состояния, детей и тёмную тему.
+   ========================================================================== */
+
+/* 1) БАЗА: фон списка всегда белый, текст тёмный, никакого чёрного.
+      Переопределяем CSS-переменные состояний Vuetify на оранжевые тона. */
+.v-autocomplete .v-list-item,
+.v-select .v-list-item,
+.v-menu .v-overlay__content .v-list-item,
+.v-field__append-inner ~ * .v-list-item {
+  --v-hover-opacity: rgba(255, 243, 224, 1) !important;    /* #fff3e0 */
+  --v-focus-opacity: rgba(255, 243, 224, 1) !important;
+  --v-activated-opacity: rgba(255, 224, 178, 1) !important; /* #ffe0b2 */
+  --v-selected-opacity: rgba(255, 224, 178, 1) !important;
+  --v-pressed-opacity: rgba(255, 204, 128, 1) !important;   /* #ffcc80 */
   background-color: #ffffff !important;
-  color: rgba(0, 0, 0, 0.87) !important;
+  color: #212121 !important;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-/* 2) Убираем тёмный state-overlay Vuetify во всех состояниях покоя/фокуса */
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item > .v-list-item__overlay,
-.v-select .v-list-item.emp-search-item > .v-list-item__overlay {
-  --v-hover-opacity: rgba(255, 243, 224, 1);
-  --v-focus-opacity: rgba(255, 243, 224, 1);
-  --v-activated-opacity: rgba(255, 224, 178, 1);
-  --v-selected-opacity: rgba(255, 224, 178, 1);
-  --v-pressed-opacity: rgba(255, 204, 128, 1);
+/* 2) STATE-OVERLAY Vuetify (главный источник чёрного): в покое полностью скрыт */
+.v-autocomplete .v-list-item > .v-list-item__overlay,
+.v-select .v-list-item > .v-list-item__overlay,
+.v-menu .v-overlay__content .v-list-item > .v-list-item__overlay {
   background-color: transparent !important;
   opacity: 0 !important;
   transition: opacity 0.15s ease, background-color 0.15s ease;
 }
 
-/* 3) Hover мышью — очень светло-оранжевый (amber-50) */
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item:hover,
-.v-select .v-list-item.emp-search-item:hover,
-.v-autocomplete .v-list-item.emp-search-item:hover,
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item:focus-visible,
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--hover {
-  background-color: #fff3e0 !important;
-  color: rgba(0, 0, 0, 0.87) !important;
-}
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item:hover > .v-list-item__overlay,
-.v-select .v-list-item.emp-search-item:hover > .v-list-item__overlay,
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--hover > .v-list-item__overlay,
-.v-select .v-list-item.emp-search-item.v-list-item--hover > .v-list-item__overlay {
-  background-color: #fff3e0 !important;
-  opacity: 1 !important;
-}
-
-/* 4) Навигация клавишами вверх/вниз (активный элемент) — чуть более заметный оранжевый (amber-100).
-   Специфичность заведомо выше, чем у .v-list-item--active из polspo-theme.css. */
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--active,
-.v-select .v-list-item.emp-search-item.v-list-item--active,
-.v-autocomplete .v-list-item.emp-search-item.v-list-item--active,
-.v-select .v-list-item.emp-search-item.v-list-item--selected {
-  background-color: #ffe0b2 !important;
-  color: rgba(0, 0, 0, 0.87) !important;
-}
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--active > .v-list-item__overlay,
-.v-select .v-list-item.emp-search-item.v-list-item--active > .v-list-item__overlay,
-.v-select .v-list-item.emp-search-item.v-list-item--selected > .v-list-item__overlay {
-  background-color: #ffe0b2 !important;
-  opacity: 1 !important;
-}
-
-/* Активный + под курсором — amber-200 */
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--active:hover,
-.v-select .v-list-item.emp-search-item.v-list-item--active:hover {
-  background-color: #ffcc80 !important;
-  color: rgba(0, 0, 0, 0.87) !important;
-}
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item.v-list-item--active:hover > .v-list-item__overlay,
-.v-select .v-list-item.emp-search-item.v-list-item--active:hover > .v-list-item__overlay {
-  background-color: #ffcc80 !important;
-  opacity: 1 !important;
-}
-
-/* Дочерние span/title — без тёмного фона, читаемый тёмный текст */
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item > *:not(.v-list-item__overlay),
-.v-select .v-list-item.emp-search-item > *:not(.v-list-item__overlay) {
-  background-color: transparent !important;
-  color: inherit !important;
-}
-
-/* Псевдоэлемент ::before (старый hover-слой Vuetify) — скрыт в покое, оранжевый при наведении */
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item::before,
-.v-select .v-list-item.emp-search-item::before {
+/* 3) PSEDOELEMENT ::before (старый hover-слой): в покое скрыт */
+.v-autocomplete .v-list-item::before,
+.v-select .v-list-item::before,
+.v-menu .v-overlay__content .v-list-item::before {
   background-color: transparent !important;
   opacity: 0 !important;
 }
-.v-menu .v-overlay__content .v-list .v-list-item.emp-search-item:hover::before,
-.v-select .v-list-item.emp-search-item:hover::before {
+
+/* 4) HOVER мышью — очень светло-оранжевый (#fff3e0), текст остаётся тёмным */
+.v-autocomplete .v-list-item:hover,
+.v-select .v-list-item:hover,
+.v-menu .v-overlay__content .v-list-item:hover,
+.v-menu .v-overlay__content .v-list-item:focus-visible,
+.v-autocomplete .v-list-item.v-list-item--hover,
+.v-select .v-list-item.v-list-item--hover {
+  background-color: #fff3e0 !important;
+  color: #212121 !important;
+}
+.v-autocomplete .v-list-item:hover > .v-list-item__overlay,
+.v-select .v-list-item:hover > .v-list-item__overlay,
+.v-menu .v-overlay__content .v-list-item:hover > .v-list-item__overlay,
+.v-autocomplete .v-list-item.v-list-item--hover > .v-list-item__overlay,
+.v-select .v-list-item.v-list-item--hover > .v-list-item__overlay {
+  background-color: #fff3e0 !important;
+  opacity: 1 !important;
+}
+.v-autocomplete .v-list-item:hover::before,
+.v-select .v-list-item:hover::before,
+.v-menu .v-overlay__content .v-list-item:hover::before {
   background-color: #fff3e0 !important;
   opacity: 1 !important;
 }
 
-/* Тёмная тема: если у списка вдруг окажется dark-класс (наследие темы) — принудительно светлый фон */
-.v-theme--dark .v-list-item.emp-search-item {
-  background-color: #ffffff !important;
-  color: rgba(0, 0, 0, 0.87) !important;
-}
-.v-theme--dark .v-list-item.emp-search-item.v-list-item--active {
+/* 5) НАВИГАЦИЯ КЛАВИШАМИ ВВЕРХ/ВНИЗ (активный элемент) — оранжевый (#ffe0b2).
+      Специфичность заведомо выше правил темы (.v-list-item--active). */
+.v-autocomplete .v-list-item.v-list-item--active,
+.v-select .v-list-item.v-list-item--active,
+.v-menu .v-overlay__content .v-list-item.v-list-item--active,
+.v-select .v-list-item.v-list-item--selected,
+.v-autocomplete .v-list-item[aria-selected="true"] {
   background-color: #ffe0b2 !important;
-  color: rgba(0, 0, 0, 0.87) !important;
+  color: #212121 !important;
+}
+.v-autocomplete .v-list-item.v-list-item--active > .v-list-item__overlay,
+.v-select .v-list-item.v-list-item--active > .v-list-item__overlay,
+.v-menu .v-overlay__content .v-list-item.v-list-item--active > .v-list-item__overlay,
+.v-select .v-list-item.v-list-item--selected > .v-list-item__overlay {
+  background-color: #ffe0b2 !important;
+  opacity: 1 !important;
+}
+
+/* Активный + под курсором — amber-200 (#ffcc80) */
+.v-autocomplete .v-list-item.v-list-item--active:hover,
+.v-select .v-list-item.v-list-item--active:hover,
+.v-menu .v-overlay__content .v-list-item.v-list-item--active:hover {
+  background-color: #ffcc80 !important;
+  color: #212121 !important;
+}
+.v-autocomplete .v-list-item.v-list-item--active:hover > .v-list-item__overlay,
+.v-select .v-list-item.v-list-item--active:hover > .v-list-item__overlay,
+.v-menu .v-overlay__content .v-list-item.v-list-item--active:hover > .v-list-item__overlay {
+  background-color: #ffcc80 !important;
+  opacity: 1 !important;
+}
+
+/* 6) ДОЧЕРНИЕ ЭЛЕМЕНТЫ (span, title, subtitle, prepend/append) — без тёмного
+      фона, текст тёмный, подзаголовок чуть светлее, но читаемый */
+.v-autocomplete .v-list-item > *:not(.v-list-item__overlay),
+.v-select .v-list-item > *:not(.v-list-item__overlay),
+.v-menu .v-overlay__content .v-list-item > *:not(.v-list-item__overlay) {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+.v-autocomplete .v-list-item-title,
+.v-select .v-list-item-title,
+.v-menu .v-overlay__content .v-list-item-title {
+  color: #212121 !important;
+}
+.v-autocomplete .v-list-item-subtitle,
+.v-select .v-list-item-subtitle,
+.v-menu .v-overlay__content .v-list-item-subtitle {
+  color: #616161 !important;
+}
+
+/* 7) ТЁМНАЯ ТЕМА: принудительно светлый фон/тёмный текст в списках поиска */
+.v-theme--dark .v-autocomplete .v-list-item,
+.v-theme--dark .v-select .v-list-item,
+.v-theme--dark .v-menu .v-overlay__content .v-list-item {
+  background-color: #ffffff !important;
+  color: #212121 !important;
+}
+.v-theme--dark .v-autocomplete .v-list-item:hover,
+.v-theme--dark .v-select .v-list-item:hover,
+.v-theme--dark .v-menu .v-overlay__content .v-list-item:hover {
+  background-color: #fff3e0 !important;
+  color: #212121 !important;
+}
+.v-theme--dark .v-autocomplete .v-list-item.v-list-item--active,
+.v-theme--dark .v-select .v-list-item.v-list-item--active,
+.v-theme--dark .v-menu .v-overlay__content .v-list-item.v-list-item--active {
+  background-color: #ffe0b2 !important;
+  color: #212121 !important;
+}
+.v-theme--dark .v-autocomplete .v-list-item > .v-list-item__overlay,
+.v-theme--dark .v-select .v-list-item > .v-list-item__overlay {
+  background-color: transparent !important;
+}
+/* Сам контейнер выпадающего меню — белый, если тема попытается окрасить его */
+.v-autocomplete .v-menu__content,
+.v-select .v-menu__content,
+.v-autocomplete .v-overlay__content,
+.v-select .v-overlay__content {
+  background-color: #ffffff !important;
+}
+.v-autocomplete .v-list,
+.v-select .v-list,
+.v-menu .v-overlay__content .v-list {
+  background-color: #ffffff !important;
 }
 </style>
