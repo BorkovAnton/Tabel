@@ -755,7 +755,9 @@ function calculateSummary(row) {
 
     const hours = cellHoursForDay(row, val)
     if (hours !== null && hours > 0) {
-      // числовой ввод: обычные часы + сверхурочные сверх нормы по графику
+      // числовой ввод: обычные часы + сверхурочные сверх нормы по графику.
+      // ИСПРАВЛЕНО: «Сверхурочные дни» при числовом вводе НЕ добавляются —
+      // в эту колонку попадают только коды справочника с направлением overtime_days.
       const regular = Math.min(hours, norm)
       const ot = Math.max(0, hours - norm)
       summary.total_hours += hours
@@ -763,7 +765,6 @@ function calculateSummary(row) {
       summary.tariff_hours += regular
       if (ot > 0) {
         summary.overtime_hours += ot
-        summary.overtime_days += 1
       }
       continue
     }
@@ -790,18 +791,18 @@ function calculateSummary(row) {
         }
       })
 
-      // ИСПРАВЛЕНО: распределение по норме для кодов, дающих часы.
-      // Раньше здесь использовалась необъявленная переменная `hours` (ReferenceError),
-      // из-за чего сверхурочные считались только для tooltip, а в итоговую колонку
-      // «Сверхурочные часы» не попадали (всегда 0). Теперь берём totalHours —
-      // те же часы и ту же норму по графику (getDayNorm), что и в cellTipData,
-      // поэтому tooltip и итоговая колонка показывают одинаковые значения.
+      // ИСПРАВЛЕНО: логика сверхурочных ЧАСОВ и ДНЕЙ разделена.
+      // Сверхурочные часы: как раньше — фактические часы кода минус норма по графику
+      // (getDayNorm), только для кодов БЕЗ собственных сверхурочных направлений;
+      // tooltip (cellTipData) считает так же → значения совпадают.
+      // Сверхурочные дни: добавляются ТОЛЬКО если код имеет направление 'overtime_days'
+      // в справочнике (см. цикл dests.forEach выше). Превышение нормы само по себе
+      // день в колонку «сверхурочные дни» не попадает (например, код "8" при норме 8.25).
       const isOvertimeCode = dests.includes('overtime_hours') || dests.includes('overtime_days')
       if (totalHours > 0 && !isOvertimeCode) {
         const ot = Math.max(0, totalHours - norm)
         if (ot > 0) {
           summary.overtime_hours += ot
-          summary.overtime_days += 1
           // из колонок обычных часов вычитаем превышение, если код туда попал
           if (dests.includes('tariff_hours')) summary.tariff_hours = Math.max(0, summary.tariff_hours - ot)
           // «Итого часов» остаётся полным (все введённые часы)
