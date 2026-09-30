@@ -386,6 +386,8 @@ const isEditing = ref(false)
 const editingCode = ref(null)
 
 // ИСПРАВЛЕНО: Добавлено свойство unit ('days' или 'hours') для точного расчета
+// Колонка «Итого часов» намеренно НЕ последняя: после неё идут остальные
+// итоговые колонки, а самой правой является «Часы по тарифу» (см. ниже).
 const summaryColumns = ref([
   { key: 'fact_days', label: 'фактической работы', unit: 'days' },
   { key: 'total_hours', label: 'Итого часов', unit: 'hours' },
@@ -397,9 +399,10 @@ const summaryColumns = ref([
   { key: 'overtime_days', label: 'сверхурочные дни', unit: 'days' },
   { key: 'overtime_hours', label: 'Сверхурочные часы', unit: 'hours' },
   { key: 'night_hours', label: 'ночные часы', unit: 'hours' },
-  { key: 'tariff_hours', label: 'Итого часов по участку', unit: 'hours' },
   { key: 'kdu_work_days', label: 'КДУ', unit: 'manual' },
-  { key: 'kdu_weekend_days', label: 'КДУ вых. дня', unit: 'manual' }
+  { key: 'kdu_weekend_days', label: 'КДУ вых. дня', unit: 'manual' },
+  // Новая итоговая колонка «по тарифу» — крайняя справа (перед кнопкой удаления)
+  { key: 'tariff_hours', label: 'Часы по тарифу', unit: 'hours' }
 ])
 
 function getDayOfWeek(day) {
@@ -680,7 +683,7 @@ function totalHours(row) {
 // ИСПРАВЛЕНО: Расчет теперь использует свойство unit из summaryColumns
 // Колонки с unit === 'manual' (КДУ) заполняются вручную и здесь не считаются.
 // Часы сверх нормы (norm_hours, по умолчанию 8) автоматически уходят в сверхурочные:
-// «Итого часов» = все часы; «по тарифу/участку» = только обычные; превышение — в overtime_*.
+// «Итого часов» = все часы; «по тарифу» (тарифные часы) = только обычные; превышение — в overtime_*.
 function cellHoursForDay(row, val) {
   const s = String(val ?? '').trim()
   if (!s) return null
