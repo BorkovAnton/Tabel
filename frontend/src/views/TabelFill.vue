@@ -262,7 +262,7 @@
                 <td style="white-space: normal !important; vertical-align: middle;">
                   <div class="d-flex flex-wrap" style="gap: 4px;">
                     <v-chip v-for="dest in (c.destinations || [])" :key="dest" size="x-small" variant="tonal" color="#2d5a3d">
-                      {{ summaryColumns.find(col => col.key === dest)?.label || dest }}
+                      {{ destinationOptions.find(col => col.value === dest)?.title || dest }}
                     </v-chip>
                     <span v-if="!c.destinations || c.destinations.length === 0" class="text-grey text-caption">Не указано</span>
                   </div>
@@ -324,7 +324,9 @@
               
               <v-select
                 v-model="newCode.destinations"
-                :items="summaryColumns.map(c => ({ title: c.label, value: c.key }))"
+                :items="destinationOptions"
+                item-title="title"
+                item-value="value"
                 label="Куда попадет"
                 density="compact"
                 variant="outlined"
@@ -404,6 +406,26 @@ const summaryColumns = ref([
   // Новая итоговая колонка «по тарифу» — крайняя справа (перед кнопкой удаления)
   { key: 'tariff_hours', label: 'Часы по тарифу', unit: 'hours' }
 ])
+
+// Направления для справочника кодов («Куда попадёт»).
+// Исправление: раньше список строился напрямую от summaryColumns, из-за чего
+// в выпадающем списке не было «Часы по тарифу», а ночные/дневные часы были
+// объединены в одну колонку. Ключи соответствуют логике calculateSummary:
+// tariff_hours / night_hours / day_hours.
+const destinationOptions = computed(() => {
+  const opts = []
+  for (const c of summaryColumns.value) {
+    if (c.unit === 'manual') continue // КДУ заполняется вручную, не из кода
+    if (c.key === 'tariff_hours' || c.key === 'night_hours') continue // добавляем явно ниже
+    opts.push({ title: c.label, value: c.key })
+    if (c.key === 'total_hours') {
+      opts.push({ title: 'Часы по тарифу', value: 'tariff_hours' })
+    }
+  }
+  opts.push({ title: 'Ночные часы', value: 'night_hours' })
+  opts.push({ title: 'Дневные часы', value: 'day_hours' })
+  return opts
+})
 
 function getDayOfWeek(day) {
   if (!tabel.value) return ''
