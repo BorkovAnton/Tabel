@@ -785,6 +785,11 @@ function clampKdu(raw) {
   return Math.round(n * 100) / 100
 }
 
+// КДУ-ключи содержат подчёркивания внутри имени поля (kdu_work_days), поэтому
+// employee_id выделяется НЕ по lastIndexOf('_') — иначе из "12_kdu_work_days"
+// получались empId=NaN и field="days" → 422 «employee_id должен быть integer» и
+// «Недопустимое поле КДУ». Надёжнее хранить employee_id и field отдельно.
+
 // Отметка изменения КДУ. Ключ — `${employee_id}_${field}`, где employee_id
 // обязательно приводится к числу: если в данных строки id пришёл строкой ("12"),
 // шаблонный ключ давал бы "NaN_kdu_work_days" и employee_id в payload становился
@@ -793,6 +798,22 @@ function markKduDirty(row, field, value) {
   const empId = Number(row.employee_id)
   if (!Number.isInteger(empId)) return
   dirtyKdu.value[`${empId}_${field}`] = value
+}
+
+// Разбор ключа вида "{employeeId}_{fieldName}". Поле ищем по известному
+// суффиксу (whitelist), а не по последнему подчёркиванию — суффикс может
+// содержать подчёркивания ("kdu_work_days").
+const KDU_FIELDS = ['kdu_work_days', 'kdu_weekend_days']
+function parseKduKey(key) {
+  const k = String(key)
+  for (const f of KDU_FIELDS) {
+    if (k.endsWith('_' + f)) {
+      const empId = Number(k.slice(0, k.length - f.length - 1))
+      if (Number.isInteger(empId)) return { empId, field: f }
+      return null
+    }
+  }
+  return null
 }
 
 function onKduInput(row, field, event) {
@@ -882,15 +903,13 @@ async function saveDayCells() {
 
 // Сохранение ручных значений КДУ отдельно от ячеек дней — через PUT /tabels/{id}/kdu.
 async function saveKdu() {
-  const validFields = ['kdu_work_days', 'kdu_weekend_days']
   const kduUpdates = []
   for (const [key, value] of Object.entries(dirtyKdu.value)) {
-    const idx = String(key).lastIndexOf('_')
-    const empId = Number(key.slice(0, idx))
-    const field = key.slice(idx + 1)
-    // В payload попадают только допустимые поля КДУ и корректный employee_id
-    if (!validFields.includes(field) || !Number.isInteger(empId)) continue
-    kduUpdates.push({ employee_id: empId, field, value })
+    // В payload попадают только допустимые поля КДУ и корректный employee_id.
+    // Разбор по whitelist-суффиксу: имена полей содержат подчёркивания.
+    const parsed = parseKduKey(key)
+    if (!parsed) continue
+    kduUpdates.push({ employee_id: parsed.empId, field: parsed.field, value })
   }
   if (!kduUpdates.length) { dirtyKdu.value = {}; return true }
   try {
@@ -1057,14 +1076,11 @@ onBeforeUnmount(() => {
 function onWindowUnload() {
   const kduEntries = Object.entries(dirtyKdu.value)
   if (!kduEntries.length) return
-  const validFields = ['kdu_work_days', 'kdu_weekend_days']
   const payload = []
   for (const [key, value] of kduEntries) {
-    const idx = String(key).lastIndexOf('_')
-    const empId = Number(key.slice(0, idx))
-    const field = key.slice(idx + 1)
-    if (!validFields.includes(field) || !Number.isInteger(empId)) continue
-    payload.push({ employee_id: empId, field, value })
+    const parsed = parseKduKey(key)
+    if (!parsed) continue
+    payload.push({ employee_id: parsed.empId, field: parsed.field, value })
   }
   if (!payload.length) return
   try {
