@@ -194,8 +194,19 @@
                   @update:search="onEmpSearch"
                 >
                   <template #item="{ props, item }">
-                    <v-list-item v-bind="props" :title="item.raw.label"
-                                 :subtitle="item.raw.tab_number ? 'Таб. ' + item.raw.tab_number : ''" />
+                    <!-- ФИО рендерим явно: Vuetify с auto-select-first закрашивал
+                         подсветку (оранжевый) ПОВЕРХ текста стандартного title-слоя,
+                         из-за чего надпись сливалась с выделением. span.emp-search-title
+                         лежит в слое выше .v-list-item__overlay (z-index) и всегда
+                         остаётся тёмным и читаемым на любом фоне. -->
+                    <v-list-item v-bind="props">
+                      <template #prepend>
+                        <span class="emp-search-title">{{ item.raw.label }}</span>
+                      </template>
+                      <template #append>
+                        <span v-if="item.raw.tab_number" class="emp-search-subtitle">Таб. {{ item.raw.tab_number }}</span>
+                      </template>
+                    </v-list-item>
                   </template>
                 </v-autocomplete>
                 <span v-if="selectedEmployee" class="text-caption text-grey">— строка появится здесь</span>
@@ -228,8 +239,17 @@
             @update:search="onEmpSearch"
           >
             <template #item="{ props, item }">
-              <v-list-item v-bind="props" :title="item.raw.label"
-                           :subtitle="item.raw.tab_number ? 'Таб. ' + item.raw.tab_number : ''" />
+              <!-- Тот же приём, что и в строке добавления сотрудника: ФИО рендерится
+                   явным span.emp-search-title поверх слоя подсветки, чтобы текст не
+                   сливался с оранжевым выделением активного элемента. -->
+              <v-list-item v-bind="props">
+                <template #prepend>
+                  <span class="emp-search-title">{{ item.raw.label }}</span>
+                </template>
+                <template #append>
+                  <span v-if="item.raw.tab_number" class="emp-search-subtitle">Таб. {{ item.raw.tab_number }}</span>
+                </template>
+              </v-list-item>
             </template>
           </v-autocomplete>
           <span class="text-caption text-grey">— первый сотрудник появится здесь</span>
@@ -1284,6 +1304,23 @@ onMounted(async () => {
 :deep(.v-select .v-list-item-subtitle) {
   color: #616161 !important;
 }
+/* Явный текст ФИО/табельного в слотах prepend/append v-list-item.
+   Поднимаем его над слоем подсветки (.v-list-item__overlay), чтобы при
+   оранжевом выделении надпись не закрашивалась и оставалась тёмной. */
+.emp-search-title,
+.emp-search-subtitle {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+:deep(.emp-search-title) {
+  color: #212121 !important;
+  font-weight: 500;
+}
+:deep(.emp-search-subtitle) {
+  color: #616161 !important;
+  font-size: 0.8rem;
+}
 </style>
 
 <style>
@@ -1411,6 +1448,35 @@ onMounted(async () => {
 .v-select .v-list-item-subtitle,
 .v-menu .v-overlay__content .v-list-item-subtitle {
   color: #616161 !important;
+}
+
+/* 6b) Явный текст ФИО/табельного (span.emp-search-title / .emp-search-subtitle
+        в слотах prepend/append) — тёмный и ПОВЕРХ слоя подсветки. Без этого при
+        оранжевом выделении active-элемента надпись закрашивалась и сливалась
+        с фоном («просто оранжевое окно»). */
+.v-autocomplete .v-list-item .emp-search-title,
+.v-select .v-list-item .emp-search-title,
+.v-menu .v-overlay__content .v-list-item .emp-search-title {
+  position: relative;
+  z-index: 2;
+  color: #212121 !important;
+  font-weight: 500;
+}
+.v-autocomplete .v-list-item .emp-search-subtitle,
+.v-select .v-list-item .emp-search-subtitle,
+.v-menu .v-overlay__content .v-list-item .emp-search-subtitle {
+  position: relative;
+  z-index: 2;
+  color: #616161 !important;
+  font-size: 0.8rem;
+}
+.v-autocomplete .v-list-item--active .emp-search-title,
+.v-select .v-list-item--active .emp-search-title,
+.v-menu .v-overlay__content .v-list-item--active .emp-search-title,
+.v-autocomplete .v-list-item:hover .emp-search-title,
+.v-select .v-list-item:hover .emp-search-title,
+.v-menu .v-overlay__content .v-list-item:hover .emp-search-title {
+  color: #212121 !important;
 }
 
 /* 7) ТЁМНАЯ ТЕМА: принудительно светлый фон/тёмный текст в списках поиска */
