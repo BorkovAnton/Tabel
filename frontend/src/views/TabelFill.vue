@@ -860,6 +860,9 @@ async function saveDayCells() {
     if (!Number.isInteger(empId) || !Number.isInteger(day)) continue
     updates.push({ employee_id: empId, day, value: String(value ?? '') })
   }
+  // Если после фильтрации не осталось ни одной корректной ячейки — изменения просто
+  // сбрасываются. Важно НЕ вызывать PUT /cells с пустым списком: бэкенд вернёт 422
+  // («Input should be a valid integer, input: []»), что блокировало бы и сохранение КДУ.
   if (!updates.length) { dirty.value = {}; return true }
   await api.put(`/tabels/${route.params.id}/cells`, updates)
   dirty.value = {}
@@ -902,23 +905,47 @@ async function save(showMsg = true) {
     return false
   }
   saving.value = true
+  const errors = []
   try {
-    // Ячейки дней и КДУ отправляются раздельно на свои endpoints
-    if (hasCellChanges) await saveDayCells()
-    if (hasKduChanges) await saveKdu()
+    // Ячейки дней и КДУ сохраняются НЕЗАВИСИМО друг от друга: сбой одной операции
+    // не должен блокировать другую (раньше ошибка /cells или /kdu прерывала всё
+    // сохранение по try/catch, из-за чего «кнопка Сохранить не работала» и КДУ
+    // не сохранялся).
+    if (hasCellChanges) {
+      try { await saveDayCells() }
+      catch (e) { errors.push('Ячейки дней: ' + describeSaveError(e)) }
+    }
+    if (hasKduChanges) {
+      try { await saveKdu() }
+      catch (e) { errors.push('КДУ: ' + describeSaveError(e)) }
+    }
+    if (errors.length) {
+      message.value = errors.join(' | ')
+      messageType.value = 'error'
+      return false
+    }
     if (showMsg) {
       message.value = 'Сохранено'
       messageType.value = 'success'
       setTimeout(() => { if (message.value === 'Сохранено') message.value = '' }, 2000)
     }
     return true
-  } catch (e) {
-    message.value = e.response?.data?.detail || e.message || 'Ошибка сохранения'
-    messageType.value = 'error'
-    return false
   } finally {
     saving.value = false
   }
+}
+
+// Человекочитаемое описание ошибки сохранения (в т.ч. pydantic-валидаторы бэкенда)
+function describeSaveError(e) {
+  if (e instanceof Error && !e.response) return e.message
+  const detail = e.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const first = detail[0]
+    const field = Array.isArray(first?.loc) ? first.loc.join('.') : ''
+    return `${first?.msg || 'Ошибка валидации данных'}${field ? ` (${field})` : ''}`
+  }
+  return e.message || 'Ошибка сохранения'
 }
 
 function codesForRow(row) {
