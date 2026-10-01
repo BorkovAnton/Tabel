@@ -1127,13 +1127,17 @@ async function linkEmployee() {
 
   linking.value = true
   try {
-    await api.post('/api/turnstile-fix/link-unrecognized', {
+    const response = await api.post('/api/turnstile-fix/link-unrecognized', {
       raw_name: selectedName.value.raw_name,
       items
     })
+    // Табель фактический пересчитан на бэкенде автоматически за затронутые дни.
+    console.log('Связывание выполнено, пересчёт табеля:', response?.data?.timesheet_recalc)
     if (skipped === 0) {
-      // Всё связано — закрываем диалог
+      // Всё связано — закрываем диалог и показываем зелёное уведомление.
       linkDialog.value = false
+      addSuccess.value = 'Связывание выполнено и табель пересчитан'
+      showAddSnackbar.value = true
     } else {
       // Обновляем список дней, чтобы показать оставшиеся непровязанные
       await loadUnrecognizedDays(selectedName.value.raw_name)

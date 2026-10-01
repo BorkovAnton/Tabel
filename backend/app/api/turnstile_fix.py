@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.turnstile_event import TurnstileEvent
 from app.models.employee import Employee
 from app.models.department import Department
+from app.models.timesheet_record import TimesheetRecord
 
 router = APIRouter(prefix="/api/turnstile-fix", tags=["Turnstile Fix"])
 
@@ -208,6 +209,97 @@ def get_unrecognized_events(raw_name: str, db: Session = Depends(get_db)):
     return sorted(by_day.values(), key=lambda x: x["date"], reverse=True)
 
 
+def recalc_timesheet_for_employee(db: Session, day_map: dict) -> dict:
+    """Пересчитать TimesheetRecord только за затронутые дни (быстрый пересчёт).
+
+    day_map: { "YYYY-MM-DD": employee_id, ... } — результат связывания.
+    Для каждой пары (сотрудник, день) берёт все события проходной за этот день
+    и обновляет/создаёт запись табеля фактического. Плановые часы
+    (planned_hours) существующих записей не сбрасываются.
+    """
+    from app.api.timesheet import (
+        calculate_day_record,
+        schedule_lunch_minutes,
+        schedule_norm_hours,
+    )
+
+    created = 0
+    updated = 0
+    for date_str, emp_id in day_map.items():
+        try:
+            day = datetime.fromisoformat(date_str).date()
+        except ValueError:
+            continue
+        employee = db.query(Employee).filter(Employee.id == emp_id).first()
+        if not employee:
+            continue
+
+        day_start = datetime.combine(day, datetime.min.time())
+        day_end = datetime.combine(day, datetime.max.time())
+        events = (
+            db.query(TurnstileEvent)
+            .filter(
+                TurnstileEvent.employee_id == emp_id,
+                TurnstileEvent.datetime >= day_start,
+                TurnstileEvent.datetime <= day_end,
+            )
+            .order_by(TurnstileEvent.datetime)
+            .all()
+        )
+        if not events:
+            continue
+
+        schedule = employee.schedule
+        lunch_minutes = schedule_lunch_minutes(schedule, day)
+        default_hours = schedule_norm_hours(schedule, day)
+        first_in, last_out, fact_hours, needs_review, review_reason = calculate_day_record(
+            events, lunch_minutes
+        )
+
+        existing = (
+            db.query(TimesheetRecord)
+            .filter(
+                TimesheetRecord.employee_id == emp_id,
+                TimesheetRecord.date == day,
+            )
+            .first()
+        )
+        planned_hours = existing.planned_hours if existing else None
+        if planned_hours is not None:
+            overtime = max(0.0, round(fact_hours - planned_hours, 2))
+        else:
+            overtime = max(0.0, round(fact_hours - default_hours, 2))
+
+        if existing:
+            existing.first_in = first_in
+            existing.last_out = last_out
+            existing.fact_hours = fact_hours
+            existing.default_hours = default_hours
+            existing.overtime = overtime
+            existing.lunch_minutes = lunch_minutes
+            existing.needs_review = needs_review
+            existing.review_reason = review_reason
+            updated += 1
+        else:
+            db.add(TimesheetRecord(
+                employee_id=emp_id,
+                date=day,
+                first_in=first_in,
+                last_out=last_out,
+                fact_hours=fact_hours,
+                planned_hours=None,
+                default_hours=default_hours,
+                overtime=overtime,
+                lunch_minutes=lunch_minutes,
+                needs_review=needs_review,
+                review_reason=review_reason,
+            ))
+            created += 1
+
+    db.commit()
+    return {"records_created": created, "records_updated": updated}
+
+
 @router.post("/link-unrecognized")
 def link_unrecognized(request: LinkUnrecognizedRequest, db: Session = Depends(get_db)):
     """Привязать события нераспознанного ФИО к сотрудникам по датам.
@@ -242,7 +334,17 @@ def link_unrecognized(request: LinkUnrecognizedRequest, db: Session = Depends(ge
             updated += 1
 
     db.commit()
-    return {"status": "ok", "updated": updated, "requested_days": len(day_map)}
+
+    # Автоматический пересчёт табеля фактического за затронутые дни,
+    # чтобы связанные события сразу появились в табеле сотрудника.
+    recalc_info = recalc_timesheet_for_employee(db, day_map)
+
+    return {
+        "status": "ok",
+        "updated": updated,
+        "requested_days": len(day_map),
+        "timesheet_recalc": recalc_info,
+    }
 
 
 @router.get("/issues")
