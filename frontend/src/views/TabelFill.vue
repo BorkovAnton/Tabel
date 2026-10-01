@@ -615,9 +615,15 @@ function cellTipData(val, row, d) {
     const day = eff.day
     const night = eff.night
     const total = eff.total
+    const dests = codeObj.destinations || []
     let ot = 0
-    // Для «Время по графику» часы == норма → сверхурочных нет; считаем так же, как раньше
-    if (row && total > 0 && !codeObj.use_schedule_hours && !(codeObj.destinations || []).includes('overtime_hours')) {
+    if (dests.includes('overtime_hours')) {
+      // ИСПРАВЛЕНО: код сам является сверхурочным (например «8с» с направлением
+      // overtime_hours) — ВСЕ его часы идут в сверхурочные (см. calculateSummary).
+      ot = total
+    } else if (row && total > 0 && !codeObj.use_schedule_hours) {
+      // Обычный код: сверхурочные = превышение над нормой графика.
+      // Для «Время по графику» часы == норма → сверхурочных нет.
       ot = Math.max(0, total - getDayNorm(row, d))
     }
     return { kind: 'code', code: codeObj.code, name: codeObj.name, day, night, total, ot }
@@ -828,6 +834,11 @@ function calculateSummary(row) {
             summary[dest] += hoursNight
           } else if (dest === 'day_hours') {
             summary[dest] += hoursDay
+          } else if (dest === 'overtime_hours') {
+            // ИСПРАВЛЕНО: код с направлением overtime_hours (например «8с») —
+            // сверхурочный код, ВСЕ его часы идут в «Сверхурочные часы»,
+            // а не только превышение над нормой.
+            summary[dest] += totalHours
           } else {
             summary[dest] += totalHours
           }
@@ -835,12 +846,15 @@ function calculateSummary(row) {
       })
 
       // ИСПРАВЛЕНО: логика сверхурочных ЧАСОВ и ДНЕЙ разделена.
-      // Сверхурочные часы: как раньше — фактические часы кода минус норма по графику
-      // (getDayNorm), только для кодов БЕЗ собственных сверхурочных направлений;
-      // tooltip (cellTipData) считает так же → значения совпадают.
-      // Сверхурочные дни: добавляются ТОЛЬКО если код имеет направление 'overtime_days'
-      // в справочнике (см. цикл dests.forEach выше). Превышение нормы само по себе
-      // день в колонку «сверхурочные дни» не попадает (например, код "8" при норме 8.25).
+      // Сверхурочные часы: обычные коды (без собственных направлений overtime_*)
+      // дают переработку = фактические часы кода минус норма по графику
+      // (getDayNorm); tooltip (cellTipData) считает так же → значения совпадают.
+      // Коды с направлением 'overtime_hours' уже добавили ВСЕ свои часы в
+      // «Сверхурочные часы» в цикле dests.forEach выше — повторно не считаем.
+      // Сверхурочные дни: добавляются ТОЛЬКО если код имеет направление
+      // 'overtime_days' в справочнике (см. цикл dests.forEach выше). Превышение
+      // нормы само по себе день в колонку «сверхурочные дни» не попадает
+      // (например, код "8" при норме 8.25).
       const isOvertimeCode = dests.includes('overtime_hours') || dests.includes('overtime_days')
       if (totalHours > 0 && !isOvertimeCode && !codeObj.use_schedule_hours) {
         const ot = Math.max(0, totalHours - norm)

@@ -96,8 +96,11 @@ def summary_overtime_hours(entry, dim: int, codes: dict, norms_by_dow: dict,
 
     Повторяет логику calculateSummary() из frontend/src/views/TabelFill.vue:
       - числовой ввод ячейки («10», «8ч15м»): ot = max(0, часы − норма дня);
-      - код справочника: ot = max(0, эффективные часы − норма дня), но только
-        для кодов БЕЗ собственных направлений overtime_* и без use_schedule_hours;
+      - код справочника с направлением overtime_hours (например «8с») —
+        сверхурочный код: ВСЕ его часы идут в сверхурочные;
+      - обычный код справочника: ot = max(0, эффективные часы − норма дня),
+        только для кодов БЕЗ собственных направлений overtime_* и без
+        use_schedule_hours;
       - КДУ (ручные колонки «КДУ»/«КДУ вых. дня») прибавляется к сверхурочным —
         это ручная отметка переработок со стабильно старых табелей.
     Норма дня — из графика работы по дню недели (fallback: employees.norm_hours/8).
@@ -119,7 +122,12 @@ def summary_overtime_hours(entry, dim: int, codes: dict, norms_by_dow: dict,
             _, _, total_h = code_effective_hours(code, norm)
             dests = list(code.destinations or [])
             is_ot_code = ("overtime_hours" in dests) or ("overtime_days" in dests)
-            if total_h > 0 and not is_ot_code and not getattr(code, "use_schedule_hours", False):
+            if "overtime_hours" in dests:
+                # ИСПРАВЛЕНО: код сам является сверхурочным (например «8с» с
+                # направлением overtime_hours) — ВСЕ его часы идут в
+                # «Сверхурочно с табеля» (как в calculateSummary на фронтенде).
+                total_ot += total_h
+            elif total_h > 0 and not is_ot_code and not getattr(code, "use_schedule_hours", False):
                 total_ot += max(0.0, total_h - norm)
         else:
             h = raw_to_hours(val)
