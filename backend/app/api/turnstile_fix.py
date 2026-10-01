@@ -34,12 +34,32 @@ def _pair_shifts(events):
     Возвращает список смен, отсортированных по дате начала и сотруднику.
     """
     by_emp = {}
+    shifts = []
     for e in events:
         if e.employee_id is None:
             continue
+        # Ручная смена (создана на вкладке «Смены»): event_type == 'shift',
+        # datetime — вход, shift_end — выход. Готовая смена, не участвует в паре.
+        if getattr(e, "event_type", None) == "shift":
+            end = getattr(e, "shift_end", None)
+            duration = round((end - e.datetime).total_seconds() / 3600.0, 2) if end else None
+            shifts.append({
+                "employee_id": e.employee_id,
+                "date": e.datetime.date().isoformat(),
+                "shift_start": e.datetime,
+                "first_in": e.datetime,
+                "last_out": end,
+                "has_in": True,
+                "has_out": end is not None,
+                "is_night": (end is not None and end.date() > e.datetime.date())
+                            or e.datetime.hour >= NIGHT_IN_HOUR,
+                "duration_hours": duration,
+                "events": [e],
+                "is_manual": True,
+            })
+            continue
         by_emp.setdefault(e.employee_id, []).append(e)
 
-    shifts = []
     for emp_id, evs in by_emp.items():
         evs = sorted(evs, key=lambda e: e.datetime)
         open_in = None       # datetime незакрытого входа
@@ -126,6 +146,12 @@ class FixMissingRequest(BaseModel):
     employee_id: int
     datetime: str
     event_type: Optional[str] = None  # "in" | "out"; если не указан — тип определится автоматически
+
+
+class ManualShiftRequest(BaseModel):
+    employee_id: int
+    start_datetime: str  # ISO: "2026-09-20T08:00"
+    end_datetime: str    # ISO: "2026-09-21T07:00"
 
 
 class UnrecognizedDayItem(BaseModel):
@@ -273,7 +299,9 @@ def get_issues(
             elif e.event_type == "out":
                 manual_outs[(e.employee_id, d)] = True
 
-        shifts = _pair_shifts([e for e in recognized_events if not getattr(e, "is_manual", False)])
+        shifts = _pair_shifts([e for e in recognized_events
+                               if not getattr(e, "is_manual", False)
+                               and getattr(e, "event_type", None) != "shift"])
 
         # Группируем проблемы по сотруднику + дата + тип: одна строка на
         # сотрудника за день вместо множества строк с разными минутами.
@@ -370,16 +398,23 @@ def get_issues(
 def get_shifts(
     date_from: str = Query(...),
     date_to: str = Query(...),
+    employee_id: Optional[int] = Query(None, description="Фильтр по сотруднику"),
     db: Session = Depends(get_db)
 ):
-    """Список смен (пар вход-выход) с учётом ночных переходов через полночь."""
+    """Список смен (пары вход-выход) с учётом ночных переходов через полночь.
+
+    employee_id — необязательный фильтр: вернуть смены только одного сотрудника.
+    """
     from_date = datetime.fromisoformat(date_from)
     to_date = datetime.fromisoformat(date_to) + timedelta(days=1)
 
-    events = db.query(TurnstileEvent).filter(
+    event_query = db.query(TurnstileEvent).filter(
         TurnstileEvent.datetime >= from_date - timedelta(days=1),
         TurnstileEvent.datetime < to_date
-    ).order_by(TurnstileEvent.datetime).all()
+    )
+    if employee_id is not None:
+        event_query = event_query.filter(TurnstileEvent.employee_id == employee_id)
+    events = event_query.order_by(TurnstileEvent.datetime).all()
 
     emp_names = {
         e.id: e.full_name
@@ -401,6 +436,7 @@ def get_shifts(
             "employee_name": emp_names.get(s["employee_id"], f"ID: {s['employee_id']}"),
             "date": s["date"],
             "is_night": s["is_night"],
+            "is_manual": bool(s.get("is_manual", False)),
             "first_in": s["first_in"].strftime("%d.%m %H:%M:%S") if s["first_in"] else None,
             "last_out": s["last_out"].strftime("%d.%m %H:%M:%S") if s["last_out"] else None,
             "duration_hours": s["duration_hours"],
@@ -408,6 +444,70 @@ def get_shifts(
             "ok": ok,
         })
     return result
+
+
+@router.post("/shifts/manual")
+def create_manual_shift(request: ManualShiftRequest, db: Session = Depends(get_db)):
+    """Создать смену вручную (например, сотрудник забыл приложить карту).
+
+    Смена хранится как одно событие TurnstileEvent с event_type='shift',
+    is_manual=True, datetime=вход, shift_end=выход. Включается в выдачу
+    GET /shifts с флагом is_manual.
+    """
+    employee = db.query(Employee).filter(Employee.id == request.employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+
+    try:
+        start_dt = datetime.fromisoformat(request.start_datetime)
+        end_dt = datetime.fromisoformat(request.end_datetime)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Некорректный формат даты и времени")
+
+    if end_dt <= start_dt:
+        raise HTTPException(status_code=400, detail="Время выхода должно быть позже времени входа")
+
+    # Защита от дубликата: у сотрудника уже есть точно такая же ручная смена.
+    dup = db.query(TurnstileEvent).filter(
+        TurnstileEvent.employee_id == request.employee_id,
+        TurnstileEvent.event_type == "shift",
+        TurnstileEvent.datetime == start_dt,
+        TurnstileEvent.shift_end == end_dt,
+    ).first()
+    if dup:
+        raise HTTPException(status_code=409, detail="Такая смена уже существует")
+
+    event = TurnstileEvent(
+        raw_name=employee.full_name,
+        employee_id=request.employee_id,
+        event_type="shift",
+        datetime=start_dt,
+        shift_end=end_dt,
+        is_manual=True,
+        is_recognized=True,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    duration = round((end_dt - start_dt).total_seconds() / 3600.0, 2)
+    return {
+        "status": "ok",
+        "id": event.id,
+        "message": "Смена успешно добавлена",
+        "shift": {
+            "employee_id": request.employee_id,
+            "employee_name": employee.full_name,
+            "date": start_dt.date().isoformat(),
+            "is_night": end_dt.date() > start_dt.date() or start_dt.hour >= NIGHT_IN_HOUR,
+            "is_manual": True,
+            "first_in": start_dt.strftime("%d.%m %H:%M:%S"),
+            "last_out": end_dt.strftime("%d.%m %H:%M:%S"),
+            "duration_hours": duration,
+            "status": "OK",
+            "ok": True,
+        },
+    }
 
 
 @router.patch("/bulk-link")

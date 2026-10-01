@@ -14,6 +14,9 @@ class TurnstileEvent(Base):
     datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     is_recognized: Mapped[bool] = mapped_column(Boolean, default=False)
     is_manual: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Ручная смена (создана на странице «Смены»): хранит время выхода.
+    # Для таких событий event_type == 'shift' и datetime == время входа.
+    shift_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     # Relationships
     employee: Mapped['Employee'] = relationship('Employee')

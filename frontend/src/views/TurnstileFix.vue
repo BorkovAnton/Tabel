@@ -181,9 +181,50 @@
 
           <!-- Вкладка: Смены (пары вход-выход, включая ночные через полночь) -->
           <v-window-item value="shifts">
+            <!-- Панель фильтров вкладки «Смены» -->
+            <v-row align="center" class="mb-2">
+              <v-col cols="12" md="5">
+                <v-autocomplete
+                  v-model="shiftEmployee"
+                  :items="employeeSearchResults"
+                  item-title="display"
+                  item-value="id"
+                  label="Сотрудник"
+                  hint="Начните вводить фамилию (минимум 2 символа). Очистите — чтобы увидеть все смены."
+                  persistent-hint
+                  prepend-inner-icon="mdi-magnify"
+                  variant="outlined"
+                  density="comfortable"
+                  clearable
+                  auto-select-first
+                  return-object
+                  no-filter
+                  hide-no-data
+                  :loading="employeeSearchLoading"
+                  @update:model-value="onShiftEmployeeSelected"
+                  @update:search="onEmployeeSearchInput"
+                >
+                  <template #item="{ props, item }">
+                    <v-list-item v-bind="props" :title="item.raw.display"></v-list-item>
+                  </template>
+                </v-autocomplete>
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-btn
+                  color="primary"
+                  variant="tonal"
+                  prepend-icon="mdi-plus"
+                  @click="openManualShiftDialog"
+                >
+                  Добавить смену вручную
+                </v-btn>
+              </v-col>
+            </v-row>
+
             <div class="text-caption text-grey mb-2">
               Ночные смены (вход после 20:00, выход до 12:00 следующего дня) связываются
-              в одну смену и выделяются голубым фоном с иконкой 🌙.
+              в одну смену и выделяются голубым фоном с иконкой 🌙. Ручные смены выделены
+              оранжевым фоном и бейджем «Ручная».
             </div>
             <v-data-table
               :headers="shiftHeaders"
@@ -192,6 +233,12 @@
               :row-class="shiftRowClass"
               class="elevation-1"
             >
+              <template v-slot:item.employee_name="{ item }">
+                {{ item.employee_name }}
+                <v-chip v-if="item.is_manual" size="x-small" color="orange" variant="flat" class="ml-1 manual-badge">
+                  Ручная
+                </v-chip>
+              </template>
               <template v-slot:item.date="{ item }">
                 <span>{{ formatRuDate(item.date) }}</span>
                 <span v-if="item.is_night" class="night-badge ml-1" title="Ночная смена">🌙</span>
@@ -388,6 +435,104 @@
       </v-card>
     </v-dialog>
 
+    <!-- Диалог добавления смены вручную -->
+    <v-dialog v-model="manualShiftDialog" max-width="520">
+      <v-card>
+        <v-card-title>Добавить смену вручную</v-card-title>
+        <v-card-text>
+          <v-alert
+            v-if="manualShiftError"
+            type="error"
+            density="compact"
+            class="mb-3"
+            closable
+          >{{ manualShiftError }}</v-alert>
+
+          <v-autocomplete
+            v-model="manualShiftEmployee"
+            :items="manualShiftResults"
+            item-title="display"
+            item-value="id"
+            label="Сотрудник"
+            hint="Начните вводить фамилию (минимум 2 символа)"
+            persistent-hint
+            variant="outlined"
+            density="comfortable"
+            class="mb-4"
+            auto-select-first
+            return-object
+            no-filter
+            clearable
+            hide-no-data
+            :loading="manualShiftSearchLoading"
+            @update:search="onManualShiftSearchInput"
+          >
+            <template #item="{ props, item }">
+              <v-list-item v-bind="props" :title="item.raw.display"></v-list-item>
+            </template>
+          </v-autocomplete>
+
+          <v-row dense class="mb-1">
+            <v-col cols="7">
+              <v-text-field
+                v-model="manualShift.dateIn"
+                label="Дата входа"
+                type="date"
+                variant="outlined"
+                density="compact"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="5">
+              <v-text-field
+                v-model="manualShift.timeIn"
+                label="Время входа"
+                type="time"
+                variant="outlined"
+                density="compact"
+              ></v-text-field>
+            </v-col>
+          </v-row>
+
+          <v-checkbox
+            v-model="manualShift.isNight"
+            label="Ночная смена (выход на следующий день)"
+            color="primary"
+            hide-details
+            class="mt-0 mb-2"
+            @update:model-value="onNightChange"
+          ></v-checkbox>
+
+          <v-row dense>
+            <v-col cols="7">
+              <v-text-field
+                v-model="manualShift.dateOut"
+                label="Дата выхода"
+                type="date"
+                variant="outlined"
+                density="compact"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="5">
+              <v-text-field
+                v-model="manualShift.timeOut"
+                label="Время выхода"
+                type="time"
+                variant="outlined"
+                density="compact"
+              ></v-text-field>
+            </v-col>
+          </v-row>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn text @click="manualShiftDialog = false">Отмена</v-btn>
+          <v-btn color="primary" @click="saveManualShift" :loading="savingShift">
+            Сохранить
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- Зелёное уведомление об успешном добавлении отметки -->
     <v-snackbar v-model="showAddSnackbar" :timeout="3000" color="success">
       {{ addSuccess }}
@@ -552,6 +697,152 @@ function getDayResults(day) {
   return results
 }
 
+// ===== Фильтр по сотруднику на вкладке «Смены» =====
+const shiftEmployee = ref(null) // выбранный сотрудник (объект { id, display, ... }) или null
+const shiftEmployeeId = ref(null) // employee_id для фильтрации запроса смен (null = все)
+
+function onShiftEmployeeSelected(emp) {
+  // Меняем только employee_id — отображаемый текст поля не сбрасываем.
+  const newId = emp && typeof emp === 'object' ? emp.id : (emp || null)
+  if ((shiftEmployeeId.value || null) !== (newId || null)) {
+    shiftEmployeeId.value = newId || null
+    loadShifts()
+  }
+}
+
+// ===== Ручное добавление смены (вкладка «Смены») =====
+const manualShiftDialog = ref(false)
+const savingShift = ref(false)
+const manualShiftError = ref('')
+const manualShiftEmployee = ref(null)
+const manualShiftResults = ref([])
+const manualShiftSearchLoading = ref(false)
+let manualShiftSearchTimer = null
+const manualShift = ref({
+  dateIn: '',
+  timeIn: '08:00',
+  dateOut: '',
+  timeOut: '17:00',
+  isNight: false,
+})
+
+function onManualShiftSearchInput(q) {
+  clearTimeout(manualShiftSearchTimer)
+  manualShiftSearchLoading.value = true
+  manualShiftSearchTimer = setTimeout(() => {
+    manualShiftResults.value = searchEmployeesForQuery(q)
+    manualShiftSearchLoading.value = false
+  }, DEBOUNCE_MS)
+}
+
+function addOneDay(isoDate) {
+  const d = new Date(`${isoDate}T00:00:00`)
+  d.setDate(d.getDate() + 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Чекбокс «Ночная смена»: дата выхода автоматически становится следующим днём
+function onNightChange(val) {
+  if (val && manualShift.value.dateIn) {
+    manualShift.value.dateOut = addOneDay(manualShift.value.dateIn)
+  }
+}
+
+watch(() => manualShift.value.dateIn, (val) => {
+  if (manualShift.value.isNight && val) {
+    manualShift.value.dateOut = addOneDay(val)
+  }
+})
+
+function openManualShiftDialog() {
+  manualShiftError.value = ''
+  // Если сотрудник уже выбран фильтром вкладки — подставляем его в диалог.
+  const emp = shiftEmployee.value
+    || employees.value.find(e => e.id === shiftEmployeeId.value)
+    || null
+  manualShiftEmployee.value = emp
+    ? (emp.id !== undefined && emp.display
+        ? emp
+        : { id: emp.id, display: employeeDisplay(emp), full_name: emp.full_name })
+    : null
+  manualShiftResults.value = manualShiftEmployee.value ? [manualShiftEmployee.value] : []
+  const today = new Date().toISOString().split('T')[0]
+  manualShift.value = {
+    dateIn: today,
+    timeIn: '08:00',
+    dateOut: today,
+    timeOut: '17:00',
+    isNight: false,
+  }
+  manualShiftDialog.value = true
+}
+
+async function saveManualShift() {
+  manualShiftError.value = ''
+  const emp = manualShiftEmployee.value
+  const empId = emp && typeof emp === 'object' ? emp.id : emp
+  if (!empId) {
+    manualShiftError.value = 'Выберите сотрудника'
+    return
+  }
+  const { dateIn, timeIn, dateOut, timeOut } = manualShift.value
+  if (!dateIn || !timeIn || !dateOut || !timeOut) {
+    manualShiftError.value = 'Заполните все поля: дату и время входа, дату и время выхода'
+    return
+  }
+  const norm = t => (t.length === 5 ? `${t}:00` : t)
+  const startDt = `${dateIn}T${norm(timeIn)}`
+  const endDt = `${dateOut}T${norm(timeOut)}`
+  if (new Date(endDt) <= new Date(startDt)) {
+    manualShiftError.value = 'Время выхода должно быть позже времени входа'
+    return
+  }
+
+  savingShift.value = true
+  try {
+    await api.post('/api/turnstile-fix/shifts/manual', {
+      employee_id: empId,
+      start_datetime: startDt,
+      end_datetime: endDt,
+    })
+    manualShiftDialog.value = false
+    await loadShifts()
+    addSuccess.value = 'Смена успешно добавлена'
+    showAddSnackbar.value = true
+  } catch (e) {
+    console.error('Ошибка добавления смены:', e)
+    const status = e?.response?.status
+    const detail = e?.response?.data?.detail
+    if (status === 409) {
+      manualShiftError.value = detail || 'Такая смена уже существует'
+    } else if (status === 404) {
+      manualShiftError.value = typeof detail === 'string' ? detail : 'Сотрудник не найден на сервере'
+    } else if (status === 400 || status === 422) {
+      manualShiftError.value = typeof detail === 'string' ? detail : 'Проверьте формат даты и времени'
+    } else {
+      manualShiftError.value = 'Ошибка при добавлении смены' + (typeof detail === 'string' ? `: ${detail}` : '')
+    }
+  } finally {
+    savingShift.value = false
+  }
+}
+
+async function loadShifts() {
+  loading.value = true
+  try {
+    const params = { date_from: dateFrom.value, date_to: dateTo.value }
+    if (shiftEmployeeId.value) params.employee_id = shiftEmployeeId.value
+    const response = await api.get('/api/turnstile-fix/shifts', { params })
+    shifts.value = response.data
+    stats.value.longShifts = response.data.filter(s => s.duration_hours != null && s.duration_hours > 12).length
+  } catch (e) {
+    console.error('Ошибка загрузки смен:', e)
+    shifts.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
 function formatRuDate(isoDate) {
   if (!isoDate) return ''
   const d = new Date(isoDate + 'T00:00:00')
@@ -614,9 +905,10 @@ const shiftHeaders = [
   { title: 'Статус', key: 'status', width: '150px' }
 ]
 
-// Голубой фон для ночных смен
+// Ночные смены — голубой фон; ручные — оранжевый (ручные ночные — голубой)
 function shiftRowClass({ item }) {
-  return item.is_night ? 'night-shift-row' : ''
+  if (item.is_night) return 'night-shift-row'
+  return item.is_manual ? 'manual-shift-row' : ''
 }
 
 async function loadEmployees() {
@@ -970,5 +1262,16 @@ onMounted(() => {
 }
 .night-badge {
   font-size: 14px;
+}
+
+/* Ручные смены — оранжевый фон строки и бейдж «Ручная» */
+.v-data-table tr.manual-shift-row td {
+  background-color: #fff3e0 !important;
+}
+.v-data-table tr.manual-shift-row:hover td {
+  background-color: #ffe0b2 !important;
+}
+.manual-badge {
+  font-weight: 600;
 }
 </style>

@@ -19,6 +19,8 @@ MIGRATIONS = [
     ("employees", "norm_hours", "NUMERIC(5,2) DEFAULT NULL"),
     # Ручные отметки проходной (добавлены вручную на странице «Пропущенные отметки»)
     ("turnstile_events", "is_manual", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # Ручные смены (созданы вручную на вкладке «Смены»): время выхода смены
+    ("turnstile_events", "shift_end", "TIMESTAMP NULL"),
 ]
 
 
