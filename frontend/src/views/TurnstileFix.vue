@@ -214,9 +214,24 @@
                   color="primary"
                   variant="tonal"
                   prepend-icon="mdi-plus"
+                  :disabled="loading || !dateFrom || !dateTo"
                   @click="openManualShiftDialog"
                 >
                   Добавить смену вручную
+                </v-btn>
+                <div v-if="loading" class="text-caption text-grey mt-1">
+                  Список смен загружается — попробуйте ещё раз через секунду.
+                </div>
+              </v-col>
+              <v-col cols="12" md="3">
+                <v-btn
+                  variant="outlined"
+                  color="primary"
+                  prepend-icon="mdi-filter-variant"
+                  :loading="loading"
+                  @click="applyShiftFilter"
+                >
+                  Применить фильтр
                 </v-btn>
               </v-col>
             </v-row>
@@ -526,7 +541,7 @@
         <v-card-actions>
           <v-spacer></v-spacer>
           <v-btn text @click="manualShiftDialog = false">Отмена</v-btn>
-          <v-btn color="primary" @click="saveManualShift" :loading="savingShift">
+          <v-btn color="primary" @click="saveManualShift" :loading="savingShift" :disabled="!normalizeShiftEmp(manualShiftEmployee)">
             Сохранить
           </v-btn>
         </v-card-actions>
@@ -701,13 +716,43 @@ function getDayResults(day) {
 const shiftEmployee = ref(null) // выбранный сотрудник (объект { id, display, ... }) или null
 const shiftEmployeeId = ref(null) // employee_id для фильтрации запроса смен (null = все)
 
+function normalizeShiftEmp(emp) {
+  // v-model может вернуть объект { id, display }, просто число или строку —
+  // нормализуем в числовой employee_id (или null).
+  if (emp === null || emp === undefined || emp === '') return null
+  if (typeof emp === 'object') {
+    const id = Number(emp.id ?? emp.employee_id)
+    return Number.isFinite(id) && id > 0 ? id : null
+  }
+  const id = Number(emp)
+  return Number.isFinite(id) && id > 0 ? id : null
+}
+
 function onShiftEmployeeSelected(emp) {
   // Меняем только employee_id — отображаемый текст поля не сбрасываем.
-  const newId = emp && typeof emp === 'object' ? emp.id : (emp || null)
+  const newId = normalizeShiftEmp(emp)
   if ((shiftEmployeeId.value || null) !== (newId || null)) {
     shiftEmployeeId.value = newId || null
     loadShifts()
   }
+}
+
+// Резервный watch: если событие @update:model-value почему-то не сработало
+// (например, значение изменилось программно), фильтруем по смене объекта.
+watch(shiftEmployee, (val) => {
+  const newId = normalizeShiftEmp(val)
+  if ((shiftEmployeeId.value || null) !== (newId || null)) {
+    shiftEmployeeId.value = newId || null
+    loadShifts()
+  }
+})
+
+// Явная кнопка «Применить фильтр» — гарантированная перезагрузка списка
+// с текущим выбранным сотрудником (или без фильтра, если поле очищено).
+function applyShiftFilter() {
+  shiftEmployeeId.value = normalizeShiftEmp(shiftEmployee.value)
+  console.log('Фильтр применён, employee_id:', shiftEmployeeId.value)
+  loadShifts()
 }
 
 // ===== Ручное добавление смены (вкладка «Смены») =====
@@ -831,9 +876,15 @@ async function loadShifts() {
   loading.value = true
   try {
     const params = { date_from: dateFrom.value, date_to: dateTo.value }
-    if (shiftEmployeeId.value) params.employee_id = shiftEmployeeId.value
+    // Синхронизируем employee_id с текущим значением поля на случай, если
+    // событие выбора не отработало — фильтр всегда актуален при запросе.
+    const empId = normalizeShiftEmp(shiftEmployee.value) ?? shiftEmployeeId.value ?? null
+    shiftEmployeeId.value = empId
+    if (empId) params.employee_id = empId
+    console.log('Запрос смен с параметрами:', params)
     const response = await api.get('/api/turnstile-fix/shifts', { params })
     shifts.value = response.data
+    console.log('Получено смен:', response.data.length)
     stats.value.longShifts = response.data.filter(s => s.duration_hours != null && s.duration_hours > 12).length
   } catch (e) {
     console.error('Ошибка загрузки смен:', e)
