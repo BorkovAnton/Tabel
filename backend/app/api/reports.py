@@ -6,6 +6,7 @@
 import calendar
 import re
 from datetime import date
+from typing import Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -18,6 +19,8 @@ from app.models.tabel import Tabel, TabelEntry
 from app.models.time_code import TimeCode
 from app.models.timesheet_record import TimesheetRecord
 from app.models.user import User
+from app.models.work_schedule import WorkScheduleDay
+from app.api.schedules import calculate_day_norm
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -31,6 +34,28 @@ def require_report_user(user: User = Depends(get_current_user)) -> User:
 
 NUM_RE = re.compile(r"^\d{1,2}([.,]\d{1,2})?$")
 HM_RE = re.compile(r"^(\d+)\s*ч\s*(\d+)?\s*м?$")
+
+
+def raw_to_hours(value: str) -> float | None:
+    """Разбор числового значения ячейки («8.5», «8ч15м», «8:15») в часы.
+
+    Зеркалирует фронтенд-функцию rawToHours из TabelFill.vue — чтобы отчёт
+    считал часы табеля так же, как итоговые колонки, которые заполняет
+    пользователь руками.
+    """
+    s = str(value or "").strip().replace(",", ".")
+    if not s:
+        return None
+    m = HM_RE.match(s)
+    if m:
+        return int(m.group(1)) + (int(m.group(2) or 0) / 60.0)
+    m = NUM_RE.match(s)
+    if m:
+        return float(s.replace(",", "."))
+    m = re.match(r"^(\d{1,2})\s*:\s*(\d{2})$", s)
+    if m:
+        return int(m.group(1)) + int(m.group(2)) / 60.0
+    return None
 
 
 def cell_hours(value: str, codes: dict) -> float:
@@ -49,6 +74,62 @@ def cell_hours(value: str, codes: dict) -> float:
     return 0.0
 
 
+def code_effective_hours(code, day_norm: float) -> tuple[float, float, float]:
+    """Эффективные (day, night, total) часы кода для конкретного дня.
+
+    Зеркалирует фронтенд-функцию codeHoursForDay из TabelFill.vue:
+    если у кода включено «Время по графику» (use_schedule_hours) — часы
+    берутся из нормы графика на этот день, иначе — фиксированные
+    hours_day/hours_night из справочника.
+    """
+    if getattr(code, "use_schedule_hours", False):
+        n = float(day_norm or 0.0)
+        return n, 0.0, n
+    day = float(code.hours_day or 0.0)
+    night = float(code.hours_night or 0.0)
+    return day, night, day + night
+
+
+def summary_overtime_hours(entry, dim: int, codes: dict, norms_by_dow: dict,
+                           year: int, month: int, emp_norm: float) -> float:
+    """Сумма сверхурочных ЧАСОВ за месяц из заполненного вручную табеля.
+
+    Повторяет логику calculateSummary() из frontend/src/views/TabelFill.vue:
+      - числовой ввод ячейки («10», «8ч15м»): ot = max(0, часы − норма дня);
+      - код справочника: ot = max(0, эффективные часы − норма дня), но только
+        для кодов БЕЗ собственных направлений overtime_* и без use_schedule_hours;
+      - КДУ (ручные колонки «КДУ»/«КДУ вых. дня») прибавляется к сверхурочным —
+        это ручная отметка переработок со стабильно старых табелей.
+    Норма дня — из графика работы по дню недели (fallback: employees.norm_hours/8).
+    """
+    def day_norm(d: int) -> float:
+        dow = date(year, month, d).weekday()  # 0=Пн ... 6=Вс
+        if norms_by_dow is not None:
+            return float(norms_by_dow.get(dow, 0.0))
+        return emp_norm
+
+    total_ot = 0.0
+    for d in range(1, dim + 1):
+        val = str(getattr(entry, f"day_{d}", None) or "").strip().lower().replace(",", ".")
+        if not val:
+            continue
+        norm = day_norm(d)
+        code = codes.get(val)
+        if code is not None:
+            _, _, total_h = code_effective_hours(code, norm)
+            dests = list(code.destinations or [])
+            is_ot_code = ("overtime_hours" in dests) or ("overtime_days" in dests)
+            if total_h > 0 and not is_ot_code and not getattr(code, "use_schedule_hours", False):
+                total_ot += max(0.0, total_h - norm)
+        else:
+            h = raw_to_hours(val)
+            if h is not None and h > 0:
+                total_ot += max(0.0, h - norm)
+    # КДУ — ручное поле табеля (переработки, отмеченные составителем вручную)
+    total_ot += float(entry.kdu_work_days or 0) + float(entry.kdu_weekend_days or 0)
+    return round(total_ot, 2)
+
+
 class ReportRow(BaseModel):
     employee_id: int
     full_name: str
@@ -56,7 +137,7 @@ class ReportRow(BaseModel):
     department_name: str = ""
     tabel_hours: float = 0.0      # отработано часов с табеля
     fact_hours: float = 0.0       # отработано часов фактически (СКУД)
-    overtime_planned: float = 0.0  # сверхурочно с табеля (КДУ: рабочие + выходные дни)
+    overtime_planned: float = 0.0  # сверхурочно с табеля (из итогов заполненного вручную табеля: превышение нормы + КДУ)
     overtime_hours: float = 0.0   # сверхурочно факт = факт - табель (не меньше 0)
 
 
@@ -114,11 +195,19 @@ def hours_report(
 
     codes = {c.code.lower(): c for c in db.query(TimeCode).all()}
 
-    # --- часы с табелей за период + КДУ (сверхурочно с табеля) ---
+    # --- нормы часов по дням недели из графиков работы (0=Пн ... 6=Вс) ---
+    sched_norms: Dict[int, Dict[int, float]] = {}
+    sched_rows = db.query(WorkScheduleDay).all()
+    for r in sched_rows:
+        sched_norms.setdefault(r.schedule_id, {})[r.day_of_week] = calculate_day_norm(
+            r.start_time, r.end_time, r.lunch_minutes, r.is_day_off
+        )
+
+    # --- часы с табелей за период + сверхурочно с табеля (из заполненного вручную табеля) ---
     tabel_q = db.query(TabelEntry).join(Tabel, Tabel.id == TabelEntry.tabel_id).filter(
         Tabel.year == year, Tabel.month == month)
     tabel_hours: dict[int, float] = {}
-    kdu_hours: dict[int, float] = {}
+    overtime_tab: dict[int, float] = {}
 
     for e in tabel_q.all():
         emp = e.employee
@@ -130,9 +219,15 @@ def hours_report(
         for d in range(1, dim + 1):
             h += cell_hours(getattr(e, f"day_{d}", None), codes)
         tabel_hours[e.employee_id] = tabel_hours.get(e.employee_id, 0.0) + h
-        kdu = float(e.kdu_work_days or 0) + float(e.kdu_weekend_days or 0)
-        if kdu:
-            kdu_hours[e.employee_id] = kdu_hours.get(e.employee_id, 0.0) + kdu
+        # «Сверхурочно с табеля» — из колонок, которые пользователь считает руками
+        # в табеле (превышение над нормой графика + КДУ), а не только из ручного КДУ.
+        norms_by_dow = None
+        if emp.schedule_id and emp.schedule_id in sched_norms:
+            norms_by_dow = sched_norms[emp.schedule_id]
+        emp_norm = float(emp.norm_hours) if (emp.norm_hours is not None and float(emp.norm_hours) > 0) else 8.0
+        ot = summary_overtime_hours(e, dim, codes, norms_by_dow, year, month, emp_norm)
+        if ot > 0:
+            overtime_tab[e.employee_id] = overtime_tab.get(e.employee_id, 0.0) + ot
 
     # --- фактические часы по СКУД за период ---
     fact_q = db.query(
@@ -153,7 +248,7 @@ def hours_report(
     # --- объединяем ---
     from app.models.employee import Employee
 
-    emp_ids = set(tabel_hours) | set(fact_hours) | set(kdu_hours)
+    emp_ids = set(tabel_hours) | set(fact_hours) | set(overtime_tab)
     if not emp_ids:
         return ReportOut(year=year, month=month, rows=[])
 
@@ -167,7 +262,7 @@ def hours_report(
         th = round(tabel_hours.get(emp.id, 0.0), 2)
         fh = round(fact_hours.get(emp.id, 0.0), 2)
         ot = round(max(fh - th, 0.0), 2)
-        otp = round(kdu_hours.get(emp.id, 0.0), 2)
+        otp = round(overtime_tab.get(emp.id, 0.0), 2)
         rows.append(ReportRow(
             employee_id=emp.id,
             full_name=emp.full_name or "",
