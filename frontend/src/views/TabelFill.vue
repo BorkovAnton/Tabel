@@ -266,8 +266,9 @@
               <tr>
                 <th style="width: 80px;">Код</th>
                 <th>Наименование</th>
-                <th style="width: 90px;">Часов день</th>
+                <th style="width: 80px;">Часов день</th>
                 <th style="width: 90px;">Часов ночь</th>
+                <th style="width: 110px;" title="Часы берутся из нормы графика работы на конкретный день">По графику</th>
                 <th style="min-width: 250px; max-width: 400px;">Направления</th>
                 <th v-if="auth.isAdmin" style="width: 100px;">Действия</th>
               </tr>
@@ -278,6 +279,10 @@
                 <td>{{ c.name }}</td>
                 <td class="text-center">{{ c.hours_day }}</td>
                 <td class="text-center">{{ c.hours_night }}</td>
+                <td class="text-center">
+                  <v-icon v-if="c.use_schedule_hours" size="small" color="#e65100">mdi-check-circle</v-icon>
+                  <span v-else class="text-grey text-caption">—</span>
+                </td>
                 
                 <td style="white-space: normal !important; vertical-align: middle;">
                   <div class="d-flex flex-wrap" style="gap: 4px;">
@@ -342,6 +347,16 @@
                 hide-details 
               />
               
+              <v-checkbox
+                v-model="newCode.use_schedule_hours"
+                label="Время по графику"
+                density="compact"
+                hide-details
+                class="align-self-center mt-0"
+                style="max-width: 190px;"
+                title="Часы берутся из нормы графика работы на конкретный день (пн — 8.25ч, пт — 7ч и т.п.), например для командировок"
+              />
+
               <v-select
                 v-model="newCode.destinations"
                 :items="destinationOptions"
@@ -402,7 +417,7 @@ const messageType = ref('success')
 const saving = ref(false)
 
 const codesDialog = ref(false)
-const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, destinations: [] })
+const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, destinations: [] })
 const codeError = ref('')
 const isEditing = ref(false)
 const editingCode = ref(null)
@@ -576,16 +591,33 @@ function getDayNorm(row, d) {
   return normOf(row)
 }
 
+// Эффективные часы кода для конкретного дня.
+// Если у кода включено «Время по графику» (use_schedule_hours) — часы берутся
+// из нормы графика работы на этот день (getDayNorm): командировка в пн = 8.25ч,
+// в пт = 7ч и т.п. Иначе — фиксированные hours_day/hours_night из справочника.
+function codeHoursForDay(codeObj, row, d) {
+  if (!codeObj) return { day: 0, night: 0, total: 0 }
+  if (codeObj.use_schedule_hours) {
+    const norm = row ? getDayNorm(row, d) : 8
+    return { day: norm, night: 0, total: norm }
+  }
+  const day = Number(codeObj.hours_day) || 0
+  const night = Number(codeObj.hours_night) || 0
+  return { day, night, total: day + night }
+}
+
 function cellTipData(val, row, d) {
   if (!val) return null
   const s = String(val).trim()
   const codeObj = timeCodes.value.find(c => c.code.toLowerCase() === s.toLowerCase())
   if (codeObj) {
-    const day = Number(codeObj.hours_day) || 0
-    const night = Number(codeObj.hours_night) || 0
-    const total = day + night
+    const eff = codeHoursForDay(codeObj, row, d)
+    const day = eff.day
+    const night = eff.night
+    const total = eff.total
     let ot = 0
-    if (row && total > 0 && !(codeObj.destinations || []).includes('overtime_hours')) {
+    // Для «Время по графику» часы == норма → сверхурочных нет; считаем так же, как раньше
+    if (row && total > 0 && !codeObj.use_schedule_hours && !(codeObj.destinations || []).includes('overtime_hours')) {
       ot = Math.max(0, total - getDayNorm(row, d))
     }
     return { kind: 'code', code: codeObj.code, name: codeObj.name, day, night, total, ot }
@@ -623,8 +655,13 @@ function hoursToHM(h) {
 
 const cellItems = computed(() => {
   return timeCodes.value.map(c => {
-    const h = (Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)
-    const hrs = h ? ` (${hoursToHM(h)})` : ''
+    let hrs = ''
+    if (c.use_schedule_hours) {
+      hrs = ' (по графику)'
+    } else {
+      const h = (Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)
+      hrs = h ? ` (${hoursToHM(h)})` : ''
+    }
     return {
       title: `${c.code} — ${c.name}${hrs}`,
       value: c.code,
@@ -697,7 +734,7 @@ function markDirty(empId, day) {
   dirty.value[`${empId}_${day}`] = row ? row.days[day] : ''
 }
 
-function cellMinutes(v) {
+function cellMinutes(v, row, d) {
   const s = String(v ?? '').trim().toLowerCase().replace(/,/g, '.')
   if (!s) return 0
   let m = s.match(/^(\d+)\s*ч\s*(\d+)?\s*м?$/)
@@ -708,14 +745,18 @@ function cellMinutes(v) {
   if (m) return parseInt(m[1]) * 60 + parseInt(m[2])
   if (/^\d+(\.\d+)?$/.test(s)) return Math.round(parseFloat(s) * 60)
   const c = timeCodes.value.find(x => x.code.toLowerCase() === s)
-  if (c) return Math.round(((Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)) * 60)
+  if (c) {
+    // «Время по графику»: часы = норма графика на этот день (если есть контекст дня)
+    if (c.use_schedule_hours && row && d) return Math.round(codeHoursForDay(c, row, d).total * 60)
+    return Math.round(((Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)) * 60)
+  }
   return 0
 }
 
 function totalHours(row) {
   let minutes = 0
   for (let d = 1; d <= tabel.value.days_in_month; d++) {
-    minutes += cellMinutes(row.days[d])
+    minutes += cellMinutes(row.days[d], row, d)
   }
   const hh = Math.floor(minutes / 60)
   const mm = minutes % 60
@@ -771,9 +812,11 @@ function calculateSummary(row) {
 
     const codeObj = timeCodes.value.find(c => c.code.toLowerCase() === val.toLowerCase())
     if (codeObj) {
-      const hoursDay = Number(codeObj.hours_day) || 0
-      const hoursNight = Number(codeObj.hours_night) || 0
-      const totalHours = hoursDay + hoursNight
+      // «Время по графику»: часы кода = норма графика на этот день (см. codeHoursForDay)
+      const eff = codeHoursForDay(codeObj, row, d)
+      const hoursDay = eff.day
+      const hoursNight = eff.night
+      const totalHours = eff.total
       const dests = codeObj.destinations || []
 
       dests.forEach(dest => {
@@ -799,7 +842,7 @@ function calculateSummary(row) {
       // в справочнике (см. цикл dests.forEach выше). Превышение нормы само по себе
       // день в колонку «сверхурочные дни» не попадает (например, код "8" при норме 8.25).
       const isOvertimeCode = dests.includes('overtime_hours') || dests.includes('overtime_days')
-      if (totalHours > 0 && !isOvertimeCode) {
+      if (totalHours > 0 && !isOvertimeCode && !codeObj.use_schedule_hours) {
         const ot = Math.max(0, totalHours - norm)
         if (ot > 0) {
           summary.overtime_hours += ot
@@ -1069,6 +1112,7 @@ function editCode(c) {
     name: c.name,
     hours_day: c.hours_day,
     hours_night: c.hours_night,
+    use_schedule_hours: !!c.use_schedule_hours,
     destinations: [...(c.destinations || [])]
   }
   codeError.value = ''
@@ -1077,7 +1121,7 @@ function editCode(c) {
 function cancelEdit() {
   isEditing.value = false
   editingCode.value = null
-  newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0, destinations: [] }
+  newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, destinations: [] }
   codeError.value = ''
 }
 

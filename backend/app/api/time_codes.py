@@ -18,6 +18,8 @@ class TimeCodeBase(BaseModel):
     name: str
     hours_day: float = 0.0
     hours_night: float = 0.0
+    # «Время по графику»: часы кода берутся из нормы графика на конкретный день
+    use_schedule_hours: bool = False
     destinations: List[str] = []
     is_active: bool = True
 
@@ -44,6 +46,7 @@ class TimeCodeUpdate(BaseModel):
     name: Optional[str] = None
     hours_day: Optional[float] = None
     hours_night: Optional[float] = None
+    use_schedule_hours: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
@@ -90,7 +93,7 @@ def update_time_code(
     if not db_code:
         raise HTTPException(status_code=404, detail="Код не найден")
 
-    for field in ("name", "hours_day", "hours_night", "is_active", "destinations"):
+    for field in ("name", "hours_day", "hours_night", "use_schedule_hours", "is_active", "destinations"):
         if field in code_data:
             setattr(db_code, field, code_data[field])
 

@@ -21,6 +21,8 @@ MIGRATIONS = [
     ("turnstile_events", "is_manual", "BOOLEAN NOT NULL DEFAULT FALSE"),
     # Ручные смены (созданы вручную на вкладке «Смены»): время выхода смены
     ("turnstile_events", "shift_end", "TIMESTAMP NULL"),
+    # Код часов «Время по графику»: часы берутся из нормы графика на день
+    ("time_codes", "use_schedule_hours", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 
