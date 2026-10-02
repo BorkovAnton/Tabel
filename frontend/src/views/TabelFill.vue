@@ -406,14 +406,14 @@
         </v-card-title>
         <v-card-text>
           <div class="text-body-2 mb-3 text-grey-darken-2">
-            Каждый рабочий день будет заполнен кодом из поля
+            Каждый день месяца будет заполнен кодом из поля
             <b>«Код для автозаполнения»</b> графика работы конкретного сотрудника
             (настраивается в разделе «Графики работы»). Например, для Пн–Пт указан
             код «8ч15м», для Сб–Вс — «В»: эти же коды подставятся в соответствующие
-            дни. Если для дня недели код в графике не указан — день пропускается;
-            если норма часов дня равна 0 (выходные и праздники) — день также
-            пропускается. Изменения не сохранятся, пока вы не нажмёте «Сохранить» —
-            заполнение можно скорректировать вручную.
+            дни. Выходные и праздники (норма 0 ч) также заполняются, если для них
+            в графике задан код (например «В»). Если для дня недели код в графике
+            не указан — день пропускается. Изменения не сохранятся, пока вы не
+            нажмёте «Сохранить» — заполнение можно скорректировать вручную.
           </div>
 
           <v-alert v-if="fillMissingCodes.length" type="warning" density="compact" variant="tonal" class="mb-3">
@@ -434,7 +434,9 @@
           </div>
 
           <v-alert v-if="fillPreview.workDaysTotal === 0" type="info" density="compact" variant="tonal" class="mt-2">
-            Не найдено ни одного рабочего дня с нормой &gt; 0. Проверьте график работы сотрудников.
+            Не найдено ни одного дня с заполненным «Кодом для автозаполнения» в
+            графиках работы сотрудников. Укажите коды (например «8ч15м» для рабочих
+            дней и «В» для выходных) в разделе «Графики работы».
           </v-alert>
           <v-alert v-else-if="fillPreview.toFill === 0" type="warning" density="compact" variant="tonal" class="mt-2">
             Заполнять нечего: включите «Перезаписать существующие» или укажите
@@ -819,8 +821,10 @@ function markDirty(empId, day) {
 // ИСПРАВЛЕНО: код больше НЕ подбирается по часам — он берётся напрямую из
 // поля «Код для автозаполнения» (auto_fill_code) каждого дня недели графика
 // работы сотрудника. Бэкенд отдаёт его в row.day_auto_codes (по дням месяца).
-// Если код в графике не указан — день пропускается. Норма 0 (выходной/
-// праздник) также пропускается.
+// Если код в графике не указан — день пропускается.
+// ВАЖНО: выходные и праздники (норма 0 ч) ТАКЖЕ заполняются, если для них в
+// графике задан код (например «В» — выходной). Раньше условие «норма > 0»
+// блокировало простановку «В» на Сб/Вс — исправлено.
 
 // Код автозаполнения из графика для конкретного дня месяца ('' если не задан).
 function dayAutoCode(row, d) {
@@ -828,9 +832,10 @@ function dayAutoCode(row, d) {
   return dac == null ? '' : String(dac).trim()
 }
 
-// Рабочий день для автозаполнения: норма графика > 0 И в графике задан код.
+// День участвует в автозаполнении, если в графике задан код (любая норма,
+// включая 0 — выходные/праздники с кодом «В»).
 function isFillableDay(row, d) {
-  return getDayNorm(row, d) > 0 && dayAutoCode(row, d) !== ''
+  return dayAutoCode(row, d) !== ''
 }
 
 // Дни, для которых есть норма, но нет кода в графике (для предупреждения).
@@ -851,9 +856,12 @@ const fillPreview = computed(() => {
   if (!tabel.value) return { workDaysTotal, toFill, skippedFilled, skippedNoCode }
   for (const row of tabel.value.entries) {
     for (let d = 1; d <= tabel.value.days_in_month; d++) {
-      if (getDayNorm(row, d) <= 0) continue              // выходные/праздники — пропускаем
-      workDaysTotal++
-      if (dayAutoCode(row, d) === '') { skippedNoCode++; continue } // в графике нет кода
+      const norm = getDayNorm(row, d)
+      if (dayAutoCode(row, d) === '') {                 // в графике нет кода — пропускаем
+        if (norm > 0) { workDaysTotal++; skippedNoCode++ }
+        continue
+      }
+      workDaysTotal++                                   // рабочий день или выходной с кодом («В»)
       const filled = !!(row.days[d] ?? '').toString().trim()
       if (filled && !overwriteExisting.value) { skippedFilled++; continue }
       toFill++
@@ -873,13 +881,14 @@ function applyFillBySchedule() {
   let filled = 0
   for (const row of tabel.value.entries) {
     for (let d = 1; d <= tabel.value.days_in_month; d++) {
-      if (getDayNorm(row, d) <= 0) continue                        // выходные и праздники не трогаем
-      const val = dayAutoCode(row, d)                              // ИСПРАВЛЕНО: код напрямую из графика
-      if (!val) continue                                           // код не указан в графике — пропускаем
+      const val = dayAutoCode(row, d)                    // код напрямую из графика
+      if (!val) continue                                 // код не указан в графике — пропускаем
+      // ИСПРАВЛЕНО: дни с нормой 0 (выходные/праздники) БОЛЬШЕ не пропускаются —
+      // если в графике задан код (например «В»), он подставляется и в эти дни.
       const cur = (row.days[d] ?? '').toString().trim()
-      if (cur && !overwriteExisting.value) continue                // не перезаписываем без галочки
+      if (cur && !overwriteExisting.value) continue      // не перезаписываем без галочки
       row.days[d] = val
-      markDirty(row.employee_id, d)                                // помечаем ячейку для сохранения
+      markDirty(row.employee_id, d)                      // помечаем ячейку для сохранения
       validateCell(row.employee_id, d)
       filled++
     }
