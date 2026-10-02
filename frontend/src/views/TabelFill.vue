@@ -134,6 +134,14 @@
                     />
                     <v-list density="compact" max-height="260" class="overflow-y-auto">
                       <v-list-item
+                        value="__clear__"
+                        class="code-menu-clear"
+                        prepend-icon="mdi-close-circle-outline"
+                        title="Очистить ячейку"
+                        @click="clearCell(row.employee_id, d)"
+                      />
+                      <v-divider />
+                      <v-list-item
                         v-for="it in filteredCellItems"
                         :key="it.value"
                         :title="it.title"
@@ -783,6 +791,17 @@ function pickCellValue(empId, day, val) {
   const text = String(val ?? '').trim()
   const row = tabel.value.entries.find(r => r.employee_id === empId)
   if (row) row.days[day] = text
+  markDirty(empId, day)
+  validateCell(empId, day)
+  openCell.value = null
+  cellQuery.value = ''
+}
+
+// Очистка ячейки: значение удаляется, ячейка становится пустой,
+// изменение помечается dirty, меню закрывается.
+function clearCell(empId, day) {
+  const row = tabel.value.entries.find(r => r.employee_id === empId)
+  if (row) row.days[day] = ''
   markDirty(empId, day)
   validateCell(empId, day)
   openCell.value = null
@@ -1753,5 +1772,14 @@ onMounted(async () => {
 .v-select .v-list,
 .v-menu .v-overlay__content .v-list {
   background-color: #ffffff !important;
+}
+
+/* Кнопка «Очистить ячейку» в меню выбора кода — красный акцент */
+.code-menu-clear :deep(.v-list-item-title),
+.code-menu-clear :deep(.v-list-item__prepend .v-icon) {
+  color: rgb(179, 38, 30) !important;
+}
+.code-menu-clear :deep(.v-list-item-title) {
+  font-weight: 600;
 }
 </style>
