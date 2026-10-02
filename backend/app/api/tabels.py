@@ -89,6 +89,9 @@ class EntryRow(BaseModel):
     schedule_id: Optional[int] = None
     # Норма часов для каждого дня месяца {1: 8.25, ...}; пустой dict => нет графика (используйте fallback)
     day_norms: Dict[int, float] = {}
+    # «Код для автозаполнения» из графика по дням месяца {1: "8ч15м", 6: "В", ...}
+    # (день недели -> auto_fill_code; дни без кода отсутствуют в словаре)
+    day_auto_codes: Dict[int, str] = {}
 
     @field_validator("full_name", "tab_number", mode="before")
     @classmethod
@@ -310,6 +313,7 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
     sched_ids = {e.employee.schedule_id for e in tabel.entries
                  if e.employee and e.employee.schedule_id}
     schedule_norms: Dict[int, Dict[int, float]] = {}
+    schedule_codes: Dict[int, Dict[int, str]] = {}
     if sched_ids:
         from app.api.schedules import calculate_day_norm
         rows = db.query(WorkScheduleDay).filter(WorkScheduleDay.schedule_id.in_(sched_ids)).all()
@@ -317,16 +321,25 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             schedule_norms.setdefault(r.schedule_id, {})[r.day_of_week] = calculate_day_norm(
                 r.start_time, r.end_time, r.lunch_minutes, r.is_day_off
             )
+            # «Код для автозаполнения» из графика (пустой не сохраняем)
+            ac = (getattr(r, "auto_fill_code", None) or "").strip()
+            if ac:
+                schedule_codes.setdefault(r.schedule_id, {})[r.day_of_week] = ac
     entries = []
     for e in sorted(tabel.entries, key=lambda x: (x.position or 0, x.id)):
         emp = e.employee
         # Норма для каждого дня месяца: из графика по дню недели; fallback — employees.norm_hours или 8
         day_norms: Dict[int, float] = {}
+        # Коды автозаполнения по дням месяца: из графика по дню недели
+        day_auto_codes: Dict[int, str] = {}
         if emp and emp.schedule_id and emp.schedule_id in schedule_norms:
             norms_by_dow = schedule_norms[emp.schedule_id]
+            codes_by_dow = schedule_codes.get(emp.schedule_id, {})
             for d in range(1, dim + 1):
                 dow = date(tabel.year, tabel.month, d).weekday()  # 0=Пн ... 6=Вс
                 day_norms[d] = float(norms_by_dow.get(dow, 0.0))
+                if dow in codes_by_dow:
+                    day_auto_codes[d] = codes_by_dow[dow]
         entries.append(EntryRow(
             employee_id=e.employee_id,
             full_name=emp.full_name if emp else "",
@@ -337,6 +350,7 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             norm_hours=float(emp.norm_hours) if (emp and emp.norm_hours is not None) else None,
             schedule_id=emp.schedule_id if emp else None,
             day_norms=day_norms,
+            day_auto_codes=day_auto_codes,
         ))
     return TabelDetailOut(
         id=tabel.id, year=tabel.year, month=tabel.month, days_in_month=dim,

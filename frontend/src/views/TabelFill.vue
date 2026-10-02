@@ -406,17 +406,20 @@
         </v-card-title>
         <v-card-text>
           <div class="text-body-2 mb-3 text-grey-darken-2">
-            Каждый рабочий день будет заполнен кодом из справочника, соответствующим
-            норме часов графика работы конкретного сотрудника: например, норма 8.25 ч →
-            код «8ч15м», норма 8 ч → код «8», норма 7 ч → код «7ч». Если точного совпадения
-            нет — подбирается ближайший по часам код (допуск ±0.5 ч). Дни с нормой 0
-            (выходные и праздники) пропускаются. Изменения не сохранятся,
-            пока вы не нажмёте «Сохранить» — заполнение можно отменить.
+            Каждый рабочий день будет заполнен кодом из поля
+            <b>«Код для автозаполнения»</b> графика работы конкретного сотрудника
+            (настраивается в разделе «Графики работы»). Например, для Пн–Пт указан
+            код «8ч15м», для Сб–Вс — «В»: эти же коды подставятся в соответствующие
+            дни. Если для дня недели код в графике не указан — день пропускается;
+            если норма часов дня равна 0 (выходные и праздники) — день также
+            пропускается. Изменения не сохранятся, пока вы не нажмёте «Сохранить» —
+            заполнение можно скорректировать вручную.
           </div>
 
-          <v-alert v-if="fillPreview.noCodes.length" type="warning" density="compact" variant="tonal" class="mb-3">
-            Не подобран код для норм часов: {{ fillPreview.noCodes.join(', ') }}.
-            Добавьте соответствующие коды в справочник — эти дни будут пропущены.
+          <v-alert v-if="fillMissingCodes.length" type="warning" density="compact" variant="tonal" class="mb-3">
+            В графиках сотрудников не указан «Код для автозаполнения» для норм:
+            {{ fillMissingCodes.join(', ') }} ч. Эти дни будут пропущены — укажите
+            коды в разделе «Графики работы».
           </v-alert>
 
           <v-checkbox
@@ -434,13 +437,16 @@
             Не найдено ни одного рабочего дня с нормой &gt; 0. Проверьте график работы сотрудников.
           </v-alert>
           <v-alert v-else-if="fillPreview.toFill === 0" type="warning" density="compact" variant="tonal" class="mt-2">
-            Все рабочие дни уже заполнены. Чтобы заменить значения, включите «Перезаписать существующие».
+            Заполнять нечего: включите «Перезаписать существующие» или укажите
+            «Код для автозаполнения» в графиках работы.
           </v-alert>
           <div v-else class="text-body-2 mt-2">
             Будет заполнено ячеек:
             <b class="text-primary">{{ fillPreview.toFill }}</b>
             <span class="text-caption text-grey">
-              (рабочих дней: {{ fillPreview.workDaysTotal }}, пропущено заполненных: {{ fillPreview.skippedFilled }})
+              (рабочих дней: {{ fillPreview.workDaysTotal }},
+              без кода в графике: {{ fillPreview.skippedNoCode }},
+              пропущено заполненных: {{ fillPreview.skippedFilled }})
             </span>
           </div>
         </v-card-text>
@@ -484,8 +490,9 @@ const editingCode = ref(null)
 
 // ─── «Заполнить по графику» ────────────────────────────────────────────────
 // Диалог автораспределения кодов по рабочим дням месяца ПО ИНДИВИДУАЛЬНОМУ
-// графику каждого сотрудника: код подбирается по норме часов дня
-// (day_norms[d]); день считается рабочим, если норма > 0.
+// графику каждого сотрудника: код берётся напрямую из поля «Код для
+// автозаполнения» (auto_fill_code) дня недели графика (row.day_auto_codes[d]);
+// рабочий день — норма > 0 (day_norms[d]) и заданный код в графике.
 const fillDialog = ref(false)
 const overwriteExisting = ref(true)  // перезаписывать уже заполненные ячейки или нет
 
@@ -809,72 +816,50 @@ function markDirty(empId, day) {
 
 // ─── Логика «Заполнить по графику» ────────────────────────────────────────
 
-// ИСПРАВЛЕНО: код больше не выбирается в диалоге — он подбирается
-// автоматически ПО ИНДИВИДУАЛЬНОМУ графику каждого сотрудника: по норме
-// часов конкретного дня (day_norms[d]). Кандидатами считаются коды из
-// справочника с фиксированными часами (hours_day + hours_night), а также
-// числовой вариант «8ч15м», если подходящего кода нет.
-// Допуск поиска ближайшего кода — 0.5 часа.
-const FILL_CODE_TOLERANCE = 0.5
+// ИСПРАВЛЕНО: код больше НЕ подбирается по часам — он берётся напрямую из
+// поля «Код для автозаполнения» (auto_fill_code) каждого дня недели графика
+// работы сотрудника. Бэкенд отдаёт его в row.day_auto_codes (по дням месяца).
+// Если код в графике не указан — день пропускается. Норма 0 (выходной/
+// праздник) также пропускается.
 
-// Часы кода как кандидата для подбора (use_schedule_hours-коды не подходят:
-// их часы зависят от дня, а не от конкретной нормы).
-function codeCandidateHours(c) {
-  return (Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)
+// Код автозаполнения из графика для конкретного дня месяца ('' если не задан).
+function dayAutoCode(row, d) {
+  const dac = row && row.day_auto_codes ? row.day_auto_codes[d] : undefined
+  return dac == null ? '' : String(dac).trim()
 }
 
-// Подбор значения для дня с нормой norm часов:
-//  1) точное совпадение среди кодов справочника → код;
-//  2) ближайший код (|часы кода − норма| ≤ 0.5 ч) → код;
-//  3) иначе числовое значение «NчMм» (вводится как часы, сверхурочных нет);
-//  возвращает null, если подобрать ничего нельзя (norm <= 0).
-function codeForNorm(norm) {
-  if (!(norm > 0)) return null
-  const codes = timeCodes.value.filter(c => codeCandidateHours(c) > 0)
-  // Точное совпадение (в приоритете код с меньшим числом ночных часов — обычный рабочий день)
-  const exact = codes
-    .filter(c => Math.abs(codeCandidateHours(c) - norm) < 1e-9)
-    .sort((a, b) => (Number(a.hours_night) || 0) - (Number(b.hours_night) || 0))
-  if (exact.length) return exact[0].code
-  // Ближайший по значению код в пределах допуска
-  let best = null, bestDiff = Infinity
-  for (const c of codes) {
-    const diff = Math.abs(codeCandidateHours(c) - norm)
-    if (diff < bestDiff - 1e-9 ||
-        (Math.abs(diff - bestDiff) < 1e-9 && best && String(c.code).length < String(best.code).length)) {
-      best = c
-      bestDiff = diff
+// Рабочий день для автозаполнения: норма графика > 0 И в графике задан код.
+function isFillableDay(row, d) {
+  return getDayNorm(row, d) > 0 && dayAutoCode(row, d) !== ''
+}
+
+// Дни, для которых есть норма, но нет кода в графике (для предупреждения).
+const fillMissingCodes = computed(() => {
+  const set = new Set()
+  if (!tabel.value) return []
+  for (const row of tabel.value.entries) {
+    for (let d = 1; d <= tabel.value.days_in_month; d++) {
+      if (getDayNorm(row, d) > 0 && dayAutoCode(row, d) === '') set.add(getDayNorm(row, d))
     }
   }
-  if (best && bestDiff <= FILL_CODE_TOLERANCE + 1e-9) return best.code
-  // Числовой fallback: 8.25 → «8ч15м», 7 → «7ч»
-  const totalMin = Math.round(norm * 60)
-  if (!totalMin) return null
-  return hoursToHM(totalMin / 60)
-}
-
-// Рабочий день: норма графика > 0 (выходные и праздники имеют норму 0).
-function isWorkDay(row, d) {
-  return getDayNorm(row, d) > 0
-}
+  return [...set].sort((a, b) => a - b)
+})
 
 // Предпросмотр: сколько ячеек будет заполнено / пропущено (по каждому сотруднику).
 const fillPreview = computed(() => {
-  let workDaysTotal = 0, toFill = 0, skippedFilled = 0
-  const noCodes = new Set()
-  if (!tabel.value) return { workDaysTotal, toFill, skippedFilled, noCodes: [] }
+  let workDaysTotal = 0, toFill = 0, skippedFilled = 0, skippedNoCode = 0
+  if (!tabel.value) return { workDaysTotal, toFill, skippedFilled, skippedNoCode }
   for (const row of tabel.value.entries) {
     for (let d = 1; d <= tabel.value.days_in_month; d++) {
-      if (!isWorkDay(row, d)) continue          // выходные/праздники — пропускаем
+      if (getDayNorm(row, d) <= 0) continue              // выходные/праздники — пропускаем
       workDaysTotal++
-      const val = codeForNorm(getDayNorm(row, d))
-      if (!val) { noCodes.add(hoursToHM(getDayNorm(row, d))); continue }
+      if (dayAutoCode(row, d) === '') { skippedNoCode++; continue } // в графике нет кода
       const filled = !!(row.days[d] ?? '').toString().trim()
       if (filled && !overwriteExisting.value) { skippedFilled++; continue }
       toFill++
     }
   }
-  return { workDaysTotal, toFill, skippedFilled, noCodes: [...noCodes] }
+  return { workDaysTotal, toFill, skippedFilled, skippedNoCode }
 })
 
 function openFillByScheduleDialog() {
@@ -886,32 +871,30 @@ function openFillByScheduleDialog() {
 function applyFillBySchedule() {
   if (!tabel.value) return
   let filled = 0
-  const missing = new Set()
   for (const row of tabel.value.entries) {
     for (let d = 1; d <= tabel.value.days_in_month; d++) {
-      if (!isWorkDay(row, d)) continue                       // выходные и праздники не трогаем
-      const norm = getDayNorm(row, d)
-      const val = codeForNorm(norm)                          // ИСПРАВЛЕНО: индивидуальный подбор кода
-      if (!val) { missing.add(hoursToHM(norm)); continue }   // код не подобран — день пропускаем
+      if (getDayNorm(row, d) <= 0) continue                        // выходные и праздники не трогаем
+      const val = dayAutoCode(row, d)                              // ИСПРАВЛЕНО: код напрямую из графика
+      if (!val) continue                                           // код не указан в графике — пропускаем
       const cur = (row.days[d] ?? '').toString().trim()
-      if (cur && !overwriteExisting.value) continue          // не перезаписываем без галочки
+      if (cur && !overwriteExisting.value) continue                // не перезаписываем без галочки
       row.days[d] = val
-      markDirty(row.employee_id, d)                          // помечаем ячейку для сохранения
+      markDirty(row.employee_id, d)                                // помечаем ячейку для сохранения
       validateCell(row.employee_id, d)
       filled++
     }
   }
   if (filled === 0) {
-    message.value = 'Все рабочие дни уже заполнены. Включите «Перезаписать существующие», чтобы заменить значения.'
+    message.value = 'Нечего заполнять: проверьте «Код для автозаполнения» в графиках работы и флаг перезаписи.'
     messageType.value = 'warning'
     return
   }
   fillDialog.value = false
-  const extra = missing.size
-    ? ` Не подобран код для норм: ${[...missing].join(', ')} — эти дни пропущены.`
+  const extra = fillPreview.value.skippedNoCode
+    ? ` Внимание: для ${fillPreview.value.skippedNoCode} рабочих дней в графике не указан код — они пропущены.`
     : ''
-  message.value = `Табель заполнен по индивидуальному графику: ${filled} ${pluralCells(filled)}. Нажмите «Сохранить», чтобы записать изменения.${extra}`
-  messageType.value = missing.size ? 'warning' : 'success'
+  message.value = `Табель заполнен по кодам из графиков: ${filled} ${pluralCells(filled)}. Нажмите «Сохранить», чтобы записать изменения.${extra}`
+  messageType.value = fillPreview.value.skippedNoCode ? 'warning' : 'success'
 }
 
 // Склонение слова «ячейка»: 1 ячейка, 2-4 ячейки, 5+ ячеек.
@@ -1142,6 +1125,8 @@ async function loadTabel() {
       // norm_hours сотрудника — только fallback, если график не назначен.
       if (!('norm_hours' in e)) e.norm_hours = null
       if (!e.day_norms) e.day_norms = {}
+      // Коды автозаполнения из графика («Код для автозаполнения» по дням месяца)
+      if (!e.day_auto_codes) e.day_auto_codes = {}
     })
     tabel.value = data
     dirty.value = {}

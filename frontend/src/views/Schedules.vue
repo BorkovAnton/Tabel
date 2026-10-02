@@ -78,6 +78,7 @@
                 <th>Конец</th>
                 <th>Обед (мин)</th>
                 <th>Норма</th>
+                <th>Код для автозаполнения</th>
               </tr>
             </thead>
             <tbody>
@@ -119,6 +120,18 @@
                     {{ calculateDayNorm(day) }} ч
                   </v-chip>
                 </td>
+                <td style="min-width: 160px;">
+                  <!-- ИСПРАВЛЕНО: явный выбор кода для «Заполнить по графику» -->
+                  <v-select
+                    v-model="day.auto_fill_code"
+                    :items="codeItems"
+                    clearable
+                    placeholder="Не задан"
+                    density="compact"
+                    hide-details
+                    variant="outlined"
+                  ></v-select>
+                </td>
               </tr>
             </tbody>
           </v-table>
@@ -126,6 +139,12 @@
           <v-alert type="info" variant="tonal" class="mt-4">
             Итого норма в неделю: <strong>{{ weekNorm }} ч</strong>
           </v-alert>
+          <div class="text-caption text-grey mt-2">
+            «Код для автозаполнения» используется функцией «Заполнить по графику»
+            в табеле: каждый рабочий день месяца заполняется кодом, указанным для
+            соответствующего дня недели. Если код не задан — день пропускается.
+            Например: Пн–Пт → «8ч15м», Сб–Вс → «В».
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer></v-spacer>
@@ -173,6 +192,21 @@ const selectedSchedule = ref(null)
 const scheduleName = ref('')
 const days = ref([])
 
+// ИСПРАВЛЕНО: справочник кодов для колонки «Код для автозаполнения»
+const timeCodes = ref([])
+const codeItems = computed(() =>
+  timeCodes.value.map(c => ({ title: c.name ? `${c.code} — ${c.name}` : c.code, value: c.code }))
+)
+
+async function loadTimeCodes() {
+  try {
+    const { data } = await api.get('/time-codes/')
+    timeCodes.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    console.error('Ошибка загрузки кодов:', e)
+  }
+}
+
 function emptyDay(day_of_week) {
   return {
     day_of_week,
@@ -180,7 +214,8 @@ function emptyDay(day_of_week) {
     start_time: '08:00',
     end_time: '17:00',
     lunch_minutes: 60,
-    is_day_off: day_of_week >= 5  // Сб и Вс по умолчанию выходные
+    is_day_off: day_of_week >= 5,  // Сб и Вс по умолчанию выходные
+    auto_fill_code: null           // «Код для автозаполнения» из графика
   }
 }
 
@@ -233,7 +268,8 @@ function openEditDialog(item) {
     start_time: d.start_time || '08:00',
     end_time: d.end_time || '17:00',
     lunch_minutes: d.lunch_minutes,
-    is_day_off: d.is_day_off
+    is_day_off: d.is_day_off,
+    auto_fill_code: d.auto_fill_code || null
   }))
   dialog.value = true
 }
@@ -253,7 +289,9 @@ async function saveSchedule() {
         start_time: d.is_day_off ? null : d.start_time,
         end_time: d.is_day_off ? null : d.end_time,
         lunch_minutes: d.lunch_minutes,
-        is_day_off: d.is_day_off
+        is_day_off: d.is_day_off,
+        // ИСПРАВЛЕНО: сохраняем «Код для автозаполнения» (пустой -> null)
+        auto_fill_code: (d.auto_fill_code || '').toString().trim() || null
       }))
     }
 
@@ -293,6 +331,7 @@ async function deleteSchedule() {
 
 onMounted(() => {
   loadSchedules()
+  loadTimeCodes()
 })
 </script>
 

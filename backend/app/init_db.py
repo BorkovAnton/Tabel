@@ -23,6 +23,8 @@ MIGRATIONS = [
     ("turnstile_events", "shift_end", "TIMESTAMP NULL"),
     # Код часов «Время по графику»: часы берутся из нормы графика на день
     ("time_codes", "use_schedule_hours", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # «Код для автозаполнения» в днях графика работы (функция «Заполнить по графику»)
+    ("work_schedule_days", "auto_fill_code", "VARCHAR NULL"),
 ]
 
 

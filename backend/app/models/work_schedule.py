@@ -27,6 +27,10 @@ class WorkScheduleDay(Base):
     end_time = Column(Time, nullable=True)
     lunch_minutes = Column(Integer, default=60)
     is_day_off = Column(Boolean, default=False)  # Выходной день
+
+    # Код из справочника для функции «Заполнить по графику» (например "8ч15м", "В").
+    # Если пусто — автозаполнение пропускает этот день недели.
+    auto_fill_code = Column(String, nullable=True)
     
     # Связь с родителем
     schedule = relationship("WorkSchedule", back_populates="days")

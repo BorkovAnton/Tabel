@@ -20,6 +20,8 @@ class ScheduleDayCreate(BaseModel):
     end_time: Optional[str] = None
     lunch_minutes: int = 60
     is_day_off: bool = False
+    # Код из справочника для «Заполнить по графику» (например "8ч15м", "В").
+    auto_fill_code: Optional[str] = None
 
 
 class ScheduleCreate(BaseModel):
@@ -35,6 +37,7 @@ class ScheduleDayResponse(BaseModel):
     lunch_minutes: int
     is_day_off: bool
     norm_hours: float
+    auto_fill_code: Optional[str] = None
 
 
 class ScheduleResponse(BaseModel):
@@ -90,7 +93,9 @@ def get_schedules(db: Session = Depends(get_db)):
                 "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
                 "lunch_minutes": day.lunch_minutes,
                 "is_day_off": day.is_day_off,
-                "norm_hours": norm
+                "norm_hours": norm,
+                # ИСПРАВЛЕНО: код для автозаполнения из графика
+                "auto_fill_code": getattr(day, "auto_fill_code", None) or None
             })
         
         employee_count = db.query(Employee).filter(Employee.schedule_id == sched.id).count()
@@ -127,7 +132,9 @@ def create_schedule(schedule: ScheduleCreate, db: Session = Depends(get_db)):
             start_time=parse_time(day_data.start_time) if not day_data.is_day_off else None,
             end_time=parse_time(day_data.end_time) if not day_data.is_day_off else None,
             lunch_minutes=day_data.lunch_minutes,
-            is_day_off=day_data.is_day_off
+            is_day_off=day_data.is_day_off,
+            # ИСПРАВЛЕНО: сохраняем «Код для автозаполнения» (пустая строка = NULL)
+            auto_fill_code=(day_data.auto_fill_code or "").strip() or None
         )
         db.add(day)
     
@@ -147,7 +154,9 @@ def create_schedule(schedule: ScheduleCreate, db: Session = Depends(get_db)):
             "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
             "lunch_minutes": day.lunch_minutes,
             "is_day_off": day.is_day_off,
-            "norm_hours": norm
+            "norm_hours": norm,
+            # ИСПРАВЛЕНО: код для автозаполнения из графика
+            "auto_fill_code": getattr(day, "auto_fill_code", None) or None
         })
 
     employee_count = db.query(Employee).filter(Employee.schedule_id == new_schedule.id).count()
@@ -180,7 +189,9 @@ def update_schedule(schedule_id: int, schedule: ScheduleCreate, db: Session = De
             start_time=parse_time(day_data.start_time) if not day_data.is_day_off else None,
             end_time=parse_time(day_data.end_time) if not day_data.is_day_off else None,
             lunch_minutes=day_data.lunch_minutes,
-            is_day_off=day_data.is_day_off
+            is_day_off=day_data.is_day_off,
+            # ИСПРАВЛЕНО: сохраняем «Код для автозаполнения» (пустая строка = NULL)
+            auto_fill_code=(day_data.auto_fill_code or "").strip() or None
         )
         db.add(day)
     
@@ -201,7 +212,9 @@ def update_schedule(schedule_id: int, schedule: ScheduleCreate, db: Session = De
             "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
             "lunch_minutes": day.lunch_minutes,
             "is_day_off": day.is_day_off,
-            "norm_hours": norm
+            "norm_hours": norm,
+            # ИСПРАВЛЕНО: код для автозаполнения из графика
+            "auto_fill_code": getattr(day, "auto_fill_code", None) or None
         })
 
     employee_count = db.query(Employee).filter(Employee.schedule_id == sched.id).count()
@@ -255,7 +268,8 @@ def get_schedule_day(
         "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
         "lunch_minutes": day.lunch_minutes,
         "is_day_off": day.is_day_off,
-        "norm_hours": calculate_day_norm(day.start_time, day.end_time, day.lunch_minutes, day.is_day_off)
+        "norm_hours": calculate_day_norm(day.start_time, day.end_time, day.lunch_minutes, day.is_day_off),
+        "auto_fill_code": getattr(day, "auto_fill_code", None) or None
     }
 
 
