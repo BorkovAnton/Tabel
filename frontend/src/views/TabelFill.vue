@@ -11,6 +11,9 @@
       <v-btn variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
         Коды часов
       </v-btn>
+      <v-btn variant="outlined" color="primary" prepend-icon="mdi-calendar-clock" :disabled="!tabel?.entries?.length" @click="openFillByScheduleDialog">
+        Заполнить по графику
+      </v-btn>
       <v-btn color="green darken-1" prepend-icon="mdi-content-save" :loading="saving" @click="save(true)">
         Сохранить
       </v-btn>
@@ -393,6 +396,78 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Диалог «Заполнить по графику»: автораспределение выбранных кодов по рабочим дням -->
+    <v-dialog v-model="fillDialog" max-width="520">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon icon="mdi-calendar-clock" color="primary" class="mr-2" />
+          Заполнить по графику
+        </v-card-title>
+        <v-card-text>
+          <div class="text-body-2 mb-3 text-grey-darken-2">
+            Рабочие дни месяца (норма по графику &gt; 0) будут заполнены выбранным кодом.
+            Выходные и праздничные дни пропускаются. Изменения не сохранятся,
+            пока вы не нажмёте «Сохранить» — заполнение можно отменить.
+          </div>
+
+          <v-select
+            v-model="fillCode"
+            :items="fillCodeItems"
+            item-title="title"
+            item-value="value"
+            label="Код для рабочих дней"
+            density="compact"
+            variant="outlined"
+            hide-details="auto"
+            class="mb-3"
+          />
+
+          <v-text-field
+            v-if="fillCode === '__manual__'"
+            v-model="fillManualValue"
+            label="Значение (код или часы, напр. 8ч15м)"
+            placeholder="8ч15м"
+            density="compact"
+            variant="outlined"
+            hide-details="auto"
+            class="mb-3"
+          />
+
+          <v-checkbox
+            v-model="overwriteExisting"
+            label="Перезаписать существующие значения"
+            density="compact"
+            hide-details
+            class="mt-0"
+          />
+          <div v-if="!overwriteExisting" class="text-caption text-grey ml-1 mb-2">
+            Пустые ячейки будут заполнены, уже заполненные останутся без изменений.
+          </div>
+
+          <v-alert v-if="fillPreview.workDaysTotal === 0" type="info" density="compact" variant="tonal" class="mt-2">
+            Не найдено ни одного рабочего дня с нормой &gt; 0. Проверьте график работы сотрудников.
+          </v-alert>
+          <v-alert v-else-if="fillPreview.toFill === 0" type="warning" density="compact" variant="tonal" class="mt-2">
+            Все рабочие дни уже заполнены. Чтобы заменить значения, включите «Перезаписать существующие».
+          </v-alert>
+          <div v-else class="text-body-2 mt-2">
+            Будет заполнено ячеек:
+            <b class="text-primary">{{ fillPreview.toFill }}</b>
+            <span class="text-caption text-grey">
+              (рабочих дней: {{ fillPreview.workDaysTotal }}, пропущено заполненных: {{ fillPreview.skippedFilled }})
+            </span>
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="fillDialog = false">Отмена</v-btn>
+          <v-btn color="primary" prepend-icon="mdi-calendar-check" :disabled="fillPreview.toFill === 0" @click="applyFillBySchedule">
+            Заполнить
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
   <v-progress-circular v-else indeterminate color="#2d5a3d" />
 </template>
@@ -421,6 +496,14 @@ const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, use_sche
 const codeError = ref('')
 const isEditing = ref(false)
 const editingCode = ref(null)
+
+// ─── «Заполнить по графику» ────────────────────────────────────────────────
+// Диалог автораспределения выбранного кода по рабочим дням месяца
+// (день считается рабочим, если норма графика day_norms[d] > 0).
+const fillDialog = ref(false)
+const fillCode = ref('8')            // выбранный код; '__manual__' — ручной ввод значения
+const fillManualValue = ref('')      // значение при ручном вводе (код или часы, напр. 8ч15м)
+const overwriteExisting = ref(true)  // перезаписывать уже заполненные ячейки или нет
 
 // ИСПРАВЛЕНО: Добавлено свойство unit ('days' или 'hours') для точного расчета
 // Колонка «Итого часов» намеренно НЕ последняя: после неё идут остальные
@@ -738,6 +821,104 @@ function validateCell(empId, day) {
 function markDirty(empId, day) {
   const row = tabel.value.entries.find(r => r.employee_id === empId)
   dirty.value[`${empId}_${day}`] = row ? row.days[day] : ''
+}
+
+// ─── Логика «Заполнить по графику» ────────────────────────────────────────
+
+// Список кодов из справочника + пункт ручного ввода.
+const fillCodeItems = computed(() => {
+  const items = timeCodes.value.map(c => {
+    let hrs = ''
+    if (c.use_schedule_hours) {
+      hrs = ' (по графику)'
+    } else {
+      const h = (Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)
+      hrs = h ? ` (${hoursToHM(h)})` : ''
+    }
+    return { title: `${c.code} — ${c.name}${hrs}`, value: c.code }
+  })
+  items.push({ title: 'Другое значение (ручной ввод)…', value: '__manual__' })
+  return items
+})
+
+// Итоговое значение, которое будет ставиться в рабочие дни.
+const fillValue = computed(() =>
+  fillCode.value === '__manual__' ? String(fillManualValue.value || '').trim() : fillCode.value
+)
+
+// Рабочий день: норма графика > 0 (выходные и праздники имеют норму 0).
+function isWorkDay(row, d) {
+  return getDayNorm(row, d) > 0
+}
+
+// Предпросмотр: сколько ячеек будет заполнено / пропущено.
+const fillPreview = computed(() => {
+  let workDaysTotal = 0, toFill = 0, skippedFilled = 0
+  const val = fillValue.value
+  const valid = !!val && isValidValue(val)
+  if (!tabel.value || !valid) return { workDaysTotal, toFill, skippedFilled, invalid: !!val && !valid }
+  for (const row of tabel.value.entries) {
+    for (let d = 1; d <= tabel.value.days_in_month; d++) {
+      if (!isWorkDay(row, d)) continue          // выходные/праздники — пропускаем
+      workDaysTotal++
+      const filled = !!(row.days[d] ?? '').toString().trim()
+      if (filled && !overwriteExisting.value) { skippedFilled++; continue }
+      toFill++
+    }
+  }
+  return { workDaysTotal, toFill, skippedFilled, invalid: false }
+})
+
+function openFillByScheduleDialog() {
+  // Сброс настроек диалога перед открытием
+  overwriteExisting.value = true
+  fillManualValue.value = ''
+  // Если код по умолчанию («8») есть в справочнике — оставляем его,
+  // иначе выбираем первый доступный код.
+  if (!timeCodes.value.some(c => c.code.toLowerCase() === '8')) {
+    fillCode.value = timeCodes.value[0]?.code ?? '__manual__'
+  } else {
+    fillCode.value = '8'
+  }
+  fillDialog.value = true
+}
+
+function applyFillBySchedule() {
+  const val = fillValue.value
+  if (!val || !isValidValue(val)) {
+    message.value = 'Укажите корректное значение: код из справочника или часы (например, 8ч15м или 10).'
+    messageType.value = 'error'
+    return
+  }
+  if (!tabel.value) return
+  let filled = 0
+  for (const row of tabel.value.entries) {
+    for (let d = 1; d <= tabel.value.days_in_month; d++) {
+      if (!isWorkDay(row, d)) continue                       // выходные и праздники не трогаем
+      const cur = (row.days[d] ?? '').toString().trim()
+      if (cur && !overwriteExisting.value) continue          // не перезаписываем без галочки
+      row.days[d] = val
+      markDirty(row.employee_id, d)                          // помечаем ячейку для сохранения
+      validateCell(row.employee_id, d)
+      filled++
+    }
+  }
+  if (filled === 0) {
+    message.value = 'Все рабочие дни уже заполнены. Включите «Перезаписать существующие», чтобы заменить значения.'
+    messageType.value = 'warning'
+    return
+  }
+  fillDialog.value = false
+  message.value = `Табель заполнен по графику: ${filled} ${pluralCells(filled)}. Нажмите «Сохранить», чтобы записать изменения.`
+  messageType.value = 'success'
+}
+
+// Склонение слова «ячейка»: 1 ячейка, 2-4 ячейки, 5+ ячеек.
+function pluralCells(n) {
+  const m10 = n % 10, m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return 'ячейка'
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'ячейки'
+  return 'ячеек'
 }
 
 function cellMinutes(v, row, d) {
