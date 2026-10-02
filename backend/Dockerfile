@@ -1,5 +1,10 @@
 FROM python:3.11-slim
 
+# Устанавливаем системные зависимости для psycopg
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt .

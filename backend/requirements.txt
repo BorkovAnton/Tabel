@@ -1,7 +1,8 @@
 fastapi
 alembic==1.13.1
 uvicorn
-sqlalchemy
+sqlalchemy>=2.0
+psycopg[binary]
 psycopg2-binary
 python-dotenv
 pandas
