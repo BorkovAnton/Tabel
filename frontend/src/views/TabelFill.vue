@@ -32,23 +32,23 @@
       </span>
     </div>
 
-    <div style="overflow-x:auto; border:1px solid #c8e6c9; border-radius:8px; background:white;">
+    <div class="tabel-scroll" style="border:1px solid #c8e6c9; border-radius:8px; background:white;">
       <table class="tabel-table" v-if="tabel.entries.length">
         <thead>
-          <!-- ПЕРВЫЙ УРОВЕНЬ ШАПКИ -->
+          <!-- ПЕРВЫЙ УРОВЕНЬ ШАПКИ (закреплён сверху при прокрутке) -->
           <tr>
-            <th class="col-no" rowspan="2">№<br>п/п</th>
-            <th class="col-fio" rowspan="2">Ф.И.О.</th>
-            <th class="col-days-header" :colspan="tabel.days_in_month">Дни недели</th>
-            <th v-for="col in summaryColumns" :key="col.key" class="col-summary-header" rowspan="2"
+            <th class="col-no sticky-top sticky-left-1" rowspan="2">№<br>п/п</th>
+            <th class="col-fio sticky-top sticky-left-2" rowspan="2">Ф.И.О.</th>
+            <th class="col-days-header sticky-top" :colspan="tabel.days_in_month">Дни недели</th>
+            <th v-for="col in summaryColumns" :key="col.key" class="col-summary-header sticky-top" rowspan="2"
                 :title="col.label">
               {{ col.label }}
             </th>
-            <th class="col-del" rowspan="2"></th>
+            <th class="col-del sticky-top sticky-right" rowspan="2"></th>
           </tr>
-          <!-- ВТОРОЙ УРОВЕНЬ ШАПКИ: дни недели + числа -->
+          <!-- ВТОРОЙ УРОВЕНЬ ШАПКИ: дни недели + числа (тоже закреплён) -->
           <tr>
-            <th v-for="d in tabel.days_in_month" :key="d" class="col-day-header"
+            <th v-for="d in tabel.days_in_month" :key="d" class="col-day-header sticky-top-l2"
                 :class="{ 'day-weekend-header': isWeekend(d), 'day-holiday-header': isHoliday(d) }"
                 :title="holidayName(d)">
               <div class="day-name">{{ getDayOfWeek(d) }}</div>
@@ -58,10 +58,10 @@
         </thead>
         <tbody>
           <tr v-for="(row, idx) in tabel.entries" :key="row.employee_id">
-            <td class="col-no">{{ idx + 1 }}</td>
-            <td class="col-fio" :title="row.full_name">
+            <td class="col-no sticky-left-1"><div class="sticky-fill">{{ idx + 1 }}</div></td>
+            <td class="col-fio sticky-left-2" :title="row.full_name"><div class="sticky-fill" style="flex-direction: column; align-items: flex-start;">
               {{ row.full_name }}<br /><small class="text-grey">{{ row.tab_number }}</small>
-            </td>
+            </div></td>
             <td v-for="d in tabel.days_in_month" :key="d" class="cell-day"
                 :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
               <div class="cell-wrap" :class="{ 'is-open': openCell === row.employee_id + '_' + d }">
@@ -170,19 +170,21 @@
               />
               <template v-else>{{ calculateSummary(row)[col.key] || 0 }}</template>
             </td>
-            <td class="col-del">
-              <span class="code-chips" v-if="codesForRow(row).length">
-                <v-chip v-for="c in codesForRow(row)" :key="c.code" size="x-small"
-                        variant="tonal" color="#2d5a3d" style="margin:1px;">{{ c.code }}</v-chip>
-              </span>
-              <a href="#" class="text-red text-caption" style="white-space:nowrap;"
-                 @click.prevent="removeEmployee(row)">Удалить</a>
+            <td class="col-del sticky-right">
+              <div class="sticky-fill d-flex align-center justify-end" style="gap: 6px; flex-wrap: wrap;">
+                <span class="code-chips" v-if="codesForRow(row).length">
+                  <v-chip v-for="c in codesForRow(row)" :key="c.code" size="x-small"
+                          variant="tonal" color="#2d5a3d" style="margin:1px;">{{ c.code }}</v-chip>
+                </span>
+                <a href="#" class="text-red text-caption" style="white-space:nowrap;"
+                   @click.prevent="removeEmployee(row)">Удалить</a>
+              </div>
             </td>
           </tr>
 
           <tr class="add-row">
-            <td></td>
-            <td class="add-cell">
+            <td class="sticky-left-1"><div class="sticky-fill"></div></td>
+            <td class="add-cell sticky-left-2"><div class="sticky-fill" style="justify-content: flex-start; min-height: 48px;">
               <div class="d-flex align-center" style="gap: 6px;">
                 <v-autocomplete
                   v-model="selectedEmployee"
@@ -222,7 +224,7 @@
                 </v-autocomplete>
                 <span v-if="selectedEmployee" class="text-caption text-grey">— строка появится здесь</span>
               </div>
-            </td>
+            </div></td>
             <td :colspan="tabel.days_in_month + summaryColumns.length + 1"></td>
           </tr>
         </tbody>
@@ -1418,8 +1420,14 @@ onMounted(async () => {
   width: 100%;
   height: 100%;
 }
+.tabel-scroll {
+  /* Двумерная прокрутка: шапка (дни/числа) и колонки №/ФИО закреплены */
+  overflow: auto;
+  max-height: calc(100vh - 260px);
+}
 .tabel-table {
-  border-collapse: collapse;
+  border-collapse: separate;  /* обязательно для position:sticky с border-collapse */
+  border-spacing: 0;
   font-size: 12px;
   white-space: nowrap;
 }
@@ -1436,14 +1444,65 @@ onMounted(async () => {
   vertical-align: middle;
 }
 
-.col-no { width: 40px; text-align: center; font-size: 11px; }
-.col-fio { min-width: 200px; text-align: left; padding-left: 6px !important; }
+.col-no { width: 40px; min-width: 40px; max-width: 40px; text-align: center; font-size: 11px; }
+.col-fio { min-width: 200px; width: 200px; max-width: 200px; text-align: left; padding-left: 6px !important; }
 .col-days-header { font-size: 13px; font-weight: bold; padding: 4px !important; }
 .col-day-header { width: 38px; min-width: 38px; max-width: 38px; padding: 2px 1px !important; font-size: 10px; }
 .day-name { font-size: 9px; font-weight: normal; color: #666; }
 .day-number { font-size: 11px; font-weight: bold; }
 .day-weekend-header { background-color: #f0f0f0 !important; }
 .day-holiday-header { background-color: #fff3cd !important; }
+
+/* ================= ЗАКРЕПЛЕНИЕ ШАПКИ И КОЛОНОК (sticky) ================= */
+/* Первый уровень шапки — прижат к верху области прокрутки */
+.tabel-table th.sticky-top {
+  position: sticky; top: 0; z-index: 5;
+}
+/* Второй уровень шапки (дни/числа) — под первым (учитывая бордер первого ряда) */
+.tabel-table th.sticky-top-l2 {
+  position: sticky; top: 41px; z-index: 4;
+}
+/* Колонка № п/п — закреплена слева (первая) */
+.tabel-table .sticky-left-1 {
+  position: sticky; left: 0; z-index: 3;
+}
+/* Колонка ФИО — закреплена слева (вторая, со сдвигом на ширину № + бордер) */
+.tabel-table .sticky-left-2 {
+  position: sticky; left: 42px; z-index: 3;
+}
+/* Правая колонка действий — закреплена справа */
+.tabel-table .sticky-right {
+  position: sticky; right: 0; z-index: 3;
+}
+/* Пересечения «шапка × боковые колонки» — поверх остальных sticky-слоёв */
+.tabel-table th.sticky-top.sticky-left-1,
+.tabel-table th.sticky-top.sticky-left-2,
+.tabel-table th.sticky-top.sticky-right { z-index: 7; }
+/* Непрозрачные фоны, чтобы при прокрутке ячейки не просвечивали сквозь закреплённые cells */
+.tabel-table .col-no.sticky-left-1,
+.tabel-table .col-fio.sticky-left-2,
+.tabel-table td.col-del.sticky-right { background-color: white; }
+.tabel-table tr.add-row .sticky-left-1,
+.tabel-table tr.add-row .sticky-left-2 { background-color: #f9fbe7; }
+/* Заполнение sticky-ячейки на всю высоту строки (равномерный фон и рамка) */
+.sticky-fill {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; min-height: 24px;
+}
+td.col-fio.sticky-left-2 > .sticky-fill { justify-content: flex-start; }
+/* Выходные/праздники в закреплённых колонках сохраняют свой цвет фона */
+.cell-weekend.sticky-left-1, .cell-weekend.sticky-left-2 { background-color: #f0f0f0; }
+.cell-holiday.sticky-left-1, .cell-holiday.sticky-left-2 { background-color: #fff3cd; }
+/* Тонкая тень у границы закреплённой зоны для читаемости */
+.tabel-table .sticky-left-2::after {
+  content: ''; position: absolute; top: 0; bottom: -1px; right: -9px; width: 8px;
+  pointer-events: none; box-shadow: inset -6px 0 6px -6px rgba(0, 0, 0, 0.25); z-index: 2;
+}
+.tabel-table th.sticky-top-l2::after {
+  content: ''; position: absolute; left: 0; right: -1px; bottom: -9px; height: 8px;
+  pointer-events: none; box-shadow: inset 0 -6px 6px -6px rgba(0, 0, 0, 0.25); z-index: 2;
+}
 
 .col-summary-header {
   width: 28px; min-width: 28px; max-width: 28px; padding: 8px 2px !important;
