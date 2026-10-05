@@ -514,9 +514,12 @@
         </v-card-title>
         <v-card-text>
           <div class="text-body-2 mb-3 text-grey-darken-2">
-            Выбранный код будет поставлен в <b>одну дату</b> (день месяца) сразу
-            <b>всем сотрудникам</b> табеля. Например: 15 сентября — код «К»
-            (командировка) для всего отдела. Изменения не сохранятся, пока вы не
+            Заполнение конкретной даты для <b>всех сотрудников</b> табеля.
+            По умолчанию значение берётся <b>из графика работы каждого
+            сотрудника</b>: код из поля «Код для автозаполнения» (например
+            «8ч15м» в будни, «В» в выходные). Если снять галочку — во все ячейки
+            этой даты будет поставлен выбранный вручную код (например «К» —
+            командировка на 15 сентября). Изменения не сохранятся, пока вы не
             нажмёте «Сохранить» — заполнение можно скорректировать вручную.
           </div>
 
@@ -531,21 +534,37 @@
             class="mb-3"
           />
 
-          <v-combobox
-            v-model="fillDayCode"
-            :items="codeListItems"
-            label="Код заполнения"
+          <v-checkbox
+            v-model="fillByScheduleDay"
+            label="Заполнять по графику сотрудника (код из графика / нормы дня)"
             density="compact"
-            hide-details="auto"
-            class="mb-1"
+            hide-details
+            class="mt-0 mb-1"
           />
-          <div class="text-caption text-grey mb-2">
-            Можно выбрать код из справочника или ввести значение вручную
-            (например «8ч15м», «10»).
-          </div>
-          <div v-if="fillDayCode && !isValidValue(fillDayCode)" class="text-error text-caption mb-2">
-            Неизвестный код или неверное значение — выберите код из справочника
-            или введите часы (например «8ч15м» или «10»).
+
+          <template v-if="!fillByScheduleDay">
+            <v-combobox
+              v-model="fillDayCode"
+              :items="codeListItems"
+              label="Код заполнения"
+              density="compact"
+              hide-details="auto"
+              class="mb-1"
+            />
+            <div class="text-caption text-grey mb-2">
+              Можно выбрать код из справочника или ввести значение вручную
+              (например «8ч15м», «10»).
+            </div>
+            <div v-if="fillDayCode && !isValidValue(fillDayCode)" class="text-error text-caption mb-2">
+              Неизвестный код или неверное значение — выберите код из справочника
+              или введите часы (например «8ч15м» или «10»).
+            </div>
+          </template>
+          <div v-else class="text-caption text-grey mb-2">
+            Для каждого сотрудника подставляется код из его графика:
+            «Код для автозаполнения» этого дня недели; если он не задан в
+            будний день — ближайший код справочника по норме часов дня.
+            Дни без кода в графике пропускаются.
           </div>
 
           <v-checkbox
@@ -560,15 +579,22 @@
             В табеле нет сотрудников — заполнять нечего.
           </v-alert>
           <v-alert v-else-if="fillDayPreview.toFill === 0" type="warning" density="compact" variant="tonal" class="mt-2">
-            Все ячейки за выбранную дату уже заполнены. Включите
-            «Перезаписать существующие значения», чтобы обновить их.
+            <template v-if="fillByScheduleDay">
+              Ни для одного сотрудника в графике нет кода автозаполнения на эту
+              дату (либо все ячейки уже заполнены — включите перезапись).
+            </template>
+            <template v-else>
+              Все ячейки за выбранную дату уже заполнены. Включите
+              «Перезаписать существующие значения», чтобы обновить их.
+            </template>
           </v-alert>
           <div v-else class="text-body-2 mt-2">
             Будет заполнено ячеек:
             <b class="text-primary">{{ fillDayPreview.toFill }}</b>
             <span class="text-caption text-grey">
               (сотрудников: {{ fillDayPreview.total }},
-              пропущено заполненных: {{ fillDayPreview.skippedFilled }})
+              пропущено заполненных: {{ fillDayPreview.skippedFilled }},
+              без кода в графике: {{ fillDayPreview.skippedNoCode }})
             </span>
           </div>
         </v-card-text>
@@ -576,7 +602,7 @@
           <v-spacer />
           <v-btn variant="text" @click="fillDayDialog = false">Отмена</v-btn>
           <v-btn color="success" prepend-icon="mdi-calendar-check"
-                 :disabled="!fillDayCode || !isValidValue(fillDayCode) || fillDayPreview.toFill === 0"
+                 :disabled="fillDayPreview.toFill === 0 || (!fillByScheduleDay && (!fillDayCode || !isValidValue(fillDayCode)))"
                  @click="applyFillDay">
             Заполнить
           </v-btn>
@@ -593,8 +619,11 @@
         </v-card-title>
         <v-card-text>
           <div class="text-body-2 mb-3 text-grey-darken-2">
-            Все дни месяца будут заполнены выбранным кодом для
-            <b>выделенного сотрудника</b>. Кликните по строке табеля, чтобы
+            Заполнение <b>всего месяца</b> для выделенного сотрудника. По
+            умолчанию значения берутся <b>из его индивидуального графика</b>:
+            код из поля «Код для автозаполнения» (например «8ч15м» в будни,
+            «В» в выходные). Если снять галочку — выбранный вручную код будет
+            поставлен во все дни месяца. Кликните по строке табеля, чтобы
             выделить сотрудника. Изменения не сохранятся, пока вы не нажмёте
             «Сохранить» — заполнение можно скорректировать вручную.
           </div>
@@ -604,21 +633,37 @@
             <span v-if="selectedRowEntry.tab_number"> (Таб. {{ selectedRowEntry.tab_number }})</span>
           </v-alert>
 
-          <v-combobox
-            v-model="fillEmpCode"
-            :items="codeListItems"
-            label="Код заполнения"
+          <v-checkbox
+            v-model="fillByScheduleEmp"
+            label="Заполнять по графику сотрудника (код из графика / нормы дня)"
             density="compact"
-            hide-details="auto"
-            class="mb-1"
+            hide-details
+            class="mt-0 mb-1"
           />
-          <div class="text-caption text-grey mb-2">
-            Можно выбрать код из справочника или ввести значение вручную
-            (например «8ч15м», «10»).
-          </div>
-          <div v-if="fillEmpCode && !isValidValue(fillEmpCode)" class="text-error text-caption mb-2">
-            Неизвестный код или неверное значение — выберите код из справочника
-            или введите часы (например «8ч15м» или «10»).
+
+          <template v-if="!fillByScheduleEmp">
+            <v-combobox
+              v-model="fillEmpCode"
+              :items="codeListItems"
+              label="Код заполнения"
+              density="compact"
+              hide-details="auto"
+              class="mb-1"
+            />
+            <div class="text-caption text-grey mb-2">
+              Можно выбрать код из справочника или ввести значение вручную
+              (например «8ч15м», «10»).
+            </div>
+            <div v-if="fillEmpCode && !isValidValue(fillEmpCode)" class="text-error text-caption mb-2">
+              Неизвестный код или неверное значение — выберите код из справочника
+              или введите часы (например «8ч15м» или «10»).
+            </div>
+          </template>
+          <div v-else class="text-caption text-grey mb-2">
+            Для каждого дня подставляется код из графика сотрудника:
+            «Код для автозаполнения» этого дня недели; если он не задан в
+            будний день — ближайший код справочника по норме часов дня.
+            Дни без кода в графике пропускаются.
           </div>
 
           <v-checkbox
@@ -633,15 +678,22 @@
             Сотрудник не выделен — кликните по строке в табеле.
           </v-alert>
           <v-alert v-else-if="fillEmpPreview.toFill === 0" type="warning" density="compact" variant="tonal" class="mt-2">
-            Все дни этого сотрудника уже заполнены. Включите
-            «Перезаписать существующие значения», чтобы обновить их.
+            <template v-if="fillByScheduleEmp">
+              В графике этого сотрудника нет кодов автозаполнения на дни месяца
+              (либо все дни уже заполнены — включите перезапись).
+            </template>
+            <template v-else>
+              Все дни этого сотрудника уже заполнены. Включите
+              «Перезаписать существующие значения», чтобы обновить их.
+            </template>
           </v-alert>
           <div v-else-if="selectedRowEntry" class="text-body-2 mt-2">
             Будет заполнено ячеек:
             <b class="text-primary">{{ fillEmpPreview.toFill }}</b>
             <span class="text-caption text-grey">
               (дней в месяце: {{ fillEmpPreview.daysTotal }},
-              пропущено заполненных: {{ fillEmpPreview.skippedFilled }})
+              пропущено заполненных: {{ fillEmpPreview.skippedFilled }},
+              без кода в графике: {{ fillEmpPreview.skippedNoCode }})
             </span>
           </div>
         </v-card-text>
@@ -649,7 +701,7 @@
           <v-spacer />
           <v-btn variant="text" @click="fillEmpDialog = false">Отмена</v-btn>
           <v-btn color="success" prepend-icon="mdi-account-check"
-                 :disabled="!selectedRowEntry || !fillEmpCode || !isValidValue(fillEmpCode) || fillEmpPreview.toFill === 0"
+                 :disabled="!selectedRowEntry || fillEmpPreview.toFill === 0 || (!fillByScheduleEmp && (!fillEmpCode || !isValidValue(fillEmpCode)))"
                  @click="applyFillEmployee">
             Заполнить
           </v-btn>
@@ -704,6 +756,10 @@ const fillDayCode = ref('')          // код/значение для запо�
 const fillEmpCode = ref('')          // код/значение для заполнения сотрудника
 const overwriteExistingDay = ref(true)
 const overwriteExistingEmp = ref(true)
+// По умолчанию заполнение идёт ПО ГРАФИКУ сотрудника (auto_fill_code / норма);
+// если снять галочку — ставится выбранный вручную код во все ячейки.
+const fillByScheduleDay = ref(true)
+const fillByScheduleEmp = ref(true)
 const selectedRow = ref(null)
 
 // Выделенная строка табеля (объект записи) или null.
@@ -740,25 +796,105 @@ const dayItems = computed(() => {
 // можно и выбрать код, и ввести значение вручную).
 const codeListItems = computed(() => cellItems.value.map(it => it.value))
 
-// Общие предпросмотр/заполнение произвольного набора ячеек.
-function previewCells(cells, overwrite) {
-  let toFill = 0, skippedFilled = 0
+// ─── Расписание дня сотрудника (для «Заполнить число» / «Заполнить сотрудника») ──
+// daySchedule(row, d) возвращает значение, которым нужно заполнить день d
+// согласно ГРАФИКУ работы сотрудника:
+//   1) код из поля «Код для автозаполнения» (auto_fill_code) графика —
+//      row.day_auto_codes[d] (например «8ч15м» в будни, «В» в выходные);
+//   2) если кода нет, но норма дня > 0 и включён флаг «Часы по графику» —
+//      подбирается код справочника по норме часов дня (codeForNormByRow:
+//      8.25 → «8ч15м», 8 → «8», 7 → «7ч»; допуск ±0.5 ч; если точного кода
+//      нет — используется числовое значение нормы, например «8.25»);
+//   3) иначе '' — день пропускается (выходной без кода в графике).
+function daySchedule(row, d) {
+  const ac = dayAutoCode(row, d)
+  if (ac) return ac
+  const norm = getDayNorm(row, d)
+  if (norm > 0) return codeForNormByRow(norm)
+  return ''
+}
+
+// Подбор кода из справочника по норме часов конкретного дня/графика.
+// Сначала ищется точное совпадение среди фиксированных кодов
+// (hours_day + hours_night == норма): 8.25 → «8ч15м», 8 → «8», 7 → «7ч».
+// При отсутствии точного — ближайший фиксированный код с допуском ±0.5 ч.
+// Если подходящего кода нет, но в справочнике есть код с флагом «Время по
+// графику» (use_schedule_hours) — используется он (сам подстроится под норму).
+// Иначе — числовое значение нормы (например «8.25»).
+function codeForNormByRow(norm) {
+  const n = Number(norm) || 0
+  if (n <= 0) return ''
+  let best = null, bestDiff = Infinity
+  for (const c of timeCodes.value) {
+    if (c.use_schedule_hours) continue           // служебный fallback, не кандидат
+    const h = (Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)
+    if (h <= 0) continue
+    const diff = Math.abs(h - n)
+    if (diff > 0.5) continue
+    // приоритет: меньший diff, затем более короткое название кода
+    const tie = String(c.code).length
+    if (diff < bestDiff - 1e-9 || (Math.abs(diff - bestDiff) < 1e-9 && (!best || tie < best.tie))) {
+      best = { code: c.code, diff, tie }
+      bestDiff = diff
+    }
+  }
+  if (best) return best.code
+  // Фиксированного кода нет — берём первый код с «Время по графику»…
+  const sched = timeCodes.value.find(c => c.use_schedule_hours)
+  if (sched) return sched.code
+  // …иначе заполняем числовым значением нормы
+  return String(Math.round(n * 100) / 100)
+}
+
+// Значение для режима «по графику» считается корректным, если это код из
+// справочника ИЛИ числовое значение («8.25», «8ч15м», «8:15» — форматы,
+// которые понимает валидатор ячеек rawToHours). Используется диалогами
+// «Заполнить число» / «Заполнить сотрудника» при заполнении по графику.
+function isValidScheduleValue(v) {
+  if (!v || !String(v).trim()) return false
+  const s = String(v).trim().replace(',', '.')
+  if (codeSet().has(s.toLowerCase())) return true
+  const h = rawToHours(s)
+  return h !== null && h > 0 && h <= 23.59
+}
+
+// Эффективный набор значений для произвольного списка ячеек:
+// mode='schedule' — по графику каждого сотрудника (daySchedule),
+// mode='fixed'    — выбранный вручную код во все ячейки.
+function resolveValues(cells, mode, fixedVal) {
+  const res = []
   for (const { row, d } of cells) {
-    const filled = !!(row.days[d] ?? '').toString().trim()
+    const val = mode === 'schedule' ? daySchedule(row, d) : fixedVal
+    if (!val) { res.push({ row, d, val: '', skip: true }); continue }
+    if (mode === 'fixed' && !isValidValue(val)) { res.push({ row, d, val, skip: true }); continue }
+    if (mode === 'schedule' && !isValidScheduleValue(val)) { res.push({ row, d, val, skip: true }); continue }
+    res.push({ row, d, val, skip: false })
+  }
+  return res
+}
+
+// Общие предпросмотр/заполнение произвольного набора ячеек.
+// resolved — результат resolveValues (уже с учётом графика/режима).
+function previewResolved(resolved, overwrite) {
+  let toFill = 0, skippedFilled = 0, skippedNoCode = 0
+  for (const it of resolved) {
+    if (it.skip) { skippedNoCode++; continue }
+    const filled = !!(it.row.days[it.d] ?? '').toString().trim()
     if (filled && !overwrite) { skippedFilled++; continue }
     toFill++
   }
-  return { toFill, skippedFilled }
+  return { toFill, skippedFilled, skippedNoCode }
 }
 
-function applyCells(cells, val, overwrite) {
+function applyResolved(resolved, overwrite) {
   let filled = 0
-  for (const { row, d } of cells) {
-    const cur = (row.days[d] ?? '').toString().trim()
+  for (const it of resolved) {
+    if (it.skip) continue
+    const cur = (it.row.days[it.d] ?? '').toString().trim()
     if (cur && !overwrite) continue
-    row.days[d] = val
-    markDirty(row.employee_id, d)
-    validateCell(row.employee_id, d)
+    it.row.days[it.d] = it.val
+    markDirty(it.row.employee_id, it.d)
+    validateCell(it.row.employee_id, it.d)
     filled++
   }
   return filled
@@ -771,14 +907,19 @@ const fillDayCells = computed(() => {
   return tabel.value.entries.map(row => ({ row, d }))
 })
 
+const fillDayResolved = computed(() =>
+  resolveValues(fillDayCells.value, fillByScheduleDay.value ? 'schedule' : 'fixed',
+    String(fillDayCode.value ?? '').trim()))
+
 const fillDayPreview = computed(() => {
   const cells = fillDayCells.value
-  const { toFill, skippedFilled } = previewCells(cells, overwriteExistingDay.value)
-  return { total: cells.length, toFill, skippedFilled }
+  const { toFill, skippedFilled, skippedNoCode } = previewResolved(fillDayResolved.value, overwriteExistingDay.value)
+  return { total: cells.length, toFill, skippedFilled, skippedNoCode }
 })
 
 function openFillDayDialog() {
   overwriteExistingDay.value = true
+  fillByScheduleDay.value = true
   // По умолчанию — сегодня, если этот день входит в месяц табеля
   const now = new Date()
   const inMonth = now.getFullYear() === tabel.value?.year &&
@@ -789,17 +930,20 @@ function openFillDayDialog() {
 }
 
 function applyFillDay() {
+  const modeSched = fillByScheduleDay.value
   const val = String(fillDayCode.value ?? '').trim()
-  if (!val || !isValidValue(val)) return
-  const cells = fillDayCells.value
-  const filled = applyCells(cells, val, overwriteExistingDay.value)
+  if (!modeSched && (!val || !isValidValue(val))) return
+  const resolved = fillDayResolved.value
+  const filled = applyResolved(resolved, overwriteExistingDay.value)
   if (filled === 0) {
-    message.value = 'Нечего заполнять: все ячейки за эту дату уже заполнены (включите перезапись).'
+    message.value = modeSched
+      ? 'Нечего заполнять: в графике сотрудников нет кода для этой даты (или все ячейки заполнены — включите перезапись).'
+      : 'Нечего заполнять: все ячейки за эту дату уже заполнены (включите перезапись).'
     messageType.value = 'warning'
     return
   }
   fillDayDialog.value = false
-  message.value = `Заполнено: ${filled} ${pluralCells(filled)} за ${fillDayDate.value} ${monthNames[(tabel.value?.month ?? 1) - 1]} — код «${val}». Нажмите «Сохранить», чтобы записать изменения.`
+  message.value = `Заполнено: ${filled} ${pluralCells(filled)} за ${fillDayDate.value} ${monthNames[(tabel.value?.month ?? 1) - 1]} (${modeSched ? 'по графику сотрудников' : `код «${val}»`}). Нажмите «Сохранить», чтобы записать изменения.`
   messageType.value = 'success'
 }
 
@@ -812,32 +956,41 @@ const fillEmpCells = computed(() => {
   return cells
 })
 
+const fillEmpResolved = computed(() =>
+  resolveValues(fillEmpCells.value, fillByScheduleEmp.value ? 'schedule' : 'fixed',
+    String(fillEmpCode.value ?? '').trim()))
+
 const fillEmpPreview = computed(() => {
   const cells = fillEmpCells.value
-  const { toFill, skippedFilled } = previewCells(cells, overwriteExistingEmp.value)
-  return { daysTotal: cells.length, toFill, skippedFilled }
+  const { toFill, skippedFilled, skippedNoCode } = previewResolved(fillEmpResolved.value, overwriteExistingEmp.value)
+  return { daysTotal: cells.length, toFill, skippedFilled, skippedNoCode }
 })
 
 function openFillEmployeeDialog() {
   if (selectedRow.value === null) return
   overwriteExistingEmp.value = true
+  fillByScheduleEmp.value = true
   fillEmpCode.value = ''
   fillEmpDialog.value = true
 }
 
 function applyFillEmployee() {
   const row = selectedRowEntry.value
+  if (!row) return
+  const modeSched = fillByScheduleEmp.value
   const val = String(fillEmpCode.value ?? '').trim()
-  if (!row || !val || !isValidValue(val)) return
-  const cells = fillEmpCells.value
-  const filled = applyCells(cells, val, overwriteExistingEmp.value)
+  if (!modeSched && (!val || !isValidValue(val))) return
+  const resolved = fillEmpResolved.value
+  const filled = applyResolved(resolved, overwriteExistingEmp.value)
   if (filled === 0) {
-    message.value = 'Нечего заполнять: все дни этого сотрудника уже заполнены (включите перезапись).'
+    message.value = modeSched
+      ? 'Нечего заполнять: в графике этого сотрудника нет кодов автозаполнения (или все дни заполнены — включите перезапись).'
+      : 'Нечего заполнять: все дни этого сотрудника уже заполнены (включите перезапись).'
     messageType.value = 'warning'
     return
   }
   fillEmpDialog.value = false
-  message.value = `Заполнено: ${filled} ${pluralCells(filled)} для ${row.full_name} — код «${val}». Нажмите «Сохранить», чтобы записать изменения.`
+  message.value = `Заполнено: ${filled} ${pluralCells(filled)} для ${row.full_name} (${modeSched ? 'по индивидуальному графику' : `код «${val}»`}). Нажмите «Сохранить», чтобы записать изменения.`
   messageType.value = 'success'
 }
 
