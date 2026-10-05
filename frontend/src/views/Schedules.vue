@@ -58,7 +58,7 @@
     </v-row>
 
     <!-- Диалог -->
-    <v-dialog v-model="dialog" max-width="800">
+    <v-dialog v-model="dialog" max-width="1000">
       <v-card>
         <v-card-title>{{ isEdit ? 'Редактировать' : 'Добавить' }} график работы</v-card-title>
         <v-card-text>
@@ -69,16 +69,21 @@
             class="mb-4"
           ></v-text-field>
 
-          <v-table density="compact">
+          <!-- ИСПРАВЛЕНО: горизонтальный скролл, если таблица не помещается в окно -->
+          <div style="overflow-x: auto;">
+          <v-table density="compact" class="schedule-days-table">
             <thead>
               <tr>
-                <th>День</th>
-                <th>Выходной</th>
-                <th>Начало</th>
-                <th>Конец</th>
-                <th>Обед (мин)</th>
-                <th>Норма</th>
-                <th>Код для автозаполнения</th>
+                <th class="col-day">День</th>
+                <th class="col-off">Выходной</th>
+                <!-- ИСПРАВЛЕНО: зафиксированы минимальные ширины колонок времени,
+                     иначе после добавления «Кода для автозаполнения» значения
+                     обрезались (было видно "08:0" вместо "08:00") -->
+                <th class="col-time">Начало</th>
+                <th class="col-time">Конец</th>
+                <th class="col-lunch">Обед (мин)</th>
+                <th class="col-norm">Норма</th>
+                <th class="col-code">Код для автозаполнения</th>
               </tr>
             </thead>
             <tbody>
@@ -87,7 +92,7 @@
                 <td>
                   <v-checkbox v-model="day.is_day_off" color="primary" hide-details density="compact"></v-checkbox>
                 </td>
-                <td>
+                <td class="col-time">
                   <v-text-field
                     v-model="day.start_time"
                     type="time"
@@ -96,7 +101,7 @@
                     hide-details
                   ></v-text-field>
                 </td>
-                <td>
+                <td class="col-time">
                   <v-text-field
                     v-model="day.end_time"
                     type="time"
@@ -105,7 +110,7 @@
                     hide-details
                   ></v-text-field>
                 </td>
-                <td>
+                <td class="col-lunch">
                   <v-text-field
                     v-model.number="day.lunch_minutes"
                     type="number"
@@ -115,12 +120,12 @@
                     min="0"
                   ></v-text-field>
                 </td>
-                <td>
+                <td class="col-norm">
                   <v-chip :color="day.is_day_off ? 'grey' : 'green'" size="small">
                     {{ calculateDayNorm(day) }} ч
                   </v-chip>
                 </td>
-                <td style="min-width: 160px;">
+                <td class="col-code">
                   <!-- ИСПРАВЛЕНО: явный выбор кода для «Заполнить по графику» -->
                   <v-select
                     v-model="day.auto_fill_code"
@@ -135,6 +140,7 @@
               </tr>
             </tbody>
           </v-table>
+          </div>
 
           <v-alert type="info" variant="tonal" class="mt-4">
             Итого норма в неделю: <strong>{{ weekNorm }} ч</strong>
@@ -381,5 +387,27 @@ onMounted(() => {
   display: flex !important;
   justify-content: center !important;
   align-items: center !important;
+}
+
+/* ИСПРАВЛЕНО: ширины колонок таблицы дней в окне «Редактировать график работы».
+   После добавления колонки «Код для автозаполнения» колонки времени сжимались
+   и значения обрезались ("08:0" вместо "08:00", колонка "Обед (мин)" была не видна). */
+.schedule-days-table {
+  table-layout: fixed;
+  min-width: 920px; /* не сжимаемся — при узком окне включается горизонтальный скролл */
+}
+.schedule-days-table th,
+.schedule-days-table td {
+  overflow: visible; /* чтобы time/number-инпуты не обрезались ячейкой */
+}
+.schedule-days-table .col-day   { width: 110px; }
+.schedule-days-table .col-off   { width: 90px; text-align: center; }
+.schedule-days-table .col-time  { width: 130px; min-width: 130px; }
+.schedule-days-table .col-lunch { width: 110px; min-width: 110px; }
+.schedule-days-table .col-norm  { width: 90px; }
+.schedule-days-table .col-code  { width: 200px; min-width: 200px; }
+/* Инпуты внутри ячеек растягиваем на всю ширину колонки */
+.schedule-days-table td .v-input {
+  width: 100%;
 }
 </style>
