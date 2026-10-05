@@ -14,6 +14,16 @@
       <v-btn variant="outlined" color="primary" prepend-icon="mdi-calendar-clock" :disabled="!tabel?.entries?.length" @click="openFillByScheduleDialog">
         Заполнить по графику
       </v-btn>
+      <!-- ЗАПОЛНИТЬ ЧИСЛО: выбранный код в конкретную дату для всех сотрудников -->
+      <v-btn variant="outlined" color="success" prepend-icon="mdi-calendar-check"
+             :disabled="!tabel?.entries?.length" @click="openFillDayDialog">
+        Заполнить число
+      </v-btn>
+      <!-- ЗАПОЛНИТЬ СОТРУДНИКА: выбранный код на весь месяц для выделенного сотрудника -->
+      <v-btn variant="outlined" color="success" prepend-icon="mdi-account-edit"
+             :disabled="selectedRow === null" @click="openFillEmployeeDialog">
+        Заполнить сотрудника
+      </v-btn>
       <v-btn color="green darken-1" prepend-icon="mdi-content-save" :loading="saving" @click="save(true)">
         Сохранить
       </v-btn>
@@ -57,7 +67,8 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, idx) in tabel.entries" :key="row.employee_id">
+          <tr v-for="(row, idx) in tabel.entries" :key="row.employee_id"
+              :class="{ 'row-selected': selectedRow === idx }" @click="selectRow(idx)">
             <td class="col-no sticky-left-1"><div class="sticky-fill">{{ idx + 1 }}</div></td>
             <td class="col-fio sticky-left-2" :title="row.full_name"><div class="sticky-fill" style="flex-direction: column; align-items: flex-start;">
               {{ row.full_name }}<br /><small class="text-grey">{{ row.tab_number }}</small>
@@ -74,7 +85,7 @@
                       readonly
                       tabindex="-1"
                       v-bind="tooltipProps"
-                      @click="openCellPicker(row.employee_id, d, $event)"
+                      @click.stop="openCellPicker(row.employee_id, d, $event)"
                     />
                   </template>
                   <!-- Подсказка с деталями ячейки: код из справочника / числовые часы -->
@@ -141,7 +152,7 @@
                         class="code-menu-clear"
                         prepend-icon="mdi-close-circle-outline"
                         title="Очистить ячейку"
-                        @click="clearCell(row.employee_id, d)"
+                        @click.stop="clearCell(row.employee_id, d)"
                       />
                       <v-divider />
                       <v-list-item
@@ -149,7 +160,7 @@
                         :key="it.value"
                         :title="it.title"
                         prepend-icon="mdi-check"
-                        @click="pickCellValue(row.employee_id, d, it.value)"
+                        @click.stop="pickCellValue(row.employee_id, d, it.value)"
                       />
                       <v-list-item v-if="!filteredCellItems.length" title="Ничего не найдено" disabled />
                     </v-list>
@@ -180,7 +191,7 @@
                           variant="tonal" color="#2d5a3d" style="margin:1px;">{{ c.code }}</v-chip>
                 </span>
                 <a href="#" class="text-red text-caption" style="white-space:nowrap;"
-                   @click.prevent="removeEmployee(row)">Удалить</a>
+                   @click.prevent.stop="removeEmployee(row)">Удалить</a>
               </div>
             </td>
           </tr>
@@ -493,6 +504,158 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Диалог «Заполнить число»: выбранный код в конкретную дату для ВСЕХ сотрудников -->
+    <v-dialog v-model="fillDayDialog" max-width="520">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon icon="mdi-calendar-check" color="success" class="mr-2" />
+          Заполнить число
+        </v-card-title>
+        <v-card-text>
+          <div class="text-body-2 mb-3 text-grey-darken-2">
+            Выбранный код будет поставлен в <b>одну дату</b> (день месяца) сразу
+            <b>всем сотрудникам</b> табеля. Например: 15 сентября — код «К»
+            (командировка) для всего отдела. Изменения не сохранятся, пока вы не
+            нажмёте «Сохранить» — заполнение можно скорректировать вручную.
+          </div>
+
+          <v-select
+            v-model="fillDayDate"
+            :items="dayItems"
+            item-title="title"
+            item-value="value"
+            label="Дата (число месяца)"
+            density="compact"
+            hide-details="auto"
+            class="mb-3"
+          />
+
+          <v-combobox
+            v-model="fillDayCode"
+            :items="codeListItems"
+            label="Код заполнения"
+            density="compact"
+            hide-details="auto"
+            class="mb-1"
+          />
+          <div class="text-caption text-grey mb-2">
+            Можно выбрать код из справочника или ввести значение вручную
+            (например «8ч15м», «10»).
+          </div>
+          <div v-if="fillDayCode && !isValidValue(fillDayCode)" class="text-error text-caption mb-2">
+            Неизвестный код или неверное значение — выберите код из справочника
+            или введите часы (например «8ч15м» или «10»).
+          </div>
+
+          <v-checkbox
+            v-model="overwriteExistingDay"
+            label="Перезаписать существующие значения"
+            density="compact"
+            hide-details
+            class="mt-0"
+          />
+
+          <v-alert v-if="fillDayPreview.total === 0" type="info" density="compact" variant="tonal" class="mt-2">
+            В табеле нет сотрудников — заполнять нечего.
+          </v-alert>
+          <v-alert v-else-if="fillDayPreview.toFill === 0" type="warning" density="compact" variant="tonal" class="mt-2">
+            Все ячейки за выбранную дату уже заполнены. Включите
+            «Перезаписать существующие значения», чтобы обновить их.
+          </v-alert>
+          <div v-else class="text-body-2 mt-2">
+            Будет заполнено ячеек:
+            <b class="text-primary">{{ fillDayPreview.toFill }}</b>
+            <span class="text-caption text-grey">
+              (сотрудников: {{ fillDayPreview.total }},
+              пропущено заполненных: {{ fillDayPreview.skippedFilled }})
+            </span>
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="fillDayDialog = false">Отмена</v-btn>
+          <v-btn color="success" prepend-icon="mdi-calendar-check"
+                 :disabled="!fillDayCode || !isValidValue(fillDayCode) || fillDayPreview.toFill === 0"
+                 @click="applyFillDay">
+            Заполнить
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Диалог «Заполнить сотрудника»: выбранный код на весь месяц для выделенного сотрудника -->
+    <v-dialog v-model="fillEmpDialog" max-width="520">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon icon="mdi-account-edit" color="success" class="mr-2" />
+          Заполнить сотрудника
+        </v-card-title>
+        <v-card-text>
+          <div class="text-body-2 mb-3 text-grey-darken-2">
+            Все дни месяца будут заполнены выбранным кодом для
+            <b>выделенного сотрудника</b>. Кликните по строке табеля, чтобы
+            выделить сотрудника. Изменения не сохранятся, пока вы не нажмёте
+            «Сохранить» — заполнение можно скорректировать вручную.
+          </div>
+
+          <v-alert v-if="selectedRowEntry" type="info" density="compact" variant="tonal" class="mb-3">
+            Выделен сотрудник: <b>{{ selectedRowEntry.full_name }}</b>
+            <span v-if="selectedRowEntry.tab_number"> (Таб. {{ selectedRowEntry.tab_number }})</span>
+          </v-alert>
+
+          <v-combobox
+            v-model="fillEmpCode"
+            :items="codeListItems"
+            label="Код заполнения"
+            density="compact"
+            hide-details="auto"
+            class="mb-1"
+          />
+          <div class="text-caption text-grey mb-2">
+            Можно выбрать код из справочника или ввести значение вручную
+            (например «8ч15м», «10»).
+          </div>
+          <div v-if="fillEmpCode && !isValidValue(fillEmpCode)" class="text-error text-caption mb-2">
+            Неизвестный код или неверное значение — выберите код из справочника
+            или введите часы (например «8ч15м» или «10»).
+          </div>
+
+          <v-checkbox
+            v-model="overwriteExistingEmp"
+            label="Перезаписать существующие значения"
+            density="compact"
+            hide-details
+            class="mt-0"
+          />
+
+          <v-alert v-if="!selectedRowEntry" type="warning" density="compact" variant="tonal" class="mt-2">
+            Сотрудник не выделен — кликните по строке в табеле.
+          </v-alert>
+          <v-alert v-else-if="fillEmpPreview.toFill === 0" type="warning" density="compact" variant="tonal" class="mt-2">
+            Все дни этого сотрудника уже заполнены. Включите
+            «Перезаписать существующие значения», чтобы обновить их.
+          </v-alert>
+          <div v-else-if="selectedRowEntry" class="text-body-2 mt-2">
+            Будет заполнено ячеек:
+            <b class="text-primary">{{ fillEmpPreview.toFill }}</b>
+            <span class="text-caption text-grey">
+              (дней в месяце: {{ fillEmpPreview.daysTotal }},
+              пропущено заполненных: {{ fillEmpPreview.skippedFilled }})
+            </span>
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="fillEmpDialog = false">Отмена</v-btn>
+          <v-btn color="success" prepend-icon="mdi-account-check"
+                 :disabled="!selectedRowEntry || !fillEmpCode || !isValidValue(fillEmpCode) || fillEmpPreview.toFill === 0"
+                 @click="applyFillEmployee">
+            Заполнить
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
   <v-progress-circular v-else indeterminate color="#2d5a3d" />
 </template>
@@ -529,6 +692,154 @@ const editingCode = ref(null)
 // рабочий день — норма > 0 (day_norms[d]) и заданный код в графике.
 const fillDialog = ref(false)
 const overwriteExisting = ref(true)  // перезаписывать уже заполненные ячейки или нет
+
+// ─── «Заполнить число» / «Заполнить сотрудника» ────────────────────────────
+// fillDayDialog  — выбранный код ставится в одну дату всем сотрудникам табеля.
+// fillEmpDialog  — выбранный код ставится на весь месяц выделенному сотруднику.
+// selectedRow    — индекс выделенной строки табеля (null — никто не выделен).
+const fillDayDialog = ref(false)
+const fillEmpDialog = ref(false)
+const fillDayDate = ref(null)        // число месяца (1..days_in_month)
+const fillDayCode = ref('')          // код/значение для заполнения даты
+const fillEmpCode = ref('')          // код/значение для заполнения сотрудника
+const overwriteExistingDay = ref(true)
+const overwriteExistingEmp = ref(true)
+const selectedRow = ref(null)
+
+// Выделенная строка табеля (объект записи) или null.
+const selectedRowEntry = computed(() => {
+  if (selectedRow.value === null || !tabel.value) return null
+  return tabel.value.entries[selectedRow.value] ?? null
+})
+
+// Клик по строке табеля — выделить сотрудника (повторный клик — снять).
+// Ячейки, поля ввода, кнопки и ссылки внутри строки останавливают всплытие
+// события сами (см. @click.stop), поэтому выделение их не мешает.
+function selectRow(idx) {
+  selectedRow.value = selectedRow.value === idx ? null : idx
+  const row = selectedRowEntry.value
+  if (row) {
+    message.value = `Выделен сотрудник: ${row.full_name}` +
+      (row.tab_number ? ` (Таб. ${row.tab_number})` : '') +
+      ' — нажмите «Заполнить сотрудника», чтобы заполнить месяц.'
+    messageType.value = 'info'
+  }
+}
+
+// Числа месяца для селектора даты: «15 (ср)».
+const dayItems = computed(() => {
+  if (!tabel.value) return []
+  const list = []
+  for (let d = 1; d <= tabel.value.days_in_month; d++) {
+    list.push({ title: `${d} (${getDayOfWeek(d)})`, value: d })
+  }
+  return list
+})
+
+// Список кодов справочника для диалогов ручного заполнения (v-combobox:
+// можно и выбрать код, и ввести значение вручную).
+const codeListItems = computed(() => cellItems.value.map(it => it.value))
+
+// Общие предпросмотр/заполнение произвольного набора ячеек.
+function previewCells(cells, overwrite) {
+  let toFill = 0, skippedFilled = 0
+  for (const { row, d } of cells) {
+    const filled = !!(row.days[d] ?? '').toString().trim()
+    if (filled && !overwrite) { skippedFilled++; continue }
+    toFill++
+  }
+  return { toFill, skippedFilled }
+}
+
+function applyCells(cells, val, overwrite) {
+  let filled = 0
+  for (const { row, d } of cells) {
+    const cur = (row.days[d] ?? '').toString().trim()
+    if (cur && !overwrite) continue
+    row.days[d] = val
+    markDirty(row.employee_id, d)
+    validateCell(row.employee_id, d)
+    filled++
+  }
+  return filled
+}
+
+// Ячейки для «Заполнить число»: одна дата × все сотрудники.
+const fillDayCells = computed(() => {
+  if (!tabel.value || !fillDayDate.value) return []
+  const d = fillDayDate.value
+  return tabel.value.entries.map(row => ({ row, d }))
+})
+
+const fillDayPreview = computed(() => {
+  const cells = fillDayCells.value
+  const { toFill, skippedFilled } = previewCells(cells, overwriteExistingDay.value)
+  return { total: cells.length, toFill, skippedFilled }
+})
+
+function openFillDayDialog() {
+  overwriteExistingDay.value = true
+  // По умолчанию — сегодня, если этот день входит в месяц табеля
+  const now = new Date()
+  const inMonth = now.getFullYear() === tabel.value?.year &&
+    (now.getMonth() + 1) === tabel.value?.month
+  fillDayDate.value = inMonth ? now.getDate() : 1
+  fillDayCode.value = ''
+  fillDayDialog.value = true
+}
+
+function applyFillDay() {
+  const val = String(fillDayCode.value ?? '').trim()
+  if (!val || !isValidValue(val)) return
+  const cells = fillDayCells.value
+  const filled = applyCells(cells, val, overwriteExistingDay.value)
+  if (filled === 0) {
+    message.value = 'Нечего заполнять: все ячейки за эту дату уже заполнены (включите перезапись).'
+    messageType.value = 'warning'
+    return
+  }
+  fillDayDialog.value = false
+  message.value = `Заполнено: ${filled} ${pluralCells(filled)} за ${fillDayDate.value} ${monthNames[(tabel.value?.month ?? 1) - 1]} — код «${val}». Нажмите «Сохранить», чтобы записать изменения.`
+  messageType.value = 'success'
+}
+
+// Ячейки для «Заполнить сотрудника»: все дни месяца выделенной строки.
+const fillEmpCells = computed(() => {
+  const row = selectedRowEntry.value
+  if (!row || !tabel.value) return []
+  const cells = []
+  for (let d = 1; d <= tabel.value.days_in_month; d++) cells.push({ row, d })
+  return cells
+})
+
+const fillEmpPreview = computed(() => {
+  const cells = fillEmpCells.value
+  const { toFill, skippedFilled } = previewCells(cells, overwriteExistingEmp.value)
+  return { daysTotal: cells.length, toFill, skippedFilled }
+})
+
+function openFillEmployeeDialog() {
+  if (selectedRow.value === null) return
+  overwriteExistingEmp.value = true
+  fillEmpCode.value = ''
+  fillEmpDialog.value = true
+}
+
+function applyFillEmployee() {
+  const row = selectedRowEntry.value
+  const val = String(fillEmpCode.value ?? '').trim()
+  if (!row || !val || !isValidValue(val)) return
+  const cells = fillEmpCells.value
+  const filled = applyCells(cells, val, overwriteExistingEmp.value)
+  if (filled === 0) {
+    message.value = 'Нечего заполнять: все дни этого сотрудника уже заполнены (включите перезапись).'
+    messageType.value = 'warning'
+    return
+  }
+  fillEmpDialog.value = false
+  message.value = `Заполнено: ${filled} ${pluralCells(filled)} для ${row.full_name} — код «${val}». Нажмите «Сохранить», чтобы записать изменения.`
+  messageType.value = 'success'
+}
 
 // ИСПРАВЛЕНО: Добавлено свойство unit ('days' или 'hours') для точного расчета
 // Колонка «Итого часов» намеренно НЕ последняя: после неё идут остальные
@@ -1535,6 +1846,10 @@ onMounted(async () => {
 .tabel-table td.col-del.sticky-right { background-color: white; }
 .tabel-table tr.add-row .sticky-left-1,
 .tabel-table tr.add-row .sticky-left-2 { background-color: #f9fbe7; }
+/* Выделенная строка сотрудника (клик по строке — для «Заполнить сотрудника»):
+   синяя подсветка всех ячеек, включая закреплённые sticky-колонки */
+.tabel-table tbody tr.row-selected td { background-color: #e3f2fd !important; }
+.tabel-table tbody tr:hover td { cursor: pointer; }
 /* Заполнение sticky-ячейки на всю высоту строки (равномерный фон и рамка) */
 .sticky-fill {
   position: relative; z-index: 1;
