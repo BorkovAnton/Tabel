@@ -142,6 +142,12 @@ def summary_overtime_hours(entry, dim: int, codes: dict, norms_by_dow: dict,
                 # направлением overtime_hours) — ВСЕ его часы идут в
                 # «Сверхурочно с табеля» (как в calculateSummary на фронтенде).
                 total_ot += total_h
+            elif (getattr(code, "use_schedule_hours", False) and not is_ot_code
+                  and norm <= 0 and total_h > 0):
+                # НОВОЕ: «Время по графику» + «Часы для выходного дня»
+                # (weekend_hours): работа в законный выходной (норма = 0) —
+                # ВСЕ эти часы считаются сверхурочными (зеркало фронтенда).
+                total_ot += total_h
             elif total_h > 0 and not is_ot_code and not getattr(code, "use_schedule_hours", False):
                 total_ot += max(0.0, total_h - norm)
         else:

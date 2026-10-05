@@ -743,14 +743,19 @@ function cellTipData(val, row, d) {
       }
     }
     let ot = 0
+    const normV = row ? getDayNorm(row, d) : null
     if (dests.includes('overtime_hours')) {
       // ИСПРАВЛЕНО: код сам является сверхурочным (например «8с» с направлением
       // overtime_hours) — ВСЕ его часы идут в сверхурочные (см. calculateSummary).
       ot = total
+    } else if (row && total > 0 && codeObj.use_schedule_hours && normV !== null && normV <= 0) {
+      // НОВОЕ: «Время по графику» + выходные часы (weekend_hours): работа в
+      // законный выходной (норма = 0) — ВСЕ эти часы считаются сверхурочными.
+      ot = total
     } else if (row && total > 0 && !codeObj.use_schedule_hours) {
       // Обычный код: сверхурочные = превышение над нормой графика.
-      // Для «Время по графику» часы == норма → сверхурочных нет.
-      ot = Math.max(0, total - getDayNorm(row, d))
+      // Для «Время по графику» в будний день часы == норма → сверхурочных нет.
+      ot = Math.max(0, total - normV)
     }
     return { kind: 'code', code: codeObj.code, name: codeObj.name, day, night, total, ot, schedNote }
   }
@@ -1091,7 +1096,12 @@ function calculateSummary(row) {
       // нормы само по себе день в колонку «сверхурочные дни» не попадает
       // (например, код "8" при норме 8.25).
       const isOvertimeCode = dests.includes('overtime_hours') || dests.includes('overtime_days')
-      if (totalHours > 0 && !isOvertimeCode && !codeObj.use_schedule_hours) {
+      if (codeObj.use_schedule_hours && !isOvertimeCode && norm <= 0 && totalHours > 0) {
+        // НОВОЕ: «Время по графику» + «Часы для выходного дня»: работа в законный
+        // выходной (норма = 0). Эти часы — сверхурочные: добавляем их в
+        // «Сверхурочные часы», даже если у кода нет направления overtime_hours.
+        summary.overtime_hours += totalHours
+      } else if (totalHours > 0 && !isOvertimeCode && !codeObj.use_schedule_hours) {
         const ot = Math.max(0, totalHours - norm)
         if (ot > 0) {
           summary.overtime_hours += ot
