@@ -58,8 +58,12 @@ def raw_to_hours(value: str) -> float | None:
     return None
 
 
-def cell_hours(value: str, codes: dict) -> float:
-    """Часы из значения ячейки табеля: число или код из справочника.»"""
+def cell_hours(value: str, codes: dict, day_norm: float | None = None) -> float:
+    """Часы из значения ячейки табеля: число или код из справочника.»
+
+    day_norm — норма графика на этот день (если известна): нужна для кодов
+    с «Время по графику» (use_schedule_hours), чтобы часы совпадали с табелем.
+    """
     s = str(value or "").strip().lower().replace(",", ".")
     if not s:
         return 0.0
@@ -70,6 +74,8 @@ def cell_hours(value: str, codes: dict) -> float:
         return float(s)
     c = codes.get(s)
     if c:
+        if getattr(c, "use_schedule_hours", False) and day_norm is not None:
+            return code_effective_hours(c, day_norm)[2]
         return (c.hours_day or 0.0) + (c.hours_night or 0.0)
     return 0.0
 
@@ -79,11 +85,20 @@ def code_effective_hours(code, day_norm: float) -> tuple[float, float, float]:
 
     Зеркалирует фронтенд-функцию codeHoursForDay из TabelFill.vue:
     если у кода включено «Время по графику» (use_schedule_hours) — часы
-    берутся из нормы графика на этот день, иначе — фиксированные
-    hours_day/hours_night из справочника.
+    берутся из нормы графика на этот день; в выходной/праздник (норма = 0)
+    используются фиксированные weekend_hours из справочника (например, 8 для
+    «К»). Иначе — фиксированные hours_day/hours_night из справочника.
     """
     if getattr(code, "use_schedule_hours", False):
         n = float(day_norm or 0.0)
+        if n <= 0:
+            we = getattr(code, "weekend_hours", None)
+            try:
+                we = float(we) if we is not None else 0.0
+            except (TypeError, ValueError):
+                we = 0.0
+            we = we if we > 0 else 0.0
+            return we, 0.0, we
         return n, 0.0, n
     day = float(code.hours_day or 0.0)
     night = float(code.hours_night or 0.0)

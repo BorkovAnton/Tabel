@@ -20,6 +20,9 @@ class TimeCodeBase(BaseModel):
     hours_night: float = 0.0
     # «Время по графику»: часы кода берутся из нормы графика на конкретный день
     use_schedule_hours: bool = False
+    # «Часы для выходного дня»: фиксированные часы для выходных/праздников
+    # (норма графика = 0). Например, 8 для кода «К» (командировка в выходной).
+    weekend_hours: Optional[float] = None
     destinations: List[str] = []
     is_active: bool = True
 
@@ -47,6 +50,7 @@ class TimeCodeUpdate(BaseModel):
     hours_day: Optional[float] = None
     hours_night: Optional[float] = None
     use_schedule_hours: Optional[bool] = None
+    weekend_hours: Optional[float] = None
     is_active: Optional[bool] = None
 
 
@@ -93,7 +97,7 @@ def update_time_code(
     if not db_code:
         raise HTTPException(status_code=404, detail="Код не найден")
 
-    for field in ("name", "hours_day", "hours_night", "use_schedule_hours", "is_active", "destinations"):
+    for field in ("name", "hours_day", "hours_night", "use_schedule_hours", "weekend_hours", "is_active", "destinations"):
         if field in code_data:
             setattr(db_code, field, code_data[field])
 

@@ -87,6 +87,9 @@
                       <div><v-icon size="x-small" icon="mdi-weather-sunny" class="mr-1" />День: {{ fmtNum(cellTipData(row.days[d], row, d).day) }}</div>
                       <div><v-icon size="x-small" icon="mdi-weather-night" class="mr-1" />Ночь: {{ fmtNum(cellTipData(row.days[d], row, d).night) }}</div>
                       <div class="font-weight-bold"><v-icon size="x-small" icon="mdi-check-circle-outline" class="mr-1" />Итого часов: {{ fmtNum(cellTipData(row.days[d], row, d).total) }}</div>
+                      <div v-if="cellTipData(row.days[d], row, d).schedNote" class="text-caption text-grey-darken-1">
+                        <v-icon size="x-small" icon="mdi-information-outline" class="mr-1" />{{ cellTipData(row.days[d], row, d).schedNote }}
+                      </div>
                       <div v-if="cellTipData(row.days[d], row, d).ot > 0" class="text-warning">
                         <v-icon size="x-small" icon="mdi-alert-outline" class="mr-1" />Сверхурочно: {{ fmtNum(cellTipData(row.days[d], row, d).ot) }} (норма по графику {{ fmtNum(getDayNorm(row, d)) }})
                       </div>
@@ -282,6 +285,7 @@
                 <th style="width: 80px;">Часов день</th>
                 <th style="width: 90px;">Часов ночь</th>
                 <th style="width: 110px;" title="Часы берутся из нормы графика работы на конкретный день">По графику</th>
+                <th style="width: 110px;" title="Фиксированные часы в выходные/праздники (норма 0), например 8 для командировки «К»">Часы в выходной</th>
                 <th style="min-width: 250px; max-width: 400px;">Направления</th>
                 <th v-if="auth.isAdmin" style="width: 100px;">Действия</th>
               </tr>
@@ -294,6 +298,10 @@
                 <td class="text-center">{{ c.hours_night }}</td>
                 <td class="text-center">
                   <v-icon v-if="c.use_schedule_hours" size="small" color="#e65100">mdi-check-circle</v-icon>
+                  <span v-else class="text-grey text-caption">—</span>
+                </td>
+                <td class="text-center">
+                  <span v-if="c.weekend_hours != null && c.weekend_hours !== ''">{{ Number(c.weekend_hours) || 0 }}</span>
                   <span v-else class="text-grey text-caption">—</span>
                 </td>
                 
@@ -368,6 +376,20 @@
                 class="align-self-center mt-0"
                 style="max-width: 190px;"
                 title="Часы берутся из нормы графика работы на конкретный день (пн — 8.25ч, пт — 7ч и т.п.), например для командировок"
+              />
+
+              <v-text-field
+                v-model.number="newCode.weekend_hours"
+                label="Часы в выходной"
+                type="number"
+                step="0.01"
+                min="0"
+                density="compact"
+                variant="outlined"
+                style="max-width:130px;"
+                hide-details
+                :disabled="!newCode.use_schedule_hours"
+                title="Фиксированные часы для выходных/праздников (норма графика = 0). Например, 8 для «К»: в будни — по графику, в выходной — 8 ч. Пусто — как раньше (0 ч)."
               />
 
               <v-select
@@ -495,7 +517,7 @@ const messageType = ref('success')
 const saving = ref(false)
 
 const codesDialog = ref(false)
-const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, destinations: [] })
+const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, weekend_hours: null, destinations: [] })
 const codeError = ref('')
 const isEditing = ref(false)
 const editingCode = ref(null)
@@ -678,13 +700,21 @@ function getDayNorm(row, d) {
 }
 
 // Эффективные часы кода для конкретного дня.
-// Если у кода включено «Время по графику» (use_schedule_hours) — часы берутся
-// из нормы графика работы на этот день (getDayNorm): командировка в пн = 8.25ч,
-// в пт = 7ч и т.п. Иначе — фиксированные hours_day/hours_night из справочника.
+// Если у кода включено «Время по графику» (use_schedule_hours):
+//  - будний день (норма > 0) — часы берутся из нормы графика (пн = 8.25ч и т.п.);
+//  - выходной/праздник (норма = 0) — фиксированные weekend_hours из справочника
+//    (например, 8 для «К»: командировка в выходной оплачивается как 8 часов).
+// Иначе — фиксированные hours_day/hours_night из справочника.
 function codeHoursForDay(codeObj, row, d) {
   if (!codeObj) return { day: 0, night: 0, total: 0 }
   if (codeObj.use_schedule_hours) {
     const norm = row ? getDayNorm(row, d) : 8
+    if (norm <= 0) {
+      // Выходной: используем «Часы для выходного дня», если заданы
+      const we = Number(codeObj.weekend_hours)
+      const weHours = Number.isFinite(we) && we > 0 ? we : 0
+      return { day: weHours, night: 0, total: weHours }
+    }
     return { day: norm, night: 0, total: norm }
   }
   const day = Number(codeObj.hours_day) || 0
@@ -702,6 +732,16 @@ function cellTipData(val, row, d) {
     const night = eff.night
     const total = eff.total
     const dests = codeObj.destinations || []
+    // Подсказка: «Время по графику» в выходной с фиксированными часами
+    let schedNote = ''
+    if (codeObj.use_schedule_hours && row) {
+      const norm = getDayNorm(row, d)
+      if (norm <= 0 && total > 0) {
+        schedNote = `Выходной: ${hoursToHM(total)} (часы для выходного дня)`
+      } else if (norm > 0) {
+        schedNote = 'По графику'
+      }
+    }
     let ot = 0
     if (dests.includes('overtime_hours')) {
       // ИСПРАВЛЕНО: код сам является сверхурочным (например «8с» с направлением
@@ -712,7 +752,7 @@ function cellTipData(val, row, d) {
       // Для «Время по графику» часы == норма → сверхурочных нет.
       ot = Math.max(0, total - getDayNorm(row, d))
     }
-    return { kind: 'code', code: codeObj.code, name: codeObj.name, day, night, total, ot }
+    return { kind: 'code', code: codeObj.code, name: codeObj.name, day, night, total, ot, schedNote }
   }
   const hours = rawToHours(s)
   if (hours !== null) {
@@ -1324,6 +1364,7 @@ function editCode(c) {
     hours_day: c.hours_day,
     hours_night: c.hours_night,
     use_schedule_hours: !!c.use_schedule_hours,
+    weekend_hours: (c.weekend_hours == null || c.weekend_hours === '') ? null : Number(c.weekend_hours),
     destinations: [...(c.destinations || [])]
   }
   codeError.value = ''
@@ -1332,7 +1373,7 @@ function editCode(c) {
 function cancelEdit() {
   isEditing.value = false
   editingCode.value = null
-  newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, destinations: [] }
+  newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, weekend_hours: null, destinations: [] }
   codeError.value = ''
 }
 

@@ -17,5 +17,9 @@ class TimeCode(Base):
     # на конкретный день (командировка в пн = 8.25ч, в пт = 7ч и т.п.),
     # а не из фиксированных hours_day/hours_night.
     use_schedule_hours: Mapped[bool] = mapped_column(Boolean, default=False)
+    # «Часы для выходного дня»: если use_schedule_hours включён и день выходной
+    # (норма графика = 0), брать фиксированные часы отсюда (например, 8 для «К»).
+    # NULL/0 — поведение как раньше (в выходной 0 часов).
+    weekend_hours: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     destinations = Column(JSON, default=list)
