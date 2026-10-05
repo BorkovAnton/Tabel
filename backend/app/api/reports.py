@@ -167,7 +167,7 @@ class ReportRow(BaseModel):
     tabel_hours: float = 0.0      # отработано часов с табеля
     fact_hours: float = 0.0       # отработано часов фактически (СКУД)
     overtime_planned: float = 0.0  # сверхурочно с табеля (из итогов заполненного вручную табеля: превышение нормы + КДУ)
-    overtime_hours: float = 0.0   # сверхурочно факт = факт - табель (не меньше 0)
+    overtime_hours: float = 0.0   # сверхурочно факт = сумма ежедневных overtime из TimesheetRecord
 
 
 class ReportOut(BaseModel):
@@ -263,21 +263,34 @@ def hours_report(
         TimesheetRecord.employee_id,
         TimesheetRecord.date,
         TimesheetRecord.fact_hours,
+        TimesheetRecord.overtime,
     ).filter(TimesheetRecord.date >= period_start, TimesheetRecord.date <= period_end)
 
     # одна запись на сотрудника+день (на случай дублей берём максимум)
     fact_day: dict[tuple[int, date], float] = {}
-    for emp_id, dday, fh in fact_q.all():
+    ot_day: dict[tuple[int, date], float] = {}
+    for emp_id, dday, fh, otv in fact_q.all():
         key = (emp_id, dday)
-        fact_day[key] = max(fact_day.get(key, 0.0), fh or 0.0)
+        if (fh or 0.0) >= fact_day.get(key, 0.0):
+            fact_day[key] = fh or 0.0
+        # «Сверхурочно факт» — ежедневные сверхурочные из поля overtime
+        # (превышение над нормой дня). Суммируются ПО ДНЯМ, а не как
+        # max(0, общий факт - общая норма): даже если суммарный факт <
+        # нормы месяца (недоотработанные дни), переработки в отдельные
+        # дни считаются корректно.
+        ot_day[key] = max(ot_day.get(key, 0.0), otv or 0.0)
     fact_hours: dict[int, float] = {}
+    overtime_fact: dict[int, float] = {}
     for (emp_id, _dd), v in fact_day.items():
         fact_hours[emp_id] = fact_hours.get(emp_id, 0.0) + v
+    for (emp_id, _dd), v in ot_day.items():
+        if v > 0:
+            overtime_fact[emp_id] = overtime_fact.get(emp_id, 0.0) + v
 
     # --- объединяем ---
     from app.models.employee import Employee
 
-    emp_ids = set(tabel_hours) | set(fact_hours) | set(overtime_tab)
+    emp_ids = set(tabel_hours) | set(fact_hours) | set(overtime_tab) | set(overtime_fact)
     if not emp_ids:
         return ReportOut(year=year, month=month, rows=[])
 
@@ -290,7 +303,10 @@ def hours_report(
             continue
         th = round(tabel_hours.get(emp.id, 0.0), 2)
         fh = round(fact_hours.get(emp.id, 0.0), 2)
-        ot = round(max(fh - th, 0.0), 2)
+        # «Сверхурочно факт» = сумма ежедневных сверхурочных (поле overtime
+        # в TimesheetRecord), а НЕ max(0, общий факт - табель): переработки
+        # по отдельным дням не «съедаются» недоотработкой за другие дни.
+        ot = round(overtime_fact.get(emp.id, 0.0), 2)
         otp = round(overtime_tab.get(emp.id, 0.0), 2)
         rows.append(ReportRow(
             employee_id=emp.id,
