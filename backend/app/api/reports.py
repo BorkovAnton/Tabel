@@ -244,16 +244,29 @@ def hours_report(
             continue
         if not _in_dept(emp.department_id):
             continue
-        h = 0.0
-        for d in range(1, dim + 1):
-            h += cell_hours(getattr(e, f"day_{d}", None), codes)
-        tabel_hours[e.employee_id] = tabel_hours.get(e.employee_id, 0.0) + h
         # «Сверхурочно с табеля» — из колонок, которые пользователь считает руками
         # в табеле (превышение над нормой графика + КДУ), а не только из ручного КДУ.
         norms_by_dow = None
         if emp.schedule_id and emp.schedule_id in sched_norms:
             norms_by_dow = sched_norms[emp.schedule_id]
         emp_norm = float(emp.norm_hours) if (emp.norm_hours is not None and float(emp.norm_hours) > 0) else 8.0
+
+        def _norm_for_day(d: int, _nb=norms_by_dow, _en=emp_norm) -> float | None:
+            """Норма дня сотрудника из его графика (0=Пн ... 6=Вс)."""
+            if _nb is not None:
+                return float(_nb.get(date(year, month, d).weekday(), 0.0))
+            return _en
+
+        # ИСПРАВЛЕНО: «Часы с табеля» считаются ИЗ РУЧНОГО ТАБЕЛЯ (TabelEntry)
+        # с учётом индивидуального графика сотрудника: для кодов с
+        # use_schedule_hours (например «8ч15м», «К») передаётся day_norm —
+        # в будни берутся часы по графику, в выходной (норма=0) — фиксированные
+        # weekend_hours. Без day_norm такие коды давали 0 часов, поэтому в
+        # отчёте у Поцелуйкина было 74ч15м вместо ~200ч из табеля.
+        h = 0.0
+        for d in range(1, dim + 1):
+            h += cell_hours(getattr(e, f"day_{d}", None), codes, _norm_for_day(d))
+        tabel_hours[e.employee_id] = tabel_hours.get(e.employee_id, 0.0) + h
         ot = summary_overtime_hours(e, dim, codes, norms_by_dow, year, month, emp_norm)
         if ot > 0:
             overtime_tab[e.employee_id] = overtime_tab.get(e.employee_id, 0.0) + ot
