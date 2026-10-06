@@ -31,6 +31,7 @@ def _to_out(d: Document) -> DocumentOut:
         start_date=d.start_date,
         end_date=d.end_date,
         code=d.code,
+        hours=float(d.hours) if d.hours is not None else None,
         is_active=d.is_active,
         created_at=d.created_at,
         employee_full_name=emp.full_name if emp else "",
@@ -89,6 +90,7 @@ def create_document(
         start_date=payload.start_date,
         end_date=payload.end_date,
         code=payload.code,
+        hours=payload.hours,
         is_active=payload.is_active,
     )
     db.add(doc)

@@ -23,6 +23,7 @@ class DocumentBase(BaseModel):
     start_date: date
     end_date: date
     code: str
+    hours: Optional[float] = None   # часы события (автоподставляются из кода часов)
     is_active: bool = True
 
     @field_validator("code")
@@ -54,6 +55,7 @@ class DocumentUpdate(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     code: Optional[str] = None
+    hours: Optional[float] = None
     is_active: Optional[bool] = None
 
 

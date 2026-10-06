@@ -82,6 +82,7 @@ class DocumentBrief(BaseModel):
     doc_type: str
     title: str = ""
     code: str
+    hours: Optional[float] = None   # часы события (из выбранного «Кода часов»)
     start_date: date
     end_date: date
 
@@ -379,7 +380,9 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
     documents_brief = [
         DocumentBrief(
             id=d.id, employee_id=d.employee_id, doc_type=d.doc_type,
-            title=d.title or "", code=d.code, start_date=d.start_date, end_date=d.end_date,
+            title=d.title or "", code=d.code,
+            hours=float(d.hours) if d.hours is not None else None,
+            start_date=d.start_date, end_date=d.end_date,
         ) for d in doc_rows
     ]
     return TabelDetailOut(

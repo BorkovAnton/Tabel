@@ -29,6 +29,8 @@ MIGRATIONS = [
     ("time_codes", "weekend_hours", "NUMERIC(5,2) DEFAULT NULL"),
     # Роль «Документы и приказы» — ввод событий сотрудников для автозаполнения табеля
     ("users", "is_documents_manager", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # Часы события в документе (автоподставляются из выбранного «Кода часов»)
+    ("documents", "hours", "NUMERIC(5,2) DEFAULT NULL"),
 ]
 
 

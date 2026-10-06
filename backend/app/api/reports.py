@@ -238,6 +238,16 @@ def hours_report(
     tabel_hours: dict[int, float] = {}
     overtime_tab: dict[int, float] = {}
 
+    # Активные «Документы и приказы» за период — по сотрудникам. Если код дня
+    # табеля совпадает с кодом документа, в отчёт берутся часы из документа.
+    from app.models.document import Document
+    docs_by_emp: dict[int, list] = {}
+    for dc in db.query(Document).filter(
+            Document.is_active.is_(True),
+            Document.start_date <= period_end,
+            Document.end_date >= period_start).all():
+        docs_by_emp.setdefault(dc.employee_id, []).append(dc)
+
     for e in tabel_q.all():
         emp = e.employee
         if emp is None:
@@ -263,9 +273,25 @@ def hours_report(
         # в будни берутся часы по графику, в выходной (норма=0) — фиксированные
         # weekend_hours. Без day_norm такие коды давали 0 часов, поэтому в
         # отчёте у Поцелуйкина было 74ч15м вместо ~200ч из табеля.
+        # Дни активных «Документов и приказов» (отпуск/командировка/больничный):
+        # если код дня совпадает с кодом документа — берём часы из документа
+        # (field hours, проставляются из справочника «Коды часов»), что даёт
+        # корректный результат даже когда день ещё не внесён в табель вручную.
         h = 0.0
+        emp_docs = docs_by_emp.get(e.employee_id, [])
         for d in range(1, dim + 1):
-            h += cell_hours(getattr(e, f"day_{d}", None), codes, _norm_for_day(d))
+            val = str(getattr(e, f"day_{d}", None) or "").strip().lower()
+            doc_hit = None
+            dtoday = date(year, month, d)
+            for dc in emp_docs:
+                if dc.start_date <= dtoday <= dc.end_date and \
+                        str(dc.code or "").strip().lower() == val:
+                    doc_hit = dc
+                    break
+            if doc_hit is not None and doc_hit.hours is not None:
+                h += float(doc_hit.hours)
+            else:
+                h += cell_hours(getattr(e, f"day_{d}", None), codes, _norm_for_day(d))
         tabel_hours[e.employee_id] = tabel_hours.get(e.employee_id, 0.0) + h
         ot = summary_overtime_hours(e, dim, codes, norms_by_dow, year, month, emp_norm)
         if ot > 0:

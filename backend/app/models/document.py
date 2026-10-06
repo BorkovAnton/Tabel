@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -27,6 +27,9 @@ class Document(Base):
     end_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     # Код справочника «Коды часов», которым автозаполнение отметит дни события
     code: Mapped[str] = mapped_column(String(10), nullable=False)
+    # Часы для табеля (автоматически из выбранного «Кода часов», можно изменить):
+    # используются при расчёте отчёта по часам для дней события.
+    hours: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True, default=None)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

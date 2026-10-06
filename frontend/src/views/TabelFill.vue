@@ -1191,10 +1191,19 @@ function getDayNorm(row, d) {
 //  - выходной/праздник (норма = 0) — фиксированные weekend_hours из справочника
 //    (например, 8 для «К»: командировка в выходной оплачивается как 8 часов).
 // Иначе — фиксированные hours_day/hours_night из справочника.
-function codeHoursForDay(codeObj, row, d) {
+function codeHoursForDay(codeObj, row, d, normOverride = null) {
   if (!codeObj) return { day: 0, night: 0, total: 0 }
   if (codeObj.use_schedule_hours) {
+    // normOverride — часы из ДОКУМЕНТА (поле «Часы» документа, подставляется
+    // из выбранного кода часов); если задано (> 0) — используем его вместо
+    // нормы графика. Норму дня при этом берём у самого дня (getDayNorm),
+    // чтобы различать будни/выходные.
+    const ov = Number(normOverride)
     const norm = row ? getDayNorm(row, d) : 8
+    if (Number.isFinite(ov) && ov > 0) {
+      if (norm <= 0) return { day: 0, night: ov, total: ov }   // событие в выходной → ночь
+      return { day: ov, night: 0, total: ov }                  // событие в будни → день
+    }
     if (norm <= 0) {
       // Выходной: используем «Часы для выходного дня», если заданы
       const we = Number(codeObj.weekend_hours)
@@ -1206,6 +1215,32 @@ function codeHoursForDay(codeObj, row, d) {
   const day = Number(codeObj.hours_day) || 0
   const night = Number(codeObj.hours_night) || 0
   return { day, night, total: day + night }
+}
+
+// Часы активного документа («Документы и приказы»), покрывающего день d
+// сотрудника row и использующего тот же код, что и значение ячейки val.
+// Возвращает number (может быть 0) или null, если документ не найден /
+// часы в документе не заданы.
+function docHoursForCell(row, val, d) {
+  const docs = tabel.value && tabel.value.documents ? tabel.value.documents : []
+  if (!docs.length || !row) return null
+  const s = String(val ?? '').trim().toLowerCase()
+  if (!s) return null
+  const ym = tabel.value
+  const dt = new Date(ym.year, ym.month - 1, d)
+  for (const doc of docs) {
+    if (doc.employee_id !== row.employee_id) continue
+    if (!doc.code) continue
+    if (String(doc.code).trim().toLowerCase() !== s) continue
+    const a = new Date(doc.start_date + 'T00:00:00')
+    const b = new Date(doc.end_date + 'T00:00:00')
+    if (dt >= a && dt <= b) {
+      const h = Number(doc.hours)
+      if (Number.isFinite(h)) return h
+      return null
+    }
+  }
+  return null
 }
 
 function cellTipData(val, row, d) {

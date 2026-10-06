@@ -109,16 +109,22 @@
       <v-card>
         <v-card-title>{{ isEditing ? 'Редактировать документ' : 'Добавить документ' }}</v-card-title>
         <v-card-text>
-          <v-select
+          <v-autocomplete
             v-model="form.employee_id"
-            :items="employees"
+            :items="employeeOptions"
             item-title="label"
             item-value="id"
-            label="Сотрудник"
+            label="Сотрудник (поиск по ФИО / таб. номеру)"
             density="compact"
             variant="outlined"
             autocomplete="off"
             class="mb-2"
+            clearable
+            :loading="empLoading"
+            :filter="filterEmployees"
+            :menu-props="{ maxHeight: 320 }"
+            @update:search-input="onEmpQuery"
+            @update:model-value="onEmployeePicked"
             :rules="[v => !!v || 'Выберите сотрудника']"
           />
           <v-select
@@ -151,13 +157,20 @@
           <div class="text-caption text-grey mb-2" v-if="daysCount !== null">
             Дней в периоде: {{ daysCount }}
           </div>
-          <v-select
+          <v-autocomplete
             v-model="form.code"
             :items="codeItems"
-            label="Код часов (подставляется автоматически по типу)"
+            item-title="title"
+            item-value="value"
+            label="Код часов (поиск по коду / названию, подставляется автоматически по типу)"
             density="compact"
             variant="outlined"
+            autocomplete="off"
             class="mb-2"
+            clearable
+            :filter="filterCodes"
+            :menu-props="{ maxHeight: 320 }"
+            @update:model-value="onCodeChange"
             :rules="[v => !!v || 'Укажите код']"
           />
           <v-text-field v-model="form.doc_number" label="Номер приказа / больничного" density="compact" variant="outlined" class="mb-2" />
