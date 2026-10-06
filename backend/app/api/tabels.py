@@ -210,7 +210,9 @@ def _valid_codes(db: Session) -> set[str]:
 # (/{tabel_id}), иначе FastAPI подставит "search" в параметр tabel_id -> 422.
 
 @router.get("/search/employees", response_model=List[dict])
-def search_employees(q: str = Query("", min_length=0), db: Session = Depends(get_db),
+def search_employees(q: str = Query("", min_length=0),
+                     limit: int = Query(50, description="Максимум записей (50..1000)"),
+                     db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
     """Поиск сотрудников по фамилии/табельному для выпадающего списка.
 
@@ -237,7 +239,8 @@ def search_employees(q: str = Query("", min_length=0), db: Session = Depends(get
                 norm(Department.name).like(like),
             )
         )
-    emps = query.order_by(Employee.full_name).limit(50).all()
+    limit = max(50, min(int(limit), 1000))
+    emps = query.order_by(Employee.full_name).limit(limit).all()
     return [
         {"id": e.id, "full_name": e.full_name, "tab_number": e.tab_number,
          "department_name": e.department.name if e.department else None}

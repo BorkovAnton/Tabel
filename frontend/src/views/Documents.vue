@@ -120,11 +120,8 @@
             autocomplete="off"
             class="mb-2"
             clearable
-            :loading="empLoading"
             :filter="filterEmployees"
             :menu-props="{ maxHeight: 320 }"
-            @update:search-input="onEmpQuery"
-            @update:model-value="onEmployeePicked"
             :rules="[v => !!v || 'Выберите сотрудника']"
           />
           <v-select
@@ -170,7 +167,6 @@
             clearable
             :filter="filterCodes"
             :menu-props="{ maxHeight: 320 }"
-            @update:model-value="onCodeChange"
             :rules="[v => !!v || 'Укажите код']"
           />
           <v-text-field v-model="form.doc_number" label="Номер приказа / больничного" density="compact" variant="outlined" class="mb-2" />
@@ -252,6 +248,13 @@ const codeItems = computed(() =>
     value: c.code,
   })))
 
+// Поиск по коду/названию (регистронезависимо, Ё->Е) — как в заполнении табеля
+function filterCodes(item, query) {
+  const q = String(query ?? '').toLowerCase().replace(/ё/g, 'е')
+  if (!q) return true
+  return String(item.title ?? '').toLowerCase().replace(/ё/g, 'е').includes(q)
+}
+
 const daysCount = computed(() => {
   if (!form.value.start_date || !form.value.end_date) return null
   const a = new Date(form.value.start_date), b = new Date(form.value.end_date)
@@ -272,11 +275,40 @@ function onTypeChange(v) {
 
 function onEmpSearch() { /* поиск применяется в loadDocuments через selected employee */ }
 
+// Нормализация для поиска: нижний регистр + Ё->Е (как в заполнении табеля)
+const normSearch = s => String(s ?? '').toLowerCase().replace(/ё/g, 'е')
+
+function empMatches(e, term) {
+  const t = normSearch(term)
+  return (
+    normSearch(e.full_name).includes(t) ||
+    normSearch(e.tab_number).includes(t) ||
+    normSearch(e.department_name).includes(t)
+  )
+}
+
+// Фильтрация внутри v-autocomplete: поиск по ФИО / табельному / подразделению
+function filterEmployees(item, query) {
+  if (!query || !String(query).trim()) return true
+  const e = item.raw ?? item
+  return empMatches(e, query)
+}
+
+const employeeOptions = computed(() =>
+  employees.value.map(e => ({
+    ...e,
+    label: `${e.full_name}${e.tab_number ? ' — Таб. ' + e.tab_number : ''}${e.department_name ? ' — ' + e.department_name : ''}`
+  }))
+)
+
 async function loadEmployees() {
   try {
-    const { data } = await api.get('/employees/')
-    employees.value = (data || []).map(e => ({
+    const { data } = await api.get('/tabels/search/employees', { params: { q: '', limit: 1000 } })
+    employees.value = (Array.isArray(data) ? data : []).map(e => ({
       id: e.id,
+      full_name: e.full_name,
+      tab_number: e.tab_number,
+      department_name: e.department_name,
       label: `${e.full_name} (Таб. ${e.tab_number})`,
     })).sort((a, b) => a.label.localeCompare(b.label, 'ru'))
   } catch (e) { /* ignore */ }
