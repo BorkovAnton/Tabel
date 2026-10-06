@@ -29,6 +29,10 @@ export const auth = reactive({
   get isReport() {
     return !!this.user && (!!this.user.is_report || !!this.user.is_admin || !!this.user.is_hr)
   },
+  // Роль «Документы и приказы»: ввод событий сотрудников (отпуска, командировки, больничные)
+  get isDocumentsManager() {
+    return !!this.user && (!!this.user.is_documents_manager || !!this.user.is_admin || !!this.user.is_hr)
+  },
   // Только Администратор: справочник «Коды часов», пользователи и роли
   get isAdmin() {
     return !!this.user && !!this.user.is_admin

@@ -27,6 +27,8 @@ MIGRATIONS = [
     ("work_schedule_days", "auto_fill_code", "VARCHAR NULL"),
     # «Часы для выходного дня»: фиксированные часы кода в выходные (напр. 8 для «К»)
     ("time_codes", "weekend_hours", "NUMERIC(5,2) DEFAULT NULL"),
+    # Роль «Документы и приказы» — ввод событий сотрудников для автозаполнения табеля
+    ("users", "is_documents_manager", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 

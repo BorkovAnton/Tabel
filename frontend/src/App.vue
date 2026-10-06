@@ -79,6 +79,7 @@ const allNavItems = [
   { title: 'Графики', path: '/schedules', icon: 'mdi-clock-outline', auth: false },
   { title: 'Настройки', path: '/settings', icon: 'mdi-cog', admin: true },
   { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true, userRole: true },
+  { title: 'Документы', path: '/documents', icon: 'mdi-file-document-edit-outline', auth: true, documentsRole: true },
   { title: 'Пользователи', path: '/users', icon: 'mdi-account-key', admin: true }
 ]
 
@@ -88,6 +89,7 @@ const navItems = computed(() => allNavItems.filter(i => {
   if (i.auth && !auth.isAuthenticated) return false
   if (i.admin && !auth.isAdmin) return false
   if (i.reportRole && !auth.isReport) return false
+  if (i.documentsRole && !auth.isDocumentsManager) return false
   // Роль «Пользователь»: из рабочих разделов доступны «Табель фактический» и «Табель»
   if (i.userRole && auth.isUser && !isManager()) return auth.isAuthenticated
   // Прочие сервисные разделы — только администратору/кадровику/инспектору

@@ -20,6 +20,7 @@ class RoleFlags(BaseModel):
     timesheet_inspector: bool = False # Инспектор табелей
     is_user: bool = True              # Пользователь (базовая роль)
     is_report: bool = False           # Отчёт (страница сводного отчёта часов)
+    is_documents_manager: bool = False  # Документы и приказы
     # Права на подразделения: JSON-строка '["*"]'-список id или "*" (все).
     # Фронтенд может прислать и список чисел — нормализуем валидатором.
     allowed_departments: str = ""
@@ -106,6 +107,7 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
         timesheet_inspector=payload.timesheet_inspector,
         is_user=payload.is_user,
         is_report=payload.is_report,
+        is_documents_manager=payload.is_documents_manager,
         allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
     )
     db.add(obj)
@@ -126,6 +128,7 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
     target.timesheet_inspector = payload.timesheet_inspector
     target.is_user = payload.is_user
     target.is_report = payload.is_report
+    target.is_documents_manager = payload.is_documents_manager
     target.allowed_departments = _normalize_allowed_departments(payload.allowed_departments, db)
     db.commit()
     db.refresh(target)

@@ -75,6 +75,17 @@ class TabelCreate(BaseModel):
     responsible_user_id: Optional[int] = None
 
 
+class DocumentBrief(BaseModel):
+    """Краткая сводка активного документа для автозаполнения табеля."""
+    id: int
+    employee_id: int
+    doc_type: str
+    title: str = ""
+    code: str
+    start_date: date
+    end_date: date
+
+
 class EntryRow(BaseModel):
     employee_id: int
     full_name: str
@@ -114,6 +125,10 @@ class TabelDetailOut(BaseModel):
     weekend_days: List[int] = []
     holiday_days: List[int] = []
     holiday_names: Dict[int, str] = {}
+    # Активные «Документы и приказы», пересекающиеся с месяцем табеля.
+    # Используются автозаполнением: дни события заполняются кодом документа
+    # (приоритет над графиком работы).
+    documents: List[DocumentBrief] = []
 
 
 class CellUpdate(BaseModel):
@@ -352,6 +367,21 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             day_norms=day_norms,
             day_auto_codes=day_auto_codes,
         ))
+    # Активные «Документы и приказы», пересекающиеся с месяцем табеля —
+    # для автозаполнения (дни события заполняются кодом документа).
+    from app.models.document import Document
+    m_start, m_end = date(tabel.year, tabel.month, 1), date(tabel.year, tabel.month, dim)
+    doc_rows = db.query(Document).filter(
+        Document.is_active.is_(True),
+        Document.start_date <= m_end,
+        Document.end_date >= m_start,
+    ).order_by(Document.start_date).all()
+    documents_brief = [
+        DocumentBrief(
+            id=d.id, employee_id=d.employee_id, doc_type=d.doc_type,
+            title=d.title or "", code=d.code, start_date=d.start_date, end_date=d.end_date,
+        ) for d in doc_rows
+    ]
     return TabelDetailOut(
         id=tabel.id, year=tabel.year, month=tabel.month, days_in_month=dim,
         department_id=tabel.department_id,
@@ -359,6 +389,7 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
         responsible_user_id=tabel.responsible_user_id,
         responsible_user_name=tabel.responsible_user.full_name or tabel.responsible_user.username if tabel.responsible_user else None,
         entries=entries,
+        documents=documents_brief,
         **nonworking_days_map(tabel.year, tabel.month, dim, db),
     )
 

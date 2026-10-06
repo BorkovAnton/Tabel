@@ -797,8 +797,28 @@ const dayItems = computed(() => {
 const codeListItems = computed(() => cellItems.value.map(it => it.value))
 
 // ─── Расписание дня сотрудника (для «Заполнить число» / «Заполнить сотрудника») ──
+// ─── «Документы и приказы»: активные события сотрудников (отпуск/командировка/больничный) ──
+// Бэкенд отдаёт их в tabel.documents: [{employee_id, doc_type, title, code, start_date, end_date}].
+// При автозаполнении дни, попадающие в период документа, заполняются кодом документа —
+// это имеет ПРИОРИТЕТ над кодом из графика работы.
+function docCodeFor(row, d) {
+  const docs = tabel.value && tabel.value.documents ? tabel.value.documents : []
+  if (!docs.length || !row) return ''
+  const ym = tabel.value
+  const dt = new Date(ym.year, ym.month - 1, d)
+  for (const doc of docs) {
+    if (doc.employee_id !== row.employee_id) continue
+    if (!doc.code) continue
+    const s = new Date(doc.start_date + 'T00:00:00')
+    const e = new Date(doc.end_date + 'T00:00:00')
+    if (dt >= s && dt <= e) return String(doc.code).trim()
+  }
+  return ''
+}
+
 // daySchedule(row, d) возвращает значение, которым нужно заполнить день d
 // согласно ГРАФИКУ работы сотрудника:
+//   0) код активного ДОКУМЕНТА (отпуск/командировка/больничный) — приоритет;
 //   1) код из поля «Код для автозаполнения» (auto_fill_code) графика —
 //      row.day_auto_codes[d] (например «8ч15м» в будни, «В» в выходные);
 //   2) если кода нет, но норма дня > 0 и включён флаг «Часы по графику» —
@@ -807,6 +827,8 @@ const codeListItems = computed(() => cellItems.value.map(it => it.value))
 //      нет — используется числовое значение нормы, например «8.25»);
 //   3) иначе '' — день пропускается (выходной без кода в графике).
 function daySchedule(row, d) {
+  const dc = docCodeFor(row, d)
+  if (dc) return dc
   const ac = dayAutoCode(row, d)
   if (ac) return ac
   const norm = getDayNorm(row, d)
@@ -1363,9 +1385,10 @@ function dayAutoCode(row, d) {
 }
 
 // День участвует в автозаполнении, если в графике задан код (любая норма,
-// включая 0 — выходные/праздники с кодом «В»).
+// включая 0 — выходные/праздники с кодом «В») ИЛИ на этот день приходится
+// активный документ сотрудника (отпуск/командировка/больничный — приоритет).
 function isFillableDay(row, d) {
-  return dayAutoCode(row, d) !== ''
+  return dayAutoCode(row, d) !== '' || docCodeFor(row, d) !== ''
 }
 
 // Дни, для которых есть норма, но нет кода в графике (для предупреждения).
@@ -1374,30 +1397,37 @@ const fillMissingCodes = computed(() => {
   if (!tabel.value) return []
   for (const row of tabel.value.entries) {
     for (let d = 1; d <= tabel.value.days_in_month; d++) {
-      if (getDayNorm(row, d) > 0 && dayAutoCode(row, d) === '') set.add(getDayNorm(row, d))
+      // дни документов не считаются «без кода» — код берётся из документа
+      if (getDayNorm(row, d) > 0 && dayAutoCode(row, d) === '' && !docCodeFor(row, d)) set.add(getDayNorm(row, d))
     }
   }
   return [...set].sort((a, b) => a - b)
 })
 
 // Предпросмотр: сколько ячеек будет заполнено / пропущено (по каждому сотруднику).
+// Документы имеют приоритет над графиком: день с активным документом заполняется
+// кодом документа даже без кода в графике.
 const fillPreview = computed(() => {
-  let workDaysTotal = 0, toFill = 0, skippedFilled = 0, skippedNoCode = 0
-  if (!tabel.value) return { workDaysTotal, toFill, skippedFilled, skippedNoCode }
+  let workDaysTotal = 0, toFill = 0, skippedFilled = 0, skippedNoCode = 0, byDocs = 0
+  if (!tabel.value) return { workDaysTotal, toFill, skippedFilled, skippedNoCode, byDocs }
   for (const row of tabel.value.entries) {
     for (let d = 1; d <= tabel.value.days_in_month; d++) {
       const norm = getDayNorm(row, d)
-      if (dayAutoCode(row, d) === '') {                 // в графике нет кода — пропускаем
+      const docVal = docCodeFor(row, d)                    // код активного документа
+      const ac = dayAutoCode(row, d)                       // код из графика
+      const val = docVal || ac
+      if (!val) {                                          // ни документа, ни кода в графике
         if (norm > 0) { workDaysTotal++; skippedNoCode++ }
         continue
       }
-      workDaysTotal++                                   // рабочий день или выходной с кодом («В»)
+      if (docVal) byDocs++                                 // день закрыт документом
+      workDaysTotal++                                      // рабочий день или выходной с кодом («В»)
       const filled = !!(row.days[d] ?? '').toString().trim()
       if (filled && !overwriteExisting.value) { skippedFilled++; continue }
       toFill++
     }
   }
-  return { workDaysTotal, toFill, skippedFilled, skippedNoCode }
+  return { workDaysTotal, toFill, skippedFilled, skippedNoCode, byDocs }
 })
 
 function openFillByScheduleDialog() {
@@ -1408,11 +1438,12 @@ function openFillByScheduleDialog() {
 
 function applyFillBySchedule() {
   if (!tabel.value) return
-  let filled = 0
+  let filled = 0, filledByDocs = 0
   for (const row of tabel.value.entries) {
     for (let d = 1; d <= tabel.value.days_in_month; d++) {
-      const val = dayAutoCode(row, d)                    // код напрямую из графика
-      if (!val) continue                                 // код не указан в графике — пропускаем
+      const docVal = docCodeFor(row, d)                    // код из «Документы и приказы» — приоритет
+      const val = docVal || dayAutoCode(row, d)            // иначе — код напрямую из графика
+      if (!val) continue                                   // код не указан в графике — пропускаем
       // ИСПРАВЛЕНО: дни с нормой 0 (выходные/праздники) БОЛЬШЕ не пропускаются —
       // если в графике задан код (например «В»), он подставляется и в эти дни.
       const cur = (row.days[d] ?? '').toString().trim()
@@ -1421,10 +1452,11 @@ function applyFillBySchedule() {
       markDirty(row.employee_id, d)                      // помечаем ячейку для сохранения
       validateCell(row.employee_id, d)
       filled++
+      if (docVal) filledByDocs++
     }
   }
   if (filled === 0) {
-    message.value = 'Нечего заполнять: проверьте «Код для автозаполнения» в графиках работы и флаг перезаписи.'
+    message.value = 'Нечего заполнять: проверьте «Код для автозаполнения» в графиках работы, документы сотрудников и флаг перезаписи.'
     messageType.value = 'warning'
     return
   }
@@ -1432,7 +1464,8 @@ function applyFillBySchedule() {
   const extra = fillPreview.value.skippedNoCode
     ? ` Внимание: для ${fillPreview.value.skippedNoCode} рабочих дней в графике не указан код — они пропущены.`
     : ''
-  message.value = `Табель заполнен по кодам из графиков: ${filled} ${pluralCells(filled)}. Нажмите «Сохранить», чтобы записать изменения.${extra}`
+  const docsPart = filledByDocs ? ` (из них по документам: ${filledByDocs})` : ''
+  message.value = `Табель заполнен: ${filled} ${pluralCells(filled)}${docsPart}. Нажмите «Сохранить», чтобы записать изменения.${extra}`
   messageType.value = fillPreview.value.skippedNoCode ? 'warning' : 'success'
 }
 

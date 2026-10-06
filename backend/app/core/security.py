@@ -103,6 +103,21 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def can_manage_documents(user: User) -> bool:
+    """Раздел «Документы и приказы»: Администратор, Кадровик или роль «Документы и приказы»."""
+    return bool(user.is_admin or user.is_hr or getattr(user, "is_documents_manager", False))
+
+
+def require_documents_manager(user: User = Depends(get_current_user)) -> User:
+    """Доступ для редактирования документов/приказов."""
+    if not can_manage_documents(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Требуются роли «Администратор», «Кадровик» или «Документы и приказы»",
+        )
+    return user
+
+
 def allowed_department_id_set(user: User, db: Session) -> set[int] | None:
     """Разрешённые id подразделений пользователя (включая дочерние).
 

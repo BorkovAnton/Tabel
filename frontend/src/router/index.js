@@ -13,6 +13,7 @@ import TabelFill from '../views/TabelFill.vue'
 import Users from '../views/Users.vue'
 import HoursReport from '../views/HoursReport.vue'
 import Settings from '../views/Settings.vue'
+import Documents from '../views/Documents.vue'
 
 const routes = [
   // Модуль «Табель»: авторизация обязательна
@@ -20,6 +21,8 @@ const routes = [
   { path: '/tabels', name: 'Tabels', component: Tabels, meta: { requiresAuth: true } },
   { path: '/tabels/:id', name: 'TabelFill', component: TabelFill, meta: { requiresAuth: true } },
   { path: '/users', name: 'Users', component: Users, meta: { requiresAuth: true, requiresAdmin: true } },
+  // Документы и приказы — авторизация + роль «Документы и приказы» (см. beforeEach)
+  { path: '/documents', name: 'Documents', component: Documents, meta: { requiresAuth: true, requiresDocuments: true } },
   // Сводный отчёт часов — роль «Отчёт» (а также администратор/кадровик)
   { path: '/hours-report', name: 'HoursReport', component: HoursReport, meta: { requiresAuth: true, requiresReport: true } },
 
@@ -63,6 +66,14 @@ router.beforeEach((to) => {
     let user = null
     try { user = JSON.parse(localStorage.getItem('user') || 'null') } catch (e) { /* noop */ }
     if (!user || !user.is_admin) {
+      return { name: 'Tabels' }
+    }
+  }
+  if (to.meta.requiresDocuments) {
+    let user = null
+    try { user = JSON.parse(localStorage.getItem('user') || 'null') } catch (e) { /* noop */ }
+    const ok = !!user && (user.is_documents_manager || user.is_admin || user.is_hr)
+    if (!ok) {
       return { name: 'Tabels' }
     }
   }

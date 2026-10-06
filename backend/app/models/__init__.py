@@ -9,6 +9,7 @@ from .user import User
 from .time_code import TimeCode
 from .tabel import Tabel, TabelEntry
 from .company_setting import CompanySetting
+from .document import Document
 
 __all__ = [
     "Department",

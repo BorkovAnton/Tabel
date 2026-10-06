@@ -15,7 +15,8 @@
         <v-chip v-if="item.timesheet_inspector" size="x-small" color="orange" variant="toned" class="mr-1">Инспектор табелей</v-chip>
         <v-chip v-if="item.is_user" size="x-small" color="blue" variant="toned" class="mr-1">Пользователь</v-chip>
         <v-chip v-if="item.is_report" size="x-small" color="indigo" variant="toned">Отчёт</v-chip>
-        <span v-if="!item.is_admin && !item.is_hr && !item.timesheet_inspector && !item.is_user && !item.is_report" class="text-grey text-caption">—</span>
+        <v-chip v-if="item.is_documents_manager" size="x-small" color="brown" variant="toned">Документы</v-chip>
+        <span v-if="!item.is_admin && !item.is_hr && !item.timesheet_inspector && !item.is_user && !item.is_report && !item.is_documents_manager" class="text-grey text-caption">—</span>
       </template>
       <template #item.departments="{ item }">
         <span v-if="item.all_departments" class="text-caption" style="color:#2d5a3d;">Все подразделения</span>
@@ -62,6 +63,7 @@
             <v-checkbox v-model="form.timesheet_inspector" label="Инспектор табелей" density="compact" hide-details color="orange" />
             <v-checkbox v-model="form.is_user" label="Пользователь" density="compact" hide-details color="blue" hint="Доступ к «Табель фактический», «Табель», создание и заполнение табелей" persistent-hint />
             <v-checkbox v-model="form.is_report" label="Отчёт" density="compact" hide-details color="indigo" hint="Доступ к странице «Отчёт по часам» (табель vs факт, сверхурочные)" persistent-hint />
+            <v-checkbox v-model="form.is_documents_manager" label="Документы и приказы" density="compact" hide-details color="brown" hint="Доступ к разделу «Документы и приказы»: ввод отпусков, командировок, больничных для автозаполнения табеля" persistent-hint />
           </div>
 
           <div v-if="form.is_user && !form.is_admin && !form.is_hr && !form.timesheet_inspector" class="mt-3">
@@ -108,7 +110,7 @@ const dialogError = ref('')
 const editing = ref(null)
 const allDepartments = ref(false)
 const deptItems = ref([])
-const form = ref({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, deptIds: [] })
+const form = ref({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false, deptIds: [] })
 
 async function loadDepartments() {
   try {
@@ -147,7 +149,7 @@ function openCreate() {
   editing.value = null
   dialogError.value = ''
   allDepartments.value = false
-  form.value = { username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, deptIds: [] }
+  form.value = { username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false, deptIds: [] }
   loadDepartments()
   dialog.value = true
 }
@@ -164,6 +166,7 @@ function openEdit(item) {
     timesheet_inspector: item.timesheet_inspector,
     is_user: item.is_user !== false,
     is_report: !!item.is_report,
+    is_documents_manager: !!item.is_documents_manager,
     deptIds: parseAllowed(item.allowed_departments),
   }
   allDepartments.value = !!item.all_departments
