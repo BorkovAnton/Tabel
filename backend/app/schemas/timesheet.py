@@ -16,6 +16,7 @@ class TimesheetRecordResponse(BaseModel):
     lunch_minutes: int
     needs_review: bool
     review_reason: Optional[str] = None
+    document_code: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -53,6 +54,7 @@ class TimesheetCalculateResponse(BaseModel):
     records_created: int
     records_updated: int
     needs_review_count: int
+    documents_applied: int = 0
 
 
 class TimesheetUpdateRequest(BaseModel):

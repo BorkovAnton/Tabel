@@ -26,5 +26,9 @@ class TimesheetRecord(Base):
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     review_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Код из «Документов и приказы», по которому день был заполнен при расчёте
+    # (например «О» — отпуск, «К» — командировка). None — расчёт по проходной.
+    document_code: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
+
     # Relationships
     employee: Mapped['Employee'] = relationship('Employee')

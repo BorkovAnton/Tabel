@@ -21,6 +21,8 @@ from app.models.turnstile_event import TurnstileEvent
 from app.models.work_schedule import WorkSchedule
 from app.models.timesheet_record import TimesheetRecord
 from app.models.department import Department
+from app.models.document import Document
+from app.models.time_code import TimeCode
 from app.schemas.timesheet import (
     TimesheetRecordResponse,
     TimesheetCalculateRequest,
@@ -208,13 +210,35 @@ def calculate_timesheet(
     else:
         employees = db.query(Employee).all()
 
+    # ПРЕДЗАГРУЖАЕМ все активные документы за период (один запрос вместо N)
+    active_docs = (
+        db.query(Document)
+        .filter(
+            Document.is_active == True,  # noqa: E712
+            Document.start_date <= date_to,
+            Document.end_date >= date_from,
+        )
+        .all()
+    )
+    docs_by_employee: dict[int, list[Document]] = {}
+    for doc in active_docs:
+        docs_by_employee.setdefault(doc.employee_id, []).append(doc)
+
+    # Справочник активных кодов часов
+    time_codes = {
+        c.code: c
+        for c in db.query(TimeCode).filter(TimeCode.is_active == True).all()  # noqa: E712
+    }
+
     total_days = 0
     records_created = 0
     records_updated = 0
     needs_review_count = 0
+    documents_applied = 0
 
     for employee in employees:
         schedule = employee.schedule  # может быть None
+        employee_docs = docs_by_employee.get(employee.id, [])
 
         for day in daterange(date_from, date_to):
             total_days += 1
@@ -225,6 +249,88 @@ def calculate_timesheet(
 
             day_start = datetime.combine(day, time.min)
             day_end = datetime.combine(day, time.max)
+
+            # === УЧЁТ ДОКУМЕНТОВ («Документы и приказы») ===
+            # Если на день сотрудника оформлен активный документ — он имеет
+            # приоритет над данными проходной.
+            active_doc = next(
+                (d for d in employee_docs if d.start_date <= day <= d.end_date), None
+            )
+            if active_doc is not None:
+                code = time_codes.get(active_doc.code) or time_codes.get(active_doc.doc_type)
+                if code is not None:
+                    # Тип 1: отсутствие (hours_day=0, hours_night=0, без use_schedule_hours)
+                    #   → ставим код без часов, fact_hours = 0.
+                    # Тип 2: присутствие (use_schedule_hours или hours_day/hours_night > 0)
+                    #   → будний день: часы по графику; выходной: weekend_hours кода.
+                    is_absence = (
+                        not code.use_schedule_hours
+                        and not (code.hours_day or 0)
+                        and not (code.hours_night or 0)
+                    )
+
+                    if is_absence:
+                        doc_fact_hours = 0.0
+                    elif code.use_schedule_hours:
+                        if default_hours > 0:
+                            doc_fact_hours = default_hours
+                        else:
+                            doc_fact_hours = float(code.weekend_hours or 0.0)
+                    else:
+                        doc_fact_hours = round(
+                            float(code.hours_day or 0.0) + float(code.hours_night or 0.0), 2
+                        )
+
+                    existing = (
+                        db.query(TimesheetRecord)
+                        .filter(
+                            TimesheetRecord.employee_id == employee.id,
+                            TimesheetRecord.date == day,
+                        )
+                        .first()
+                    )
+                    planned_hours = existing.planned_hours if existing else None
+                    if is_absence:
+                        overtime = 0.0
+                    elif code.use_schedule_hours and default_hours == 0:
+                        # Работа в законный выходной — всё сверхурочно
+                        overtime = round(doc_fact_hours, 2)
+                    elif planned_hours is not None:
+                        overtime = max(0.0, round(doc_fact_hours - planned_hours, 2))
+                    else:
+                        overtime = max(0.0, round(doc_fact_hours - default_hours, 2))
+
+                    if existing:
+                        existing.first_in = None
+                        existing.last_out = None
+                        existing.fact_hours = doc_fact_hours
+                        existing.default_hours = default_hours
+                        existing.overtime = overtime
+                        existing.lunch_minutes = lunch_minutes
+                        existing.needs_review = False
+                        existing.review_reason = f"Документ: {code.name}"
+                        existing.document_code = code.code
+                        records_updated += 1
+                    else:
+                        db.add(TimesheetRecord(
+                            employee_id=employee.id,
+                            date=day,
+                            first_in=None,
+                            last_out=None,
+                            fact_hours=doc_fact_hours,
+                            planned_hours=None,
+                            default_hours=default_hours,
+                            overtime=overtime,
+                            lunch_minutes=lunch_minutes,
+                            needs_review=False,
+                            review_reason=f"Документ: {code.name}",
+                            document_code=code.code,
+                        ))
+                        records_created += 1
+                    documents_applied += 1
+                    continue  # переходим к следующему дню
+                # Код из документа отсутствует/неактивен в справочнике —
+                # падаем на обычную логику по проходной.
 
             events = (
                 db.query(TurnstileEvent)
@@ -303,6 +409,7 @@ def calculate_timesheet(
         records_created=records_created,
         records_updated=records_updated,
         needs_review_count=needs_review_count,
+        documents_applied=documents_applied,
     )
 
 
@@ -434,7 +541,11 @@ def get_timesheet_report(
             record = records_by_day.get(day)
             
             if record:
-                if record.needs_review:
+                if record.document_code:
+                    # День заполнен по документу («Документы и приказы»):
+                    # показываем код документа вместо часов (например «О», «Б»)
+                    value = record.document_code
+                elif record.needs_review:
                     value = "О6"
                 elif record.overtime and record.overtime > 0:
                     # Формат: "10.25 (2.25с)" — фактические часы + сверхурочные в скобках
@@ -454,6 +565,8 @@ def get_timesheet_report(
                     "first_in": record.first_in.strftime("%H:%M") if record.first_in else None,
                     "last_out": record.last_out.strftime("%H:%M") if record.last_out else None,
                     "overtime": round(record.overtime, 2) if record.overtime else None,
+                    "document_code": record.document_code,
+                    "review_reason": record.review_reason,
                 }
                 
                 if not record.needs_review:
@@ -466,6 +579,8 @@ def get_timesheet_report(
                     "first_in": None,
                     "last_out": None,
                     "overtime": None,
+                    "document_code": None,
+                    "review_reason": None,
                 }
         
         # Получаем название подразделения

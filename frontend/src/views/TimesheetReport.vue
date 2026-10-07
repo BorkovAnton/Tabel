@@ -80,6 +80,19 @@
               Сформировать
             </v-btn>
           </v-col>
+          <v-col v-if="auth.isAdmin" cols="12" md="3" class="d-flex align-end">
+            <v-btn
+              color="success"
+              variant="outlined"
+              size="large"
+              class="flex-grow-1"
+              :loading="recalcLoading"
+              prepend-icon="mdi-file-document-check-outline"
+              @click="recalculateWithDocuments"
+            >
+              Пересчитать по документам
+            </v-btn>
+          </v-col>
         </v-row>
       </v-card-text>
     </v-card>
@@ -174,6 +187,10 @@
                     </template>
                     <div class="day-tooltip">
                       <div class="font-weight-bold mb-1">{{ tooltipDateLabel(day) }}</div>
+                      <div v-if="emp.days[day]?.document_code" class="mb-1">
+                        <v-chip color="info" size="x-small">Документ: {{ emp.days[day].document_code }}</v-chip>
+                        <div v-if="emp.days[day]?.review_reason" class="text-caption mt-1">{{ emp.days[day].review_reason }}</div>
+                      </div>
                       <div class="d-flex align-center ga-1">
                         <v-icon size="x-small" icon="mdi-login" color="green-darken-2"></v-icon>
                         Вход: {{ emp.days[day]?.first_in || '—' }}
@@ -214,9 +231,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '../api'
+import { auth } from '../auth'
 
 const loading = ref(false)
 const excelLoading = ref(false)
+const recalcLoading = ref(false)
 const error = ref('')
 const reportData = ref(null)
 
@@ -300,6 +319,28 @@ async function generateReport() {
   }
 }
 
+async function recalculateWithDocuments() {
+  // Явный пересчёт фактического табеля за выбранный месяц
+  // с учётом активных документов («Документы и приказы»)
+  recalcLoading.value = true
+  error.value = ''
+  try {
+    const lastDay = new Date(selectedYear.value, selectedMonth.value, 0).getDate()
+    const pad = (n) => String(n).padStart(2, '0')
+    const resp = await api.post('/api/timesheet/calculate', {
+      date_from: `${selectedYear.value}-${pad(selectedMonth.value)}-01`,
+      date_to: `${selectedYear.value}-${pad(selectedMonth.value)}-${pad(lastDay)}`,
+    })
+    const d = resp.data || {}
+    alert(`Пересчёт завершён: создано ${d.records_created ?? 0}, обновлено ${d.records_updated ?? 0} записей, по документам заполнено дней: ${d.documents_applied ?? 0}`)
+    await generateReport()
+  } catch (e) {
+    error.value = e.response?.data?.detail || 'Ошибка пересчёта табеля'
+  } finally {
+    recalcLoading.value = false
+  }
+}
+
 async function downloadExcel() {
   excelLoading.value = true
   error.value = ''
@@ -341,6 +382,7 @@ function getCellClasses(dayData, day) {
   if (!dayData) return isWeekend(day) ? 'weekend-cell' : ''
   const val = dayData.value
   
+  if (dayData.document_code) return 'cell-from-document'
   if (val === 'О6' || dayData.needs_review) return 'review-cell'
   if (val.includes('с')) return 'overtime-cell'  // Сверхурочные (формат "10.25 (2.25с)")
   if (val === 'в') return 'weekend-cell'
@@ -502,6 +544,11 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   cursor: default;
+}
+
+.cell-from-document {
+  background-color: #e8f5e9 !important;
+  border: 1px dashed #4caf50;
 }
 
 /* Содержимое tooltip с деталями дня */
