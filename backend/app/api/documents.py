@@ -26,6 +26,7 @@ def _to_out(d: Document) -> DocumentOut:
         id=d.id,
         employee_id=d.employee_id,
         doc_type=d.doc_type,
+        doc_type_category=d.doc_type_category,
         title=d.title or "",
         doc_number=d.doc_number or "",
         start_date=d.start_date,
@@ -85,6 +86,7 @@ def create_document(
     doc = Document(
         employee_id=payload.employee_id,
         doc_type=payload.doc_type,
+        doc_type_category=payload.doc_type_category,
         title=(payload.title or "").strip(),
         doc_number=(payload.doc_number or "").strip(),
         start_date=payload.start_date,

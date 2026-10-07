@@ -20,7 +20,9 @@ class Document(Base):
         Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    doc_type: Mapped[str] = mapped_column(String(50), nullable=False)   # vacation/business_trip/sick/other
+    doc_type: Mapped[str] = mapped_column(String(50), nullable=False)   # код из справочника «Коды часов» (О/К/Б/…)
+    # Внутренняя категоризация типа события (vacation/business_trip/sick/other) — для цвета чипа
+    doc_type_category: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
     title: Mapped[str] = mapped_column(String(255), default="")         # произвольное название/комментарий
     doc_number: Mapped[str] = mapped_column(String(100), default="")    # номер приказа/больничного
     start_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)

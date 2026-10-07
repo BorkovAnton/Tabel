@@ -17,7 +17,8 @@ def default_code_for_type(doc_type: str) -> str:
 
 class DocumentBase(BaseModel):
     employee_id: int
-    doc_type: str
+    doc_type: str                                  # код из справочника «Коды часов» (О/К/Б/…)
+    doc_type_category: Optional[str] = None        # внутренняя категория: vacation/business_trip/sick/other
     title: str = ""
     doc_number: str = ""
     start_date: date
@@ -50,6 +51,7 @@ class DocumentCreate(DocumentBase):
 class DocumentUpdate(BaseModel):
     employee_id: Optional[int] = None
     doc_type: Optional[str] = None
+    doc_type_category: Optional[str] = None
     title: Optional[str] = None
     doc_number: Optional[str] = None
     start_date: Optional[date] = None

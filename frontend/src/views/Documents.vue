@@ -23,14 +23,18 @@
         </v-text-field>
       </v-col>
       <v-col cols="6" sm="4" md="3">
-        <v-select
+        <v-autocomplete
           v-model="filterType"
-          :items="docTypeItems"
-          label="Тип события"
+          :items="typeItems"
+          item-title="title"
+          item-value="value"
+          label="Тип события (код часов)"
           density="compact"
           variant="outlined"
+          autocomplete="off"
           clearable
           hide-details
+          :filter="filterCodesByTitle"
           @update:model-value="loadDocuments"
         />
       </v-col>
@@ -82,9 +86,9 @@
         </tr>
         <tr v-for="d in docs" :key="d.id" :class="{ 'text-grey': !d.is_active }">
           <td>{{ d.employee_full_name }}<div class="text-caption text-grey">Таб. {{ d.employee_tab_number }}</div></td>
-          <td>{{ docTypeLabel(d.doc_type) }}</td>
+          <td><v-chip size="x-small" label :color="chipColor(d)">{{ docTypeLabel(d.doc_type) }}</v-chip></td>
           <td class="text-no-wrap">{{ fmtDate(d.start_date) }} — {{ fmtDate(d.end_date) }}</td>
-          <td><v-chip size="x-small" label color="#2d5a3d">{{ d.code }}</v-chip></td>
+          <td><v-chip size="x-small" label :color="chipColor(d)">{{ d.code }}</v-chip></td>
           <td>{{ d.doc_number || '—' }}</td>
           <td class="text-caption">{{ d.title || '—' }}</td>
           <td>
@@ -124,15 +128,39 @@
             :menu-props="{ maxHeight: 320 }"
             :rules="[v => !!v || 'Выберите сотрудника']"
           />
-          <v-select
+          <v-autocomplete
             v-model="form.doc_type"
-            :items="docTypeItems"
-            label="Тип события"
+            :items="typeItems"
+            item-title="title"
+            item-value="value"
+            label="Тип события (код часов)"
             density="compact"
             variant="outlined"
+            autocomplete="off"
             class="mb-2"
+            clearable
+            :filter="filterCodesByTitle"
+            :menu-props="{ maxHeight: 320 }"
+            :rules="[v => !!v || 'Выберите тип события']"
             @update:model-value="onTypeChange"
-          />
+          >
+            <!-- В списке: чип с кодом + название + часы дня/ночи -->
+            <template #item="{ props: itemProps, item }">
+              <v-list-item v-bind="itemProps" :title="null">
+                <div class="d-flex align-center ga-2 text-truncate">
+                  <v-chip size="x-small" label :color="CATEGORY_COLORS[item.raw.category]">{{ item.raw.code }}</v-chip>
+                  <span class="text-truncate">{{ item.raw.name }}</span>
+                  <span class="text-caption text-grey ml-auto text-no-wrap">День: {{ fmtH(item.raw.hours_day) }} | Ночь: {{ fmtH(item.raw.hours_night) }}</span>
+                </div>
+              </v-list-item>
+            </template>
+            <!-- Выбранный тип отображается как чип с кодом + название -->
+            <template #selection="{ item }">
+              <v-chip size="small" label :color="CATEGORY_COLORS[item.raw.category]">
+                {{ item.raw.code }} — {{ item.raw.name }}
+              </v-chip>
+            </template>
+          </v-autocomplete>
           <div class="d-flex ga-2 mb-2">
             <v-text-field
               v-model="form.start_date"
@@ -169,6 +197,19 @@
             :menu-props="{ maxHeight: 320 }"
             :rules="[v => !!v || 'Укажите код']"
           />
+          <v-text-field
+            v-model.number="form.hours"
+            label="Часы события (автоподставлены из кода, можно изменить)"
+            type="number"
+            step="0.25"
+            min="0"
+            density="compact"
+            variant="outlined"
+            class="mb-2"
+            clearable
+            hint="Напр. 8 — сколько часов засчитать за каждый день периода в отчёте по часам"
+            persistent-hint
+          />
           <v-text-field v-model="form.doc_number" label="Номер приказа / больничного" density="compact" variant="outlined" class="mb-2" />
           <v-textarea v-model="form.title" label="Комментарий" density="compact" variant="outlined" rows="2" />
           <v-checkbox v-model="form.is_active" label="Документ активен (учитывается при автозаполнении)" density="compact" hide-details />
@@ -189,16 +230,82 @@ import api from '../api'
 
 const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
 
-const DOC_TYPES = [
-  { value: 'vacation', title: 'Отпуск', code: 'О' },
-  { value: 'business_trip', title: 'Командировка', code: 'К' },
-  { value: 'sick', title: 'Больничный', code: 'Б' },
-  { value: 'other', title: 'Другое', code: '' },
-]
-const docTypeItems = DOC_TYPES.map(t => ({ title: t.title, value: t.value }))
+// «Тип события» — это код из справочника «Коды часов» (О, К, Б, 8с и т.д.).
+// Внутренняя категория (для цвета чипа) определяется по коду/названию кода.
+const CATEGORY_BY_CODE = { 'О': 'vacation', 'К': 'business_trip', 'Б': 'sick', 'Н': 'sick' }
+const CATEGORY_COLORS = { vacation: 'success', business_trip: 'primary', sick: 'warning', other: '#2d5a3d' }
+const CATEGORY_TITLES = { vacation: 'Отпуск', business_trip: 'Командировка', sick: 'Больничный', other: 'Другое' }
+
+function fmtH(v) {
+  const n = Number(v) || 0
+  if (!n) return '0ч'
+  return Number.isInteger(n) ? `${n}ч` : `${Math.floor(n)}ч${Math.round((n - Math.floor(n)) * 60)}м`
+}
+
+function normCat(s) {
+  return String(s ?? '').toLowerCase().replace(/ё/g, 'е').trim()
+}
+
+// Категория по коду справочника: явное соответствие или по названию кода
+function categoryForCode(code, name) {
+  const c = String(code ?? '').trim().toUpperCase()
+  if (CATEGORY_BY_CODE[c]) return CATEGORY_BY_CODE[c]
+  const nm = normCat(name)
+  if (nm.includes('отпуск') || nm.includes('очен')) return 'vacation'
+  if (nm.includes('командиров')) return 'business_trip'
+  if (nm.includes('больничн') || nm.includes('нетрудосп') || nm.includes('болезн')) return 'sick'
+  return 'other'
+}
+
+// Часы кода для автоподстановки в документ:
+// фиксированные hours_day+hours_night; если «Время по графику» — weekend_hours или 8
+function codeEventHours(c) {
+  if (!c) return null
+  const sum = (Number(c.hours_day) || 0) + (Number(c.hours_night) || 0)
+  if (sum > 0) return sum
+  if (c.use_schedule_hours) return Number(c.weekend_hours) || 8
+  return null
+}
+
+// Элементы выпадающего списка «Тип события» — из справочника «Коды часов»
+const typeItems = computed(() => timeCodes.value.map(c => ({
+  code: c.code,
+  name: c.name,
+  title: `${c.code} — ${c.name} | День: ${fmtH(c.hours_day)} | Ночь: ${fmtH(c.hours_night)}`,
+  value: c.code,
+  category: categoryForCode(c.code, c.name),
+  raw: c,
+})))
+
+// Справочник категорий по коду (для старых документов без doc_type_category)
+const categoryByCode = computed(() => {
+  const m = {}
+  for (const it of typeItems.value) m[it.code.toUpperCase()] = it.category
+  return m
+})
+
+const LEGACY_CATEGORY = { vacation: 'vacation', business_trip: 'business_trip', sick: 'sick', other: 'other' }
+
+function docCategory(d) {
+  if (d.doc_type_category && CATEGORY_COLORS[d.doc_type_category]) return d.doc_type_category
+  const dt = String(d.doc_type ?? '')
+  // старые документы: doc_type хранится как категория ('vacation' и т.п.)
+  if (LEGACY_CATEGORY[dt]) return LEGACY_CATEGORY[dt]
+  return categoryByCode.value[dt.toUpperCase()] || categoryForCode(dt, '')
+}
+
+function chipColor(d) {
+  return CATEGORY_COLORS[docCategory(d)] || CATEGORY_COLORS.other
+}
 
 function docTypeLabel(v) {
-  return DOC_TYPES.find(t => t.value === v)?.title || v
+  const code = String(v ?? '').trim()
+  const tc = timeCodes.value.find(c => c.code === code)
+  if (tc) return `${code} — ${tc.name}`
+  // старые документы: doc_type — это категория ('vacation' и т.п.)
+  if (LEGACY_CATEGORY[code]) return CATEGORY_TITLES[LEGACY_CATEGORY[code]] || code
+  const cat = categoryByCode.value[code.toUpperCase()] || categoryForCode(code, '')
+  return `${code} (${CATEGORY_TITLES[cat] || 'Другое'})`
 }
 
 const docs = ref([])
@@ -233,10 +340,12 @@ const messageType = ref('success')
 
 const form = ref({
   employee_id: null,
-  doc_type: 'vacation',
+  doc_type: 'О',               // код из справочника «Коды часов» (тип события)
+  doc_type_category: 'vacation', // внутренняя категория — для цвета чипа
   start_date: '',
   end_date: '',
-  code: 'О',
+  code: 'О',                   // подставляется автоматически из типа события
+  hours: null,                 // часы события (автоподстановка из кода, можно изменить)
   doc_number: '',
   title: '',
   is_active: true,
@@ -255,6 +364,11 @@ function filterCodes(item, query) {
   return String(item.title ?? '').toLowerCase().replace(/ё/g, 'е').includes(q)
 }
 
+// То же для элементов typeItems (raw — объект кода справочника)
+function filterCodesByTitle(item, query) {
+  return filterCodes(item, query)
+}
+
 const daysCount = computed(() => {
   if (!form.value.start_date || !form.value.end_date) return null
   const a = new Date(form.value.start_date), b = new Date(form.value.end_date)
@@ -268,9 +382,14 @@ function fmtDate(s) {
   return `${d}.${m}.${y}`
 }
 
+// Выбор «Типа события» (код из справочника): автоматически подставляем
+// соответствующий код в поле «Код часов», категорию и часы события.
 function onTypeChange(v) {
-  const t = DOC_TYPES.find(x => x.value === v)
-  if (t && t.code) form.value.code = t.code   // автоподстановка кода по типу
+  const tc = timeCodes.value.find(c => c.code === v)
+  if (!tc) return
+  form.value.code = tc.code                                   // автоподстановка кода
+  form.value.doc_type_category = categoryForCode(tc.code, tc.name)
+  form.value.hours = codeEventHours(tc)                       // часы из кода (редактируемы)
 }
 
 function onEmpSearch() { /* поиск применяется в loadDocuments через selected employee */ }
@@ -353,14 +472,19 @@ function openCreate() {
   const mm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-`
   form.value = {
     employee_id: null,
-    doc_type: 'vacation',
+    doc_type: 'О',
+    doc_type_category: 'vacation',
     start_date: `${mm}${String(today.getDate()).padStart(2, '0')}`,
     end_date: `${mm}${String(today.getDate()).padStart(2, '0')}`,
     code: 'О',
+    hours: null,
     doc_number: '',
     title: '',
     is_active: true,
   }
+  // автоподстановка часов из кода «О», если он есть в справочнике
+  const def = timeCodes.value.find(c => c.code === 'О')
+  if (def) form.value.hours = codeEventHours(def)
   editDialog.value = true
 }
 
@@ -369,10 +493,12 @@ function openEdit(d) {
   editingId.value = d.id
   form.value = {
     employee_id: d.employee_id,
-    doc_type: d.doc_type,
+    doc_type: d.doc_type,                 // код из справочника («Тип события»)
+    doc_type_category: d.doc_type_category || docCategory(d),
     start_date: d.start_date,
     end_date: d.end_date,
     code: d.code,
+    hours: d.hours ?? null,
     doc_number: d.doc_number || '',
     title: d.title || '',
     is_active: d.is_active,
@@ -382,8 +508,8 @@ function openEdit(d) {
 
 async function saveDoc() {
   message.value = ''
-  if (!form.value.employee_id || !form.value.code || !form.value.start_date || !form.value.end_date) {
-    message.value = 'Заполните сотрудника, период и код'
+  if (!form.value.employee_id || !form.value.doc_type || !form.value.code || !form.value.start_date || !form.value.end_date) {
+    message.value = 'Заполните сотрудника, тип события, период и код'
     messageType.value = 'error'
     return
   }

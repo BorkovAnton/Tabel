@@ -31,6 +31,8 @@ MIGRATIONS = [
     ("users", "is_documents_manager", "BOOLEAN NOT NULL DEFAULT FALSE"),
     # Часы события в документе (автоподставляются из выбранного «Кода часов»)
     ("documents", "hours", "NUMERIC(5,2) DEFAULT NULL"),
+    # Внутренняя категория типа документа (vacation/business_trip/sick/other) — цвет чипа
+    ("documents", "doc_type_category", "VARCHAR(50) DEFAULT NULL"),
 ]
 
 
