@@ -141,10 +141,16 @@
     <!-- Легенда подсветки ячеек -->
     <v-card v-if="reportData" class="mb-4 pa-4" elevation="2">
       <div class="text-subtitle-1 font-weight-bold mb-2">Легенда подсветки</div>
+      <div class="text-caption text-grey mb-2">
+        Порог переработки из настроек расчёта:
+        <b v-if="overtimeThresholdMin > 0">{{ overtimeThresholdMin }} мин</b>
+        <b v-else>0 (считается любая переработка)</b>.
+        Переработка в пределах порога не считается сверхурочной — ячейка остаётся зелёной.
+      </div>
       <div class="d-flex flex-wrap legend-row">
         <div class="d-flex align-center legend-item">
           <span class="legend-swatch norm-met-cell"></span>
-          <span>Норма выполнена</span>
+          <span>Норма выполнена / переработка ≤ порога</span>
         </div>
         <div class="d-flex align-center legend-item">
           <span class="legend-swatch overtime-cell"></span>
@@ -234,10 +240,13 @@
                         <v-icon size="x-small" icon="mdi-clock-alert-outline"></v-icon>
                         Сверхурочно: {{ formatTime(emp.days[day].overtime) }}
                       </div>
-                      <!-- Индикатор «норма выполнена»: факт = норма (допуск ±5 минут) -->
+                      <!-- Индикатор «норма выполнена»: факт = норма либо переработка ≤ порога из настроек -->
                       <div v-else-if="isNormMet(emp.days[day])" class="d-flex align-center ga-1 norm-indicator">
                         <v-icon size="x-small" icon="mdi-check-circle"></v-icon>
-                        ✅ Норма выполнена
+                        <template v-if="Number(emp.days[day]?.hours || 0) > Number(emp.days[day]?.default_hours || 0) + NORM_TOLERANCE && hasNorm(emp.days[day])">
+                          Переработка {{ formatTime(Math.max(0, Number(emp.days[day].hours) - Number(emp.days[day].default_hours))) }} ≤ порога ({{ overtimeThresholdMin }} мин) — не сверхурочная
+                        </template>
+                        <template v-else>✅ Норма выполнена</template>
                       </div>
                       <!-- Индикатор недовыработки: факт < нормы (за пределами допуска) -->
                       <div v-else-if="isUnderwork(emp.days[day])" class="d-flex align-center ga-1 underwork-indicator">
@@ -281,6 +290,25 @@ import { auth } from '../auth'
 // Допуск при сравнении факта с нормой: 5 минут в часах (0.083 ч).
 // Нужен, потому что при округлении могут быть расхождения в несколько секунд.
 const NORM_TOLERANCE = 0.083
+
+// Порог переработки из «Настроек расчёта» (минуты). Применяется ко всем графикам:
+// если переработка не превышает порог — она НЕ считается сверхурочной,
+// и ячейка остаётся зелёной («норма выполнена»). Например, при пороге 30 мин:
+// переработка 15 мин → сверхурочные = 0 (зелёная), переработка 36 мин → жёлтая.
+const overtimeThresholdMin = ref(0)
+
+async function loadOvertimeThreshold() {
+  try {
+    const { data } = await api.get('/company-settings/')
+    overtimeThresholdMin.value = Number(data.overtime_threshold ?? 0) || 0
+  } catch (e) {
+    // Если настройки недоступны — считаем порог равным 0 (старое поведение)
+    console.error('Ошибка загрузки настроек расчёта:', e)
+    overtimeThresholdMin.value = 0
+  }
+}
+
+onMounted(loadOvertimeThreshold)
 
 const loading = ref(false)
 const excelLoading = ref(false)
@@ -441,12 +469,14 @@ function getCellClasses(dayData, day) {
   const norm = hasNorm ? Number(dayData.default_hours) : 0
 
   if (fact > 0 && hasNorm && norm > 0) {
-    // ЖЁЛТЫЙ: переработка (факт больше нормы с учётом допуска ±5 минут)
-    if (val.includes('с') || fact > norm + NORM_TOLERANCE) return 'overtime-cell'
-    // ✅ ЗЕЛЁНЫЙ: норма выполнена (|факт − норма| ≤ допуск) — день отработан корректно
-    if (Math.abs(fact - norm) <= NORM_TOLERANCE) return 'norm-met-cell'
+    // ЖЁЛТЫЙ: переработка СВЕРХ порога из «Настроек расчёта» (минуты).
+    // Если переработка не превышает порог — она не считается сверхурочной,
+    // и ячейка остаётся зелёной («норма выполнена»).
+    if (isRealOvertime(dayData)) return 'overtime-cell'
+    // ✅ ЗЕЛЁНЫЙ: норма выполнена (переработка в пределах порога/допуска)
+    if (isNormMet(dayData)) return 'norm-met-cell'
     // РОЗОВЫЙ: недовыработка (факт меньше нормы с учётом допуска)
-    if (fact < norm - NORM_TOLERANCE) return 'underwork-cell'
+    if (isUnderwork(dayData)) return 'underwork-cell'
   }
 
   // Фолбэк для старых данных без default_hours: формат "10.25 (2.25с)"
@@ -461,12 +491,36 @@ function hasNorm(dayData) {
     && Number(dayData.default_hours) > 0
 }
 
-// ✅ Норма выполнена: |факт − норма| ≤ допуск (±5 минут), день отработан корректно
+// Сверхурочные с учётом порога из «Настроек расчёта» (минуты):
+// если переработка (факт − норма) в минутах НЕ превышает порог — она не считается
+// сверхурочной. Порог 0 = любое превышение (вне допуска ±5 мин) — сверхурочные.
+// Логика полностью повторяет backend apply_overtime_threshold().
+function isRealOvertime(dayData) {
+  if (!dayData || !hasNorm(dayData)) return false
+  const fact = Number(dayData.hours) || 0
+  if (fact <= 0) return false
+  // Если бэкенд уже посчитал сверхурочные (> 0) — они точно есть
+  if (Number(dayData.overtime) > 0) return true
+  const overMin = Math.round((fact - Number(dayData.default_hours)) * 60 * 1000000) / 1000000
+  if (overMin <= NORM_TOLERANCE * 60) return false // в пределах допуска округления
+  return overMin > overtimeThresholdMin.value
+}
+
+// ✅ Норма выполнена: факт равен норме (допуск ±5 мин) ЛИБО переработка не
+// превышает порог из настроек расчёта (сверхурочные = 0) — день отработан корректно.
+// Порог влияет только на переработки: недовыработка остаётся розовой при любом пороге.
 function isNormMet(dayData) {
   if (!dayData || !hasNorm(dayData)) return false
   const fact = Number(dayData.hours) || 0
   if (fact <= 0) return false
-  return Math.abs(fact - Number(dayData.default_hours)) <= NORM_TOLERANCE
+  if (isRealOvertime(dayData)) return false
+  const diffHours = fact - Number(dayData.default_hours)
+  if (diffHours > 0) {
+    // Переработка в пределах порога → «норма выполнена» (зелёный)
+    return diffHours <= Math.max(NORM_TOLERANCE, overtimeThresholdMin.value / 60)
+  }
+  // Факт <= нормы: зелёный только если разница в допуске округления (±5 мин)
+  return Math.abs(diffHours) <= NORM_TOLERANCE
 }
 
 // ↓ Недовыработка: факт меньше нормы за пределами допуска
