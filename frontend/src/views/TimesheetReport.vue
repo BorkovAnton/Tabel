@@ -166,7 +166,7 @@
         </div>
         <div class="d-flex align-center legend-item">
           <span class="legend-swatch cell-from-document"></span>
-          <span>По документу (К, О, Б…) — проходная игнорируется</span>
+          <span>По документу (К, О, Б…) — проходная игнорируется; отпуск «О» с фактическим приходом считается по проходной как обычный рабочий день и попадает в «Итого»</span>
         </div>
         <div class="d-flex align-center legend-item">
           <span class="legend-swatch weekend-cell"></span>
@@ -224,7 +224,7 @@
                     </template>
                     <div class="day-tooltip">
                       <div class="font-weight-bold mb-1">{{ tooltipDateLabel(day) }}</div>
-                      <!-- День по документу (К, О, Б…): проходная игнорируется -->
+                      <!-- День по документу (К, Б, О без приходов): проходная игнорируется -->
                       <div v-if="emp.days[day]?.document_code" class="mb-1">
                         <v-chip color="info" size="x-small">Документ: {{ emp.days[day].document_code }}</v-chip>
                         <div v-if="emp.days[day]?.review_reason" class="text-caption mt-1">{{ emp.days[day].review_reason }}</div>
@@ -233,8 +233,8 @@
                         <v-chip color="red" size="x-small">⚠ Требует проверки</v-chip>
                         <div v-if="emp.days[day]?.review_reason" class="text-caption mt-1">{{ emp.days[day].review_reason }}</div>
                       </div>
-                      <!-- Вход/выход — только для дней по проходной (в дни документов их нет) -->
-                      <template v-if="!emp.days[day]?.document_code">
+                      <!-- Вход/выход — для дней по проходной и для отпуска с фактическим приходом -->
+                      <template v-if="!emp.days[day]?.document_code || isWorkInVacation(emp.days[day])">
                         <div class="d-flex align-center ga-1">
                           <v-icon size="x-small" icon="mdi-login" color="green-darken-2"></v-icon>
                           Вход: {{ emp.days[day]?.first_in || '—' }}
@@ -467,10 +467,15 @@ function getCellClasses(dayData, day) {
   if (!dayData) return isWeekend(day) ? 'weekend-cell' : ''
   const val = dayData.value
 
+  // Отпуск + фактический приход: считаем и подсвечиваем как обычный рабочий
+  // день (норма/сверхурочные/недовыработка), цвет не меняем. Код «О» виден
+  // в tooltip. Признак: есть документ, но ячейка несёт числовые часы.
+  const isWorkInVacation = dayData.document_code && hoursCellValue(dayData) !== null
+
   // ДЕНЬ ПО ДОКУМЕНТУ (К, О, Б…): день заполняется только по документу,
   // события проходной игнорируются. Код присутствия («К») несёт часы по
   // графику, отсутствие («О», «Б») — код без часов.
-  if (dayData.document_code) return 'cell-from-document'
+  if (dayData.document_code && !isWorkInVacation) return 'cell-from-document'
   if (val === 'О6' || dayData.needs_review) return 'review-cell'
   if (val === 'в') return 'weekend-cell'
 
@@ -493,6 +498,23 @@ function getCellClasses(dayData, day) {
   // Фолбэк для старых данных без default_hours: формат "10.25 (2.25с)"
   if (val.includes('с')) return 'overtime-cell'
   return 'work-cell'
+}
+
+// Числовые часы в значении ячейки (или null, если значение — код/«в»/«О6»).
+// Например: "8.5" → 8.5; "9.0 (1.0с)" → 9.0; "К" / "О" / "в" / "О6" → null.
+function hoursCellValue(dayData) {
+  if (!dayData || typeof dayData.value !== 'string') return null
+  const m = dayData.value.match(/^([\d.]+)/)
+  if (!m) return null
+  const n = parseFloat(m[1])
+  return isNaN(n) ? null : n
+}
+
+// Работа в период отпуска: есть код документа («О») И фактические часы
+// от проходной — показываем их как обычный рабочий день, цвет не меняем.
+function isWorkInVacation(dayData) {
+  if (!dayData || !dayData.document_code) return false
+  return hoursCellValue(dayData) !== null
 }
 
 // Есть ли у ячейки норма по графику (default_hours > 0)
