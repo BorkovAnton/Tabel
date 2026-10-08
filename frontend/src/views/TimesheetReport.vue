@@ -149,10 +149,6 @@
       </div>
       <div class="d-flex flex-wrap legend-row">
         <div class="d-flex align-center legend-item">
-          <span class="legend-swatch work-in-document-cell"></span>
-          <span>Работа в период документа (часы факт)</span>
-        </div>
-        <div class="d-flex align-center legend-item">
           <span class="legend-swatch norm-met-cell"></span>
           <span>Норма выполнена / переработка ≤ порога</span>
         </div>
@@ -170,7 +166,7 @@
         </div>
         <div class="d-flex align-center legend-item">
           <span class="legend-swatch cell-from-document"></span>
-          <span>По документу, без фактических часов</span>
+          <span>По документу (К, О, Б…) — проходная игнорируется</span>
         </div>
         <div class="d-flex align-center legend-item">
           <span class="legend-swatch weekend-cell"></span>
@@ -228,12 +224,8 @@
                     </template>
                     <div class="day-tooltip">
                       <div class="font-weight-bold mb-1">{{ tooltipDateLabel(day) }}</div>
-                      <!-- Работа в период документа: документ есть, но сотрудник приходил -->
-                      <div v-if="isWorkInDocument(emp.days[day])" class="mb-1">
-                        <v-chip color="purple" size="x-small">📄 Работа в период: {{ emp.days[day].document_code }}</v-chip>
-                        <div v-if="emp.days[day]?.review_reason" class="text-caption mt-1">{{ emp.days[day].review_reason }}</div>
-                      </div>
-                      <div v-else-if="emp.days[day]?.document_code" class="mb-1">
+                      <!-- День по документу (К, О, Б…): проходная игнорируется -->
+                      <div v-if="emp.days[day]?.document_code" class="mb-1">
                         <v-chip color="info" size="x-small">Документ: {{ emp.days[day].document_code }}</v-chip>
                         <div v-if="emp.days[day]?.review_reason" class="text-caption mt-1">{{ emp.days[day].review_reason }}</div>
                       </div>
@@ -241,14 +233,17 @@
                         <v-chip color="red" size="x-small">⚠ Требует проверки</v-chip>
                         <div v-if="emp.days[day]?.review_reason" class="text-caption mt-1">{{ emp.days[day].review_reason }}</div>
                       </div>
-                      <div class="d-flex align-center ga-1">
-                        <v-icon size="x-small" icon="mdi-login" color="green-darken-2"></v-icon>
-                        Вход: {{ emp.days[day]?.first_in || '—' }}
-                      </div>
-                      <div class="d-flex align-center ga-1">
-                        <v-icon size="x-small" icon="mdi-logout" color="red-darken-2"></v-icon>
-                        Выход: {{ emp.days[day]?.last_out || '—' }}
-                      </div>
+                      <!-- Вход/выход — только для дней по проходной (в дни документов их нет) -->
+                      <template v-if="!emp.days[day]?.document_code">
+                        <div class="d-flex align-center ga-1">
+                          <v-icon size="x-small" icon="mdi-login" color="green-darken-2"></v-icon>
+                          Вход: {{ emp.days[day]?.first_in || '—' }}
+                        </div>
+                        <div class="d-flex align-center ga-1">
+                          <v-icon size="x-small" icon="mdi-logout" color="red-darken-2"></v-icon>
+                          Выход: {{ emp.days[day]?.last_out || '—' }}
+                        </div>
+                      </template>
                       <div v-if="emp.days[day]?.overtime" class="d-flex align-center ga-1 text-orange-darken-2">
                         <v-icon size="x-small" icon="mdi-clock-alert-outline"></v-icon>
                         Сверхурочно: {{ formatTime(emp.days[day].overtime) }}
@@ -472,10 +467,9 @@ function getCellClasses(dayData, day) {
   if (!dayData) return isWeekend(day) ? 'weekend-cell' : ''
   const val = dayData.value
 
-  // ФИОЛЕТОВЫЙ: работа в период документа (сотрудника вызвали на работу
-  // в отпуск/командировку — есть документ И фактические часы > 0)
-  const factForDoc = Number(dayData.hours) || 0
-  if (dayData.document_code && factForDoc > 0) return 'work-in-document-cell'
+  // ДЕНЬ ПО ДОКУМЕНТУ (К, О, Б…): день заполняется только по документу,
+  // события проходной игнорируются. Код присутствия («К») несёт часы по
+  // графику, отсутствие («О», «Б») — код без часов.
   if (dayData.document_code) return 'cell-from-document'
   if (val === 'О6' || dayData.needs_review) return 'review-cell'
   if (val === 'в') return 'weekend-cell'
@@ -499,13 +493,6 @@ function getCellClasses(dayData, day) {
   // Фолбэк для старых данных без default_hours: формат "10.25 (2.25с)"
   if (val.includes('с')) return 'overtime-cell'
   return 'work-cell'
-}
-
-// 📄 Работа в период документа: на день есть активный документ (отпуск,
-// командировка и т.п.), но сотрудник фактически приходил (часы > 0).
-function isWorkInDocument(dayData) {
-  if (!dayData || !dayData.document_code) return false
-  return (Number(dayData.hours) || 0) > 0
 }
 
 // Есть ли у ячейки норма по графику (default_hours > 0)
@@ -715,18 +702,6 @@ onMounted(() => {
 .cell-from-document {
   background-color: #e8f5e9 !important;
   border: 1px dashed #4caf50;
-}
-
-/* 📄 ФИОЛЕТОВЫЙ: работа в период документа (отпуск/командировка, но сотрудник приходил) */
-.work-in-document-cell {
-  background-color: #f3e5f5 !important;
-  border: 2px solid #9c27b0 !important;
-  color: #4a148c !important;
-  font-weight: bold;
-}
-
-.work-in-document-cell:hover {
-  background-color: #e1bee7 !important;
 }
 
 /* Содержимое tooltip с деталями дня */
