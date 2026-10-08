@@ -255,12 +255,79 @@ def calculate_timesheet(
             day_start = datetime.combine(day, time.min)
             day_end = datetime.combine(day, time.max)
 
+            events = (
+                db.query(TurnstileEvent)
+                .filter(
+                    TurnstileEvent.employee_id == employee.id,
+                    TurnstileEvent.datetime >= day_start,
+                    TurnstileEvent.datetime <= day_end,
+                )
+                .order_by(TurnstileEvent.datetime)
+                .all()
+            )
+
             # === УЧЁТ ДОКУМЕНТОВ («Документы и приказы») ===
-            # Если на день сотрудника оформлен активный документ — он имеет
-            # приоритет над данными проходной.
+            # Если на день сотрудника оформлен активный документ — он задаёт
+            # код дня. НО если при этом есть события проходной (сотрудника
+            # вызвали на работу в отпуск/командировку), показываем фактические
+            # часы работы, а не только код документа (факт важнее документа).
             active_doc = next(
                 (d for d in employee_docs if d.start_date <= day <= d.end_date), None
             )
+            if active_doc is not None and events:
+                first_in, last_out, fact_hours, needs_review, review_reason = (
+                    calculate_day_record(events, lunch_minutes)
+                )
+                existing = (
+                    db.query(TimesheetRecord)
+                    .filter(
+                        TimesheetRecord.employee_id == employee.id,
+                        TimesheetRecord.date == day,
+                    )
+                    .first()
+                )
+                planned_hours = existing.planned_hours if existing else None
+                base_norm = planned_hours if planned_hours is not None else default_hours
+                overtime = apply_overtime_threshold(fact_hours, base_norm, ot_threshold)
+
+                doc_note = f"Работа в период документа: {active_doc.code}"
+                if review_reason:
+                    review_reason = f"{review_reason}. {doc_note}"
+                else:
+                    review_reason = doc_note
+
+                if existing:
+                    existing.first_in = first_in
+                    existing.last_out = last_out
+                    existing.fact_hours = fact_hours
+                    existing.default_hours = default_hours
+                    existing.overtime = overtime
+                    existing.lunch_minutes = lunch_minutes
+                    existing.needs_review = needs_review
+                    existing.review_reason = review_reason
+                    existing.document_code = active_doc.code
+                    records_updated += 1
+                else:
+                    db.add(TimesheetRecord(
+                        employee_id=employee.id,
+                        date=day,
+                        first_in=first_in,
+                        last_out=last_out,
+                        fact_hours=fact_hours,
+                        planned_hours=None,
+                        default_hours=default_hours,
+                        overtime=overtime,
+                        lunch_minutes=lunch_minutes,
+                        needs_review=needs_review,
+                        review_reason=review_reason,
+                        document_code=active_doc.code,
+                    ))
+                    records_created += 1
+                if needs_review:
+                    needs_review_count += 1
+                documents_applied += 1
+                continue  # переходим к следующему дню
+
             if active_doc is not None:
                 code = time_codes.get(active_doc.code) or time_codes.get(active_doc.doc_type)
                 if code is not None:
@@ -336,17 +403,6 @@ def calculate_timesheet(
                     continue  # переходим к следующему дню
                 # Код из документа отсутствует/неактивен в справочнике —
                 # падаем на обычную логику по проходной.
-
-            events = (
-                db.query(TurnstileEvent)
-                .filter(
-                    TurnstileEvent.employee_id == employee.id,
-                    TurnstileEvent.datetime >= day_start,
-                    TurnstileEvent.datetime <= day_end,
-                )
-                .order_by(TurnstileEvent.datetime)
-                .all()
-            )
 
             if not events:
                 # Нет событий за день — запись не создаётся
@@ -549,12 +605,21 @@ def get_timesheet_report(
             record = records_by_day.get(day)
             
             if record:
-                if record.document_code:
+                if record.needs_review:
+                    value = "О6"
+                elif record.document_code and record.fact_hours and record.fact_hours > 0:
+                    # Работа в период документа (сотрудника вызвали на работу
+                    # в отпуск/командировку): показываем фактические часы,
+                    # код документа отдаём отдельно для tooltip/подсветки
+                    fact = round(record.fact_hours, 2)
+                    if record.overtime and record.overtime > 0:
+                        value = f"{fact} ({round(record.overtime, 2)}с)"
+                    else:
+                        value = str(fact)
+                elif record.document_code:
                     # День заполнен по документу («Документы и приказы»):
                     # показываем код документа вместо часов (например «О», «Б»)
                     value = record.document_code
-                elif record.needs_review:
-                    value = "О6"
                 elif record.overtime and record.overtime > 0:
                     # Формат: "10.25 (2.25с)" — фактические часы + сверхурочные в скобках
                     fact = round(record.fact_hours, 2)
@@ -675,6 +740,7 @@ def export_timesheet_excel(
         weekend_fill = PatternFill(start_color="E3F2FD", end_color="E3F2FD", fill_type="solid")
         overtime_fill = PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")
         review_fill = PatternFill(start_color="FFCDD2", end_color="FFCDD2", fill_type="solid")
+        work_doc_fill = PatternFill(start_color="F3E5F5", end_color="F3E5F5", fill_type="solid")
         bold_font = Font(bold=True)
         center_align = Alignment(horizontal="center", vertical="center")
 
@@ -727,6 +793,18 @@ def export_timesheet_excel(
                     if record.needs_review:
                         value = "О6"
                         cell.fill = review_fill
+                    elif record.document_code and record.fact_hours and record.fact_hours > 0:
+                        # Работа в период документа — показываем фактические часы
+                        fact = round(record.fact_hours, 2)
+                        if record.overtime and record.overtime > 0:
+                            value = f"{format_time(fact)} ({format_time(round(record.overtime, 2))}с)"
+                            cell.fill = overtime_fill
+                        else:
+                            value = format_time(fact)
+                            cell.fill = work_doc_fill
+                        total_hours += fact
+                    elif record.document_code:
+                        value = record.document_code
                     elif record.overtime and record.overtime > 0:
                         fact = round(record.fact_hours, 2)
                         overtime = round(record.overtime, 2)
