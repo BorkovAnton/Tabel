@@ -568,6 +568,9 @@ def get_timesheet_report(
                 days_data[str(day)] = {
                     "value": value,
                     "hours": record.fact_hours,
+                    # Норма по графику (default_hours) — нужна фронтенду для
+                    # подсветки «норма выполнена» (|факт − норма| ≤ допуска)
+                    "default_hours": record.default_hours,
                     "needs_review": record.needs_review,
                     # Детали для tooltip на фронтенде: время входа/выхода, сверхурочные
                     "first_in": record.first_in.strftime("%H:%M") if record.first_in else None,
@@ -583,6 +586,7 @@ def get_timesheet_report(
                 days_data[str(day)] = {
                     "value": "в",
                     "hours": 0.0,
+                    "default_hours": None,
                     "needs_review": False,
                     "first_in": None,
                     "last_out": None,

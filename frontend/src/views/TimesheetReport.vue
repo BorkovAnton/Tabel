@@ -138,6 +138,37 @@
       {{ error }}
     </v-alert>
 
+    <!-- Легенда подсветки ячеек -->
+    <v-card v-if="reportData" class="mb-4 pa-4" elevation="2">
+      <div class="text-subtitle-1 font-weight-bold mb-2">Легенда подсветки</div>
+      <div class="d-flex flex-wrap legend-row">
+        <div class="d-flex align-center legend-item">
+          <span class="legend-swatch norm-met-cell"></span>
+          <span>Норма выполнена</span>
+        </div>
+        <div class="d-flex align-center legend-item">
+          <span class="legend-swatch overtime-cell"></span>
+          <span>Сверхурочные</span>
+        </div>
+        <div class="d-flex align-center legend-item">
+          <span class="legend-swatch underwork-cell"></span>
+          <span>Недовыработка</span>
+        </div>
+        <div class="d-flex align-center legend-item">
+          <span class="legend-swatch review-cell"></span>
+          <span>Требует проверки</span>
+        </div>
+        <div class="d-flex align-center legend-item">
+          <span class="legend-swatch cell-from-document"></span>
+          <span>По документу (отпуск и т.п.)</span>
+        </div>
+        <div class="d-flex align-center legend-item">
+          <span class="legend-swatch weekend-cell"></span>
+          <span>Выходной</span>
+        </div>
+      </div>
+    </v-card>
+
     <!-- Таблица табеля -->
     <v-card v-if="reportData" elevation="2">
       <v-card-text class="pa-0">
@@ -203,10 +234,24 @@
                         <v-icon size="x-small" icon="mdi-clock-alert-outline"></v-icon>
                         Сверхурочно: {{ formatTime(emp.days[day].overtime) }}
                       </div>
+                      <!-- Индикатор «норма выполнена»: факт = норма (допуск ±5 минут) -->
+                      <div v-else-if="isNormMet(emp.days[day])" class="d-flex align-center ga-1 norm-indicator">
+                        <v-icon size="x-small" icon="mdi-check-circle"></v-icon>
+                        ✅ Норма выполнена
+                      </div>
+                      <!-- Индикатор недовыработки: факт < нормы (за пределами допуска) -->
+                      <div v-else-if="isUnderwork(emp.days[day])" class="d-flex align-center ga-1 underwork-indicator">
+                        <v-icon size="x-small" icon="mdi-arrow-down-bold-outline"></v-icon>
+                        Недовыработка: {{ formatTime(Math.max(0, Number(emp.days[day].default_hours) - Number(emp.days[day].hours || 0)) ) }}
+                      </div>
                       <v-divider class="my-1"></v-divider>
                       <div class="d-flex align-center ga-1 font-weight-medium">
                         <v-icon size="x-small" icon="mdi-calendar-clock" color="blue-darken-2"></v-icon>
                         {{ emp.days[day]?.hours ? ('Всего: ' + formatTime(emp.days[day].hours)) : 'Данные отсутствуют' }}
+                      </div>
+                      <div v-if="hasNorm(emp.days[day])" class="d-flex align-center ga-1">
+                        <v-icon size="x-small" icon="mdi-target" color="blue-darken-2"></v-icon>
+                        Норма по графику: {{ formatTime(Number(emp.days[day].default_hours)) }} ч
                       </div>
                     </div>
                   </v-tooltip>
@@ -232,6 +277,10 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 import { auth } from '../auth'
+
+// Допуск при сравнении факта с нормой: 5 минут в часах (0.083 ч).
+// Нужен, потому что при округлении могут быть расхождения в несколько секунд.
+const NORM_TOLERANCE = 0.083
 
 const loading = ref(false)
 const excelLoading = ref(false)
@@ -381,12 +430,51 @@ async function downloadExcel() {
 function getCellClasses(dayData, day) {
   if (!dayData) return isWeekend(day) ? 'weekend-cell' : ''
   const val = dayData.value
-  
+
   if (dayData.document_code) return 'cell-from-document'
   if (val === 'О6' || dayData.needs_review) return 'review-cell'
-  if (val.includes('с')) return 'overtime-cell'  // Сверхурочные (формат "10.25 (2.25с)")
   if (val === 'в') return 'weekend-cell'
+
+  // Числовые ячейки: сравниваем факт (hours) с нормой по графику (default_hours)
+  const fact = Number(dayData.hours) || 0
+  const hasNorm = dayData.default_hours !== null && dayData.default_hours !== undefined
+  const norm = hasNorm ? Number(dayData.default_hours) : 0
+
+  if (fact > 0 && hasNorm && norm > 0) {
+    // ЖЁЛТЫЙ: переработка (факт больше нормы с учётом допуска ±5 минут)
+    if (val.includes('с') || fact > norm + NORM_TOLERANCE) return 'overtime-cell'
+    // ✅ ЗЕЛЁНЫЙ: норма выполнена (|факт − норма| ≤ допуск) — день отработан корректно
+    if (Math.abs(fact - norm) <= NORM_TOLERANCE) return 'norm-met-cell'
+    // РОЗОВЫЙ: недовыработка (факт меньше нормы с учётом допуска)
+    if (fact < norm - NORM_TOLERANCE) return 'underwork-cell'
+  }
+
+  // Фолбэк для старых данных без default_hours: формат "10.25 (2.25с)"
+  if (val.includes('с')) return 'overtime-cell'
   return 'work-cell'
+}
+
+// Есть ли у ячейки норма по графику (default_hours > 0)
+function hasNorm(dayData) {
+  if (!dayData) return false
+  return dayData.default_hours !== null && dayData.default_hours !== undefined
+    && Number(dayData.default_hours) > 0
+}
+
+// ✅ Норма выполнена: |факт − норма| ≤ допуск (±5 минут), день отработан корректно
+function isNormMet(dayData) {
+  if (!dayData || !hasNorm(dayData)) return false
+  const fact = Number(dayData.hours) || 0
+  if (fact <= 0) return false
+  return Math.abs(fact - Number(dayData.default_hours)) <= NORM_TOLERANCE
+}
+
+// ↓ Недовыработка: факт меньше нормы за пределами допуска
+function isUnderwork(dayData) {
+  if (!dayData || !hasNorm(dayData)) return false
+  const fact = Number(dayData.hours) || 0
+  if (fact <= 0) return false
+  return fact < Number(dayData.default_hours) - NORM_TOLERANCE
 }
 
 function formatCellValue(dayData) {
@@ -576,6 +664,56 @@ onMounted(() => {
   line-height: 1.2;
   white-space: normal !important;
   word-break: break-word;
+}
+
+/* ✅ ЗЕЛЁНЫЙ: норма выполнена (факт = норма, допуск ±5 минут) */
+.norm-met-cell {
+  background-color: #e8f5e9 !important;  /* светло-зелёный фон */
+  border: 1px solid #4caf50 !important;  /* зелёная рамка */
+  color: #1b5e20 !important;             /* тёмно-зелёный текст */
+}
+
+.norm-met-cell:hover {
+  background-color: #c8e6c9 !important;  /* более тёмный зелёный при наведении */
+}
+
+/* Индикатор «Норма выполнена» в tooltip */
+.norm-indicator {
+  color: #c8e6c9;
+}
+
+/* РОЗОВЫЙ: недовыработка (факт меньше нормы) */
+.underwork-cell {
+  background-color: #fce4ec !important;  /* светло-розовый фон */
+  border: 1px solid #f48fb1 !important;  /* розовая рамка */
+  color: #880e4f !important;             /* тёмно-розовый текст */
+}
+
+.underwork-cell:hover {
+  background-color: #f8bbd0 !important;
+}
+
+/* Индикатор недовыработки в tooltip */
+.underwork-indicator {
+  color: #f8bbd0;
+}
+
+/* Легенда подсветки ячеек */
+.legend-row {
+  gap: 16px;
+}
+
+.legend-item {
+  font-size: 0.85rem;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .review-cell { 
