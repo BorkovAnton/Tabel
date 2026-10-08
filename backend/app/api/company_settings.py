@@ -16,11 +16,21 @@ class CompanySettingsBase(BaseModel):
     company_name: str = ""
     director_position: str = DEFAULT_POSITION
     director_name: str = ""
+    # Порог переработки в минутах (общий для всех графиков). 0 = считать любую переработку.
+    overtime_threshold: int = 0
 
     @field_validator("company_name", "director_name", "director_position")
     @classmethod
     def strip_and_validate(cls, v: str) -> str:
         v = (v or "").strip()
+        return v
+
+    @field_validator("overtime_threshold")
+    @classmethod
+    def validate_threshold(cls, v: int) -> int:
+        v = int(v or 0)
+        if v < 0:
+            raise ValueError("Порог переработки не может быть отрицательным")
         return v
 
 
@@ -42,11 +52,35 @@ def _get_or_create(db: Session) -> CompanySetting:
             company_name="",
             director_position=DEFAULT_POSITION,
             director_name="",
+            overtime_threshold=0,
         )
         db.add(settings)
         db.commit()
         db.refresh(settings)
     return settings
+
+
+def get_overtime_threshold(db: Session) -> int:
+    """Общий порог переработки (минуты) из настроек системы.
+
+    Используется при расчёте сверхурочных в фактическом табеле и отчётах.
+    0 = считать любую переработку (старое поведение).
+    """
+    settings = db.query(CompanySetting).order_by(CompanySetting.id).first()
+    return int(getattr(settings, "overtime_threshold", 0) or 0) if settings else 0
+
+
+def apply_overtime_threshold(fact_hours: float, base_hours: float, threshold_minutes: int) -> float:
+    """Сверхурочные с учётом порога: если переработка (в минутах) <= порога — 0.
+
+    Порог 0 = старое поведение (считается любое превышение).
+    """
+    raw_ot_hours = (fact_hours or 0.0) - (base_hours or 0.0)
+    if raw_ot_hours <= 0:
+        return 0.0
+    if threshold_minutes and round(raw_ot_hours * 60, 6) <= threshold_minutes:
+        return 0.0
+    return max(0.0, round(raw_ot_hours, 2))
 
 
 @router.get("/", response_model=CompanySettingsOut)
@@ -72,6 +106,7 @@ def update_company_settings(payload: CompanySettingsUpdate,
     settings.company_name = payload.company_name
     settings.director_position = payload.director_position
     settings.director_name = payload.director_name
+    settings.overtime_threshold = payload.overtime_threshold
     db.commit()
     db.refresh(settings)
     return settings

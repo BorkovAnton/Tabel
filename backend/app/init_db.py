@@ -34,6 +34,8 @@ MIGRATIONS = [
     # Внутренняя категория типа документа (vacation/business_trip/sick/other) — цвет чипа
     ("documents", "doc_type_category", "VARCHAR(50) DEFAULT NULL"),
     ("timesheet_records", "document_code", "VARCHAR(10) DEFAULT NULL"),
+    # Общий порог переработки (минуты) в настройках системы — применяется ко всем графикам
+    ("company_settings", "overtime_threshold", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

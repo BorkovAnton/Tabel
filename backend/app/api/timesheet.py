@@ -23,6 +23,7 @@ from app.models.timesheet_record import TimesheetRecord
 from app.models.department import Department
 from app.models.document import Document
 from app.models.time_code import TimeCode
+from app.api.company_settings import get_overtime_threshold, apply_overtime_threshold
 from app.schemas.timesheet import (
     TimesheetRecordResponse,
     TimesheetCalculateRequest,
@@ -236,6 +237,10 @@ def calculate_timesheet(
     needs_review_count = 0
     documents_applied = 0
 
+    # Общий порог переработки (минуты) из настроек системы — применяется ко всем графикам.
+    # Превышение нормы <= порога не считается сверхурочным; 0 = считать любую переработку.
+    ot_threshold = get_overtime_threshold(db)
+
     for employee in employees:
         schedule = employee.schedule  # может быть None
         employee_docs = docs_by_employee.get(employee.id, [])
@@ -293,12 +298,12 @@ def calculate_timesheet(
                     if is_absence:
                         overtime = 0.0
                     elif code.use_schedule_hours and default_hours == 0:
-                        # Работа в законный выходной — всё сверхурочно
+                        # Работа в законный выходной — всё сверхурочно (порог не применяется)
                         overtime = round(doc_fact_hours, 2)
                     elif planned_hours is not None:
-                        overtime = max(0.0, round(doc_fact_hours - planned_hours, 2))
+                        overtime = apply_overtime_threshold(doc_fact_hours, planned_hours, ot_threshold)
                     else:
-                        overtime = max(0.0, round(doc_fact_hours - default_hours, 2))
+                        overtime = apply_overtime_threshold(doc_fact_hours, default_hours, ot_threshold)
 
                     if existing:
                         existing.first_in = None
@@ -365,10 +370,11 @@ def calculate_timesheet(
             planned_hours = existing.planned_hours if existing else None
 
             if planned_hours is not None:
-                overtime = max(0.0, round(fact_hours - planned_hours, 2))
+                overtime = apply_overtime_threshold(fact_hours, planned_hours, ot_threshold)
             else:
                 # Предварительный расчёт сверхурочных по норме из графика
-                overtime = max(0.0, round(fact_hours - default_hours, 2))
+                # с учётом общего порога переработки из настроек
+                overtime = apply_overtime_threshold(fact_hours, default_hours, ot_threshold)
 
             if existing:
                 existing.first_in = first_in
@@ -455,7 +461,9 @@ def update_timesheet(
 
     if payload.planned_hours is not None:
         record.planned_hours = payload.planned_hours
-        record.overtime = max(0.0, round(record.fact_hours - record.planned_hours, 2))
+        # Сверхурочные с учётом общего порога переработки из настроек
+        ot_threshold = get_overtime_threshold(db)
+        record.overtime = apply_overtime_threshold(record.fact_hours, payload.planned_hours, ot_threshold)
 
     if payload.needs_review is not None:
         record.needs_review = payload.needs_review

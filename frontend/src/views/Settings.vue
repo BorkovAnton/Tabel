@@ -50,6 +50,35 @@
               hint="Например: Иванов Иван Иванович"
             />
 
+            <!-- Настройки расчёта -->
+            <v-divider class="my-4" />
+            <div class="text-subtitle-1 font-weight-medium mb-2">Настройки расчёта</div>
+            <v-alert type="info" variant="tonal" density="compact" class="mb-4">
+              Применяются ко всем графикам работы при расчёте сверхурочных часов
+              в фактическом табеле и отчётах.
+            </v-alert>
+
+            <v-text-field
+              v-model.number="form.overtime_threshold"
+              label="Порог переработки (минут)"
+              type="number"
+              min="0"
+              step="5"
+              variant="outlined"
+              density="comfortable"
+              class="mb-4"
+              :disabled="!auth.isAdmin"
+              prepend-inner-icon="mdi-timer-outline"
+              hint="Превышение нормы менее или равное этому значению не считается сверхурочным. 0 = считать любую переработку."
+              persistent-hint
+            />
+
+            <v-alert type="info" variant="tonal" density="compact" class="mb-4 mt-6">
+              <strong>Пример:</strong> если порог = 30 мин, то:<br>
+              • переработка 15 мин → сверхурочные = 0<br>
+              • переработка 36 мин → сверхурочные = 36 мин
+            </v-alert>
+
             <div class="mt-4">
               <v-btn
                 color="primary"
@@ -115,6 +144,7 @@ const form = reactive({
   company_name: '',
   director_position: 'Генеральный директор',
   director_name: '',
+  overtime_threshold: 0,
 })
 
 const isDirty = computed(() => {
@@ -122,7 +152,8 @@ const isDirty = computed(() => {
   return (
     form.company_name !== original.value.company_name ||
     form.director_position !== original.value.director_position ||
-    form.director_name !== original.value.director_name
+    form.director_name !== original.value.director_name ||
+    Number(form.overtime_threshold) !== Number(original.value.overtime_threshold ?? 0)
   )
 })
 
@@ -134,6 +165,7 @@ async function load() {
     form.company_name = data.company_name || ''
     form.director_position = data.director_position || 'Генеральный директор'
     form.director_name = data.director_name || ''
+    form.overtime_threshold = Number(data.overtime_threshold ?? 0)
     original.value = { ...data }
   } catch (e) {
     error.value = e.response?.data?.detail || 'Не удалось загрузить настройки'
@@ -159,10 +191,12 @@ async function save() {
       company_name: form.company_name.trim(),
       director_position: (form.director_position || 'Генеральный директор').trim(),
       director_name: form.director_name.trim(),
+      overtime_threshold: Number(form.overtime_threshold) || 0,
     })
     form.company_name = data.company_name
     form.director_position = data.director_position
     form.director_name = data.director_name
+    form.overtime_threshold = Number(data.overtime_threshold ?? 0)
     original.value = { ...data }
     saved.value = true
   } catch (e) {

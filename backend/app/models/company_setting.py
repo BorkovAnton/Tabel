@@ -16,3 +16,7 @@ class CompanySetting(Base):
     company_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     director_position: Mapped[str] = mapped_column(String(100), nullable=False, default="Генеральный директор")
     director_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+
+    # Порог переработки в минутах (общий для всех графиков).
+    # Превышение нормы <= порога не считается сверхурочным. 0 = считать любую переработку.
+    overtime_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
