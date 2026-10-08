@@ -182,15 +182,15 @@
           <table class="timesheet-table">
             <colgroup>
               <col style="width: 40px;">
-              <col style="width: 180px;">
-              <col style="width: 220px;">
+              <col style="width: 150px;">
+              <col style="width: 110px;">
               <col v-for="day in reportData.days_in_month" :key="day" style="width: 45px;">
               <col style="width: 80px;">
             </colgroup>
             <thead>
               <tr class="bg-grey-lighten-4">
                 <th class="sticky-col font-weight-bold">№</th>
-                <th class="sticky-col-2 font-weight-bold">Ф.И.О.</th>
+                <th class="sticky-col-2 font-weight-bold" title="Фамилия и инициалы">Ф.И.О.</th>
                 <th class="sticky-col-3 font-weight-bold">Подразделение</th>
                 <th 
                   v-for="day in reportData.days_in_month" 
@@ -209,8 +209,12 @@
             <tbody>
               <tr v-for="emp in reportData.employees" :key="emp.index">
                 <td class="sticky-col text-center">{{ emp.index }}</td>
-                <td class="sticky-col-2 font-weight-medium">{{ emp.full_name }}</td>
-                <td class="sticky-col-3 text-grey">{{ emp.department }}</td>
+                <td class="sticky-col-2 col-fio-short font-weight-medium" :title="emp.full_name">
+                  {{ emp.short_name || formatShortName(emp.full_name) }}
+                </td>
+                <td class="sticky-col-3 col-department-narrow text-grey" :title="emp.department">
+                  {{ emp.department }}
+                </td>
                 
                 <td
                   v-for="day in reportData.days_in_month"
@@ -463,6 +467,22 @@ async function downloadExcel() {
   }
 }
 
+// "Фамилия И.О." — фолбэк на фронтенде, если бэкенд не прислал short_name
+function formatShortName(fullName) {
+  if (!fullName) return '';
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length >= 3) {
+    // Фамилия Имя Отчество → Фамилия И.О.
+    return `${parts[0]} ${parts[1][0]}.${parts[2][0]}.`;
+  } else if (parts.length === 2) {
+    // Фамилия Имя → Фамилия И.
+    return `${parts[0]} ${parts[1][0]}.`;
+  } else {
+    // Только фамилия
+    return parts[0];
+  }
+}
+
 function getCellClasses(dayData, day) {
   if (!dayData) return isWeekend(day) ? 'weekend-cell' : ''
   const val = dayData.value
@@ -669,11 +689,46 @@ onMounted(() => {
 
 .sticky-col-3 { 
   position: sticky; 
-  left: 220px; 
+  left: 190px; /* 40px (№) + 150px (Ф.И.О.) */
   background: white !important; 
   z-index: 10; 
   text-align: left;
   padding-left: 6px;
+}
+
+/* Колонка Ф.И.О. — фамилия и инициалы, с начала строки */
+.col-fio-short {
+  text-align: left !important;
+  padding-left: 4px !important;  /* минимальный отступ */
+  padding-right: 8px !important;
+  white-space: nowrap !important;  /* не переносить ФИО */
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+/* Колонка Подразделение — узкая (в ~2 раза), перенос текста на 2 строки */
+.col-department-narrow {
+  max-width: 110px !important;
+  width: 110px !important;
+  min-width: 110px !important;
+  text-align: left !important;
+  padding: 4px 6px !important;
+  vertical-align: middle;
+  font-size: 12px;
+  line-height: 1.3;
+
+  /* Разрешаем перенос текста */
+  white-space: normal !important;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+
+  /* Ограничиваем высоту ~2 строками, остальное — многоточие */
+  max-height: 34px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .sticky-col-end { 

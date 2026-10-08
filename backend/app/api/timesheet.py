@@ -24,6 +24,7 @@ from app.models.department import Department
 from app.models.document import Document
 from app.models.time_code import TimeCode
 from app.api.company_settings import get_overtime_threshold, apply_overtime_threshold
+from app.schemas.employee import format_short_name
 from app.schemas.timesheet import (
     TimesheetRecordResponse,
     TimesheetCalculateRequest,
@@ -717,6 +718,8 @@ def get_timesheet_report(
         employee_reports.append({
             "index": idx,
             "full_name": emp.full_name,
+            # "Фамилия И.О." — для компактного отображения в фактическом табеле
+            "short_name": format_short_name(emp.full_name),
             "department": dept_name,
             "days": days_data,
             "total_hours": round(total_hours, 2)
