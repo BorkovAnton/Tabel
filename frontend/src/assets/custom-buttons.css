@@ -1,55 +1,26 @@
-/* Глобальные стили для кнопок редактирования и удаления с кастомными иконками */
+/* Глобальные стили для кастомных кнопок — минимальные.
+   Основные стили находятся в scoped-стилях компонентов
+   CustomEditButton.vue / CustomDeleteButton.vue */
 
-/* Кнопка редактирования с кастомной иконкой */
-.btn-edit-custom {
+.custom-icon-btn {
+  border-radius: 4px !important;
   background: transparent !important;
-  border: none !important;
-  padding: 4px !important;
-  min-width: 32px !important;
-  width: 32px !important;
-  height: 32px !important;
-  cursor: pointer;
-  opacity: 1 !important;  /* Всегда видна */
-  transition: transform 0.2s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  vertical-align: middle;
 }
 
-.btn-edit-custom:hover {
-  transform: scale(1.15);
-}
-
-.btn-edit-custom img {
+.custom-icon-img {
+  display: block;
   width: 24px;
   height: 24px;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
 }
 
-/* Кнопка удаления с кастомной иконкой */
+/* Обратная совместимость со старыми классами — тоже без фона и круглений */
+.btn-edit-custom,
 .btn-delete-custom {
   background: transparent !important;
   border: none !important;
-  padding: 4px !important;
-  min-width: 32px !important;
-  width: 32px !important;
-  height: 32px !important;
-  cursor: pointer;
-  opacity: 1 !important;  /* Всегда видна */
-  transition: transform 0.2s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  vertical-align: middle;
-}
-
-.btn-delete-custom:hover {
-  transform: scale(1.15);
-}
-
-.btn-delete-custom img {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
+  border-radius: 4px !important;
+  box-shadow: none !important;
 }

@@ -1,4 +1,15 @@
+const path = require('path')
+
 module.exports = {
+  configureWebpack: {
+    resolve: {
+      alias: {
+        // Явно фиксируем '@' → frontend/src, чтобы импорт иконок
+        // '@/assets/icons/edit.png' работал гарантированно
+        '@': path.resolve(__dirname, 'src'),
+      },
+    },
+  },
   devServer: {
     host: '0.0.0.0',  // <-- ДОБАВИТЬ: слушать все сетевые интерфейсы
     port: 3000,        // <-- Ваш порт
