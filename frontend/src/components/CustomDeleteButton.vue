@@ -48,7 +48,7 @@ defineEmits(['click'])
 
 .custom-icon-btn:hover {
   background: rgba(244, 67, 54, 0.12);
-  transform: scale(1.15);
+  transform: scale(1.1);
 }
 
 .custom-icon-img {

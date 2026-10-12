@@ -43,7 +43,9 @@ defineEmits(['click'])
 
 .custom-icon-btn:hover {
   background: rgba(0, 0, 0, 0.08);
-  transform: scale(1.15);
+  /* Лёгкое увеличение вместо сильного — transform на inline-элементах
+     может «прыгать» в таблицах; при необходимости верните scale(1.1) */
+  transform: scale(1.1);
 }
 
 .custom-icon-img {
