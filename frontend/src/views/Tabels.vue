@@ -66,7 +66,9 @@
         </v-btn>
         <v-btn v-if="canDelete(item)"
                size="small" variant="text" color="red"
-               icon="mdi-delete" title="Удалить табель" @click.stop="removeTabel(item)" />
+               title="Удалить табель" @click.stop="removeTabel(item)">
+          <template #prepend><CustomDeleteButton /></template>
+        </v-btn>
       </template>
       <template #no-data>
         <div class="pa-6 text-grey">Табели не найдены</div>
@@ -112,6 +114,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
+import CustomDeleteButton from '../components/CustomDeleteButton.vue'
 import { auth } from '../auth'
 
 const router = useRouter()

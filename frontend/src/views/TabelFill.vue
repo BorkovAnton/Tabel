@@ -326,8 +326,8 @@
                 </td>
                 
                 <td v-if="auth.isAdmin" class="text-center">
-                  <v-btn size="x-small" icon="mdi-pencil" color="blue" variant="text" @click="editCode(c)" class="mr-1" />
-                  <v-btn size="x-small" icon="mdi-delete" color="red" variant="text" @click="deleteCode(c)" />
+                  <CustomEditButton class="mr-1" @click="editCode(c)" />
+                  <CustomDeleteButton @click="deleteCode(c)" />
                 </td>
               </tr>
             </tbody>
@@ -716,6 +716,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
+import CustomEditButton from '../components/CustomEditButton.vue'
+import CustomDeleteButton from '../components/CustomDeleteButton.vue'
 import { auth } from '../auth'
 
 const route = useRoute()

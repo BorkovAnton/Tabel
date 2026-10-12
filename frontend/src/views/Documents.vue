@@ -100,9 +100,11 @@
               @update:model-value="toggleActive(d, $event)"
             />
           </td>
-          <td>
-            <v-btn size="x-small" variant="text" prepend-icon="mdi-pencil" @click="openEdit(d)">Изменить</v-btn>
-            <v-btn size="x-small" variant="text" color="error" prepend-icon="mdi-delete-outline" @click="removeDoc(d)">Удалить</v-btn>
+          <td class="text-right">
+            <div class="d-flex align-center justify-end" style="gap: 8px;">
+              <CustomEditButton title="Изменить" @click="openEdit(d)" />
+              <CustomDeleteButton title="Удалить" @click="removeDoc(d)" />
+            </div>
           </td>
         </tr>
       </tbody>
@@ -227,6 +229,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import api from '../api'
+import CustomEditButton from '../components/CustomEditButton.vue'
+import CustomDeleteButton from '../components/CustomDeleteButton.vue'
 
 const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
 

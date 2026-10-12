@@ -150,8 +150,8 @@
                 @click="deleteSelected"
                 :disabled="selectedDuplicates.length === 0"
                 :loading="deleting"
-                prepend-icon="mdi-delete"
               >
+                <template #prepend><CustomDeleteButton title="Удалить выбранные" /></template>
                 Удалить выбранные ({{ selectedDuplicates.length }})
               </v-btn>
               <div class="text-subtitle-2 text-grey">
@@ -561,6 +561,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import api from '../api'
+import CustomDeleteButton from '../components/CustomDeleteButton.vue'
 
 const loading = ref(false)
 const linking = ref(false)

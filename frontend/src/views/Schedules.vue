@@ -12,12 +12,8 @@
           <div class="d-flex justify-space-between align-center mb-3">
             <h3 class="text-h6 font-weight-bold">{{ schedule.name }}</h3>
             <div>
-              <v-btn icon size="small" @click="openEditDialog(schedule)" class="mr-2">
-                <v-icon>mdi-pencil</v-icon>
-              </v-btn>
-              <v-btn icon size="small" color="error" @click="confirmDelete(schedule)">
-                <v-icon>mdi-delete</v-icon>
-              </v-btn>
+              <CustomEditButton class="mr-2" @click="openEditDialog(schedule)" />
+              <CustomDeleteButton @click="confirmDelete(schedule)" />
             </div>
           </div>
 
@@ -184,6 +180,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '../api'
+import CustomEditButton from '../components/CustomEditButton.vue'
+import CustomDeleteButton from '../components/CustomDeleteButton.vue'
 
 const DAY_NAMES = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 

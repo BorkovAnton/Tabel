@@ -27,8 +27,8 @@
         <span v-else class="text-grey text-caption">—</span>
       </template>
       <template #item.actions="{ item }">
-        <v-btn size="small" variant="text" icon="mdi-pencil" color="#2d5a3d" @click="openEdit(item)" />
-        <v-btn size="small" variant="text" icon="mdi-delete" color="red"
+        <CustomEditButton class="mr-1" @click="openEdit(item)" />
+        <CustomDeleteButton
                :disabled="item.id === auth.user?.id" @click="removeUser(item)" />
       </template>
       <template #no-data>
@@ -90,6 +90,8 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '../api'
+import CustomEditButton from '../components/CustomEditButton.vue'
+import CustomDeleteButton from '../components/CustomDeleteButton.vue'
 import { auth } from '../auth'
 
 const headers = [

@@ -61,8 +61,8 @@
           <v-chip color="primary" class="mr-2">
             Всего часов: {{ note.total_hours }}
           </v-chip>
-          <v-btn icon="mdi-pencil" variant="text" title="Редактировать" @click="openEditDialog(note)" />
-          <v-btn icon="mdi-delete" variant="text" color="error" title="Удалить" @click="deleteNote(note.id)" />
+          <CustomEditButton @click="openEditDialog(note)" />
+          <CustomDeleteButton @click="deleteNote(note.id)" />
         </div>
       </v-card-title>
 
@@ -234,7 +234,7 @@
                       <strong>{{ entry.total_hours }}</strong>
                     </td>
                     <td class="col-actions">
-                      <v-btn icon="mdi-delete" variant="text" size="small" color="error" @click="removeEntry(idx)" />
+                      <CustomDeleteButton @click="removeEntry(idx)" />
                     </td>
                   </tr>
                 </tbody>
@@ -334,16 +334,10 @@
             Укажите оба времени (уход и возврат), чтобы рассчитать часы
           </v-alert>
 
-          <v-btn
-            v-if="dayForm.time_out || dayForm.time_in || dayForm.comment"
-            variant="text"
-            color="error"
-            prepend-icon="mdi-delete"
-            class="mt-3"
-            @click="clearDay"
-          >
-            Очистить запись
-          </v-btn>
+          <div v-if="dayForm.time_out || dayForm.time_in || dayForm.comment" class="d-flex align-center mt-3" style="gap: 8px;">
+            <CustomDeleteButton title="Очистить запись" @click="clearDay" />
+            <span class="text-body-2">Очистить запись</span>
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -358,6 +352,8 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import api from '../api'
+import CustomEditButton from '../components/CustomEditButton.vue'
+import CustomDeleteButton from '../components/CustomDeleteButton.vue'
 
 const notes = ref([])
 const departments = ref([])
