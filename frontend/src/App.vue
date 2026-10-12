@@ -79,6 +79,7 @@ const allNavItems = [
   { title: 'Графики', path: '/schedules', icon: 'mdi-clock-outline', auth: false },
   { title: 'Настройки', path: '/settings', icon: 'mdi-cog', admin: true },
   { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true, userRole: true },
+  { title: 'Увольнительные записки', path: '/dismissal-notes', icon: 'mdi-clock-alert-outline', auth: true, userRole: true },
   { title: 'Документы', path: '/documents', icon: 'mdi-file-document-edit-outline', auth: true, documentsRole: true },
   { title: 'Пользователи', path: '/users', icon: 'mdi-account-key', admin: true }
 ]

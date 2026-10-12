@@ -13,6 +13,7 @@ from app.api.holidays import router as holidays_router
 from app.api.reports import router as reports_router
 from app.api.company_settings import router as company_settings_router
 from app.api.documents import router as documents_router
+from app.api.dismissal_notes import router as dismissal_notes_router
 from app.init_data import seed
 from app.init_db import ensure_columns
 
@@ -58,6 +59,7 @@ app.include_router(holidays_router)
 app.include_router(reports_router)
 app.include_router(company_settings_router)
 app.include_router(documents_router)
+app.include_router(dismissal_notes_router)
 
 @app.get("/health")
 async def health_check():

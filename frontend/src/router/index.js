@@ -14,12 +14,15 @@ import Users from '../views/Users.vue'
 import HoursReport from '../views/HoursReport.vue'
 import Settings from '../views/Settings.vue'
 import Documents from '../views/Documents.vue'
+import DismissalNotes from '../views/DismissalNotes.vue'
 
 const routes = [
   // Модуль «Табель»: авторизация обязательна
   { path: '/login', name: 'Login', component: Login },
   { path: '/tabels', name: 'Tabels', component: Tabels, meta: { requiresAuth: true } },
   { path: '/tabels/:id', name: 'TabelFill', component: TabelFill, meta: { requiresAuth: true } },
+  // Увольнительные записки — авторизация обязательна
+  { path: '/dismissal-notes', name: 'DismissalNotes', component: DismissalNotes, meta: { requiresAuth: true } },
   { path: '/users', name: 'Users', component: Users, meta: { requiresAuth: true, requiresAdmin: true } },
   // Документы и приказы — авторизация + роль «Документы и приказы» (см. beforeEach)
   { path: '/documents', name: 'Documents', component: Documents, meta: { requiresAuth: true, requiresDocuments: true } },

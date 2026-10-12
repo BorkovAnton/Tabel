@@ -10,6 +10,7 @@ from .time_code import TimeCode
 from .tabel import Tabel, TabelEntry
 from .company_setting import CompanySetting
 from .document import Document
+from .dismissal_note import DismissalNote, DismissalEntry, DismissalDayRecord
 
 __all__ = [
     "Department",
@@ -24,4 +25,8 @@ __all__ = [
     "Tabel",
     "TabelEntry",
     "CompanySetting",
+    "Document",
+    "DismissalNote",
+    "DismissalEntry",
+    "DismissalDayRecord",
 ]
