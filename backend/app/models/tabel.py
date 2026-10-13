@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -20,9 +20,40 @@ class Tabel(Base):
     responsible_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    responsible_user: Mapped["User"] = relationship("User")
+    # ─── Согласование табеля (workflow: draft -> hr_approved -> fully_approved) ───
+    # Создатель табеля (кто его завёл). Для старых табелей может быть NULL —
+    # в этом случае «создателем» считается ответственный (responsible_user_id).
+    created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    # Проверено начальником отдела кадров (роль из company_settings.hr_manager_id)
+    hr_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    hr_approved_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    hr_approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Проверено специалистом службы безопасности (company_settings.security_specialist_id)
+    security_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    security_approved_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    security_approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    responsible_user: Mapped["User"] = relationship("User", foreign_keys=[responsible_user_id])
+    creator: Mapped["User | None"] = relationship("User", foreign_keys=[created_by])
+    hr_approver: Mapped["User | None"] = relationship("User", foreign_keys=[hr_approved_by])
+    security_approver: Mapped["User | None"] = relationship("User", foreign_keys=[security_approved_by])
     department: Mapped["Department"] = relationship("Department")
     entries: Mapped[list["TabelEntry"]] = relationship("TabelEntry", back_populates="tabel", cascade="all, delete-orphan")
+
+    # ---------- workflow-хелперы ----------
+    @property
+    def state(self) -> str:
+        """Текущее состояние согласования: draft / hr_approved / fully_approved."""
+        if self.security_approved:
+            return "fully_approved"
+        if self.hr_approved:
+            return "hr_approved"
+        return "draft"
+
+    @property
+    def author_id(self) -> int:
+        """Создатель табеля (fallback для старых записей — ответственный)."""
+        return self.created_by or self.responsible_user_id
 
 
 class TabelEntry(Base):

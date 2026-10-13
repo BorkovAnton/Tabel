@@ -36,6 +36,17 @@ MIGRATIONS = [
     ("timesheet_records", "document_code", "VARCHAR(10) DEFAULT NULL"),
     # Общий порог переработки (минуты) в настройках системы — применяется ко всем графикам
     ("company_settings", "overtime_threshold", "INTEGER NOT NULL DEFAULT 0"),
+    # ─── Согласование табеля: роли в настройках ───
+    ("company_settings", "hr_manager_id", "INTEGER REFERENCES users(id)"),
+    ("company_settings", "security_specialist_id", "INTEGER REFERENCES users(id)"),
+    # ─── Согласование табеля: workflow-поля в tabels ───
+    ("tabels", "created_by", "INTEGER REFERENCES users(id)"),
+    ("tabels", "hr_approved", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("tabels", "hr_approved_by", "INTEGER REFERENCES users(id)"),
+    ("tabels", "hr_approved_at", "TIMESTAMP NULL"),
+    ("tabels", "security_approved", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("tabels", "security_approved_by", "INTEGER REFERENCES users(id)"),
+    ("tabels", "security_approved_at", "TIMESTAMP NULL"),
 ]
 
 

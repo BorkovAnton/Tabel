@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.core.security import get_current_user, require_admin
 from app.database import get_db
@@ -18,6 +19,9 @@ class CompanySettingsBase(BaseModel):
     director_name: str = ""
     # Порог переработки в минутах (общий для всех графиков). 0 = считать любую переработку.
     overtime_threshold: int = 0
+    # Роли согласования табеля (id пользователей; NULL — роль не назначена)
+    hr_manager_id: Optional[int] = None
+    security_specialist_id: Optional[int] = None
 
     @field_validator("company_name", "director_name", "director_position")
     @classmethod
@@ -40,6 +44,9 @@ class CompanySettingsUpdate(CompanySettingsBase):
 
 class CompanySettingsOut(CompanySettingsBase):
     id: int
+    # ФИО назначенных ролевых пользователей (для отображения в интерфейсе)
+    hr_manager_name: Optional[str] = None
+    security_specialist_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -83,11 +90,23 @@ def apply_overtime_threshold(fact_hours: float, base_hours: float, threshold_min
     return max(0.0, round(raw_ot_hours, 2))
 
 
+def _settings_out(settings: CompanySetting) -> CompanySettingsOut:
+    """Сериализация настроек с ФИО назначенных ролевых пользователей."""
+    out = CompanySettingsOut.model_validate(settings)
+    if settings.hr_manager:
+        out.hr_manager_name = settings.hr_manager.full_name or settings.hr_manager.username
+    if settings.security_specialist:
+        out.security_specialist_name = (
+            settings.security_specialist.full_name or settings.security_specialist.username
+        )
+    return out
+
+
 @router.get("/", response_model=CompanySettingsOut)
 def read_company_settings(db: Session = Depends(get_db),
                           user: User = Depends(get_current_user)):
     """Чтение настроек предприятия — всем авторизованным (нужно для отчётов/шапок)."""
-    return _get_or_create(db)
+    return _settings_out(_get_or_create(db))
 
 
 @router.put("/", response_model=CompanySettingsOut)
@@ -102,11 +121,19 @@ def update_company_settings(payload: CompanySettingsUpdate,
     if not payload.director_position:
         payload.director_position = DEFAULT_POSITION
 
+    # Ролевые пользователи согласования должны существовать
+    for field, uid in (("hr_manager_id", payload.hr_manager_id),
+                       ("security_specialist_id", payload.security_specialist_id)):
+        if uid is not None and not db.get(User, uid):
+            raise HTTPException(status_code=400, detail="Пользователь для роли согласования не найден")
+
     settings = _get_or_create(db)
     settings.company_name = payload.company_name
     settings.director_position = payload.director_position
     settings.director_name = payload.director_name
     settings.overtime_threshold = payload.overtime_threshold
+    settings.hr_manager_id = payload.hr_manager_id
+    settings.security_specialist_id = payload.security_specialist_id
     db.commit()
     db.refresh(settings)
-    return settings
+    return _settings_out(settings)

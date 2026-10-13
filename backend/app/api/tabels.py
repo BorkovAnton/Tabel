@@ -1,6 +1,6 @@
 import calendar
 import re
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
@@ -17,6 +17,7 @@ from app.core.security import (
     require_timesheet_inspector,
 )
 from app.database import get_db
+from app.models.company_setting import CompanySetting
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.tabel import Tabel, TabelEntry
@@ -64,8 +65,44 @@ class TabelOut(BaseModel):
     responsible_user_name: Optional[str] = None
     employees_count: int = 0
 
+    # ─── Согласование табеля ───
+    created_by: Optional[int] = None
+    created_by_name: Optional[str] = None
+    hr_approved: bool = False
+    hr_approved_by: Optional[int] = None
+    hr_approved_by_name: Optional[str] = None
+    hr_approved_at: Optional[str] = None
+    security_approved: bool = False
+    security_approved_by: Optional[int] = None
+    security_approved_by_name: Optional[str] = None
+    security_approved_at: Optional[str] = None
+    current_state: str = "draft"  # draft / hr_approved / fully_approved
+
     class Config:
         from_attributes = True
+
+
+def _user_display(u: Optional[User]) -> Optional[str]:
+    if not u:
+        return None
+    return u.full_name or u.username
+
+
+def approval_fields(tabel: Tabel) -> dict:
+    """Общие поля согласования для TabelOut/TabelDetailOut."""
+    return {
+        "created_by": tabel.created_by,
+        "created_by_name": _user_display(tabel.creator),
+        "hr_approved": bool(tabel.hr_approved),
+        "hr_approved_by": tabel.hr_approved_by,
+        "hr_approved_by_name": _user_display(tabel.hr_approver),
+        "hr_approved_at": tabel.hr_approved_at.isoformat() if tabel.hr_approved_at else None,
+        "security_approved": bool(tabel.security_approved),
+        "security_approved_by": tabel.security_approved_by,
+        "security_approved_by_name": _user_display(tabel.security_approver),
+        "security_approved_at": tabel.security_approved_at.isoformat() if tabel.security_approved_at else None,
+        "current_state": tabel.state,
+    }
 
 
 class TabelCreate(BaseModel):
@@ -131,6 +168,22 @@ class TabelDetailOut(BaseModel):
     # (приоритет над графиком работы).
     documents: List[DocumentBrief] = []
 
+    # ─── Согласование табеля ───
+    created_by: Optional[int] = None
+    created_by_name: Optional[str] = None
+    created_at: Optional[str] = None
+    hr_approved: bool = False
+    hr_approved_by: Optional[int] = None
+    hr_approved_by_name: Optional[str] = None
+    hr_approved_at: Optional[str] = None
+    security_approved: bool = False
+    security_approved_by: Optional[int] = None
+    security_approved_by_name: Optional[str] = None
+    security_approved_at: Optional[str] = None
+    current_state: str = "draft"  # draft / hr_approved / fully_approved
+    can_edit: bool = True         # может ли текущий пользователь редактировать
+    edit_reason: str = ""         # почему редактирование запрещено (если запрещено)
+
 
 class CellUpdate(BaseModel):
     employee_id: int
@@ -187,18 +240,59 @@ def _can_access(tabel: Tabel, user: User) -> bool:
     return tabel.responsible_user_id == user.id
 
 
-def _check_edit_access(tabel: Tabel, user: User):
+def _get_settings(db: Session) -> CompanySetting:
+    """Настройки предприятия (создаёт запись по умолчанию при необходимости)."""
+    from app.api.company_settings import _get_or_create
+    return _get_or_create(db)
+
+
+def get_tabel_edit_access(tabel: Tabel, user: User, db: Session):
+    """Права редактирования табеля с учётом workflow согласования.
+
+    Возвращает (can_edit: bool, reason: str):
+      - fully_approved (проверено СБ) — редактировать не может никто;
+      - hr_approved (проверен кадровиком) — только начальник отдела кадров;
+      - draft — только создатель табеля (для старых табелей — ответственный).
+    """
+    settings = _get_settings(db)
+    if tabel.security_approved:
+        return False, "Табель проверен службой безопасности — редактирование запрещено"
+    if tabel.hr_approved:
+        if settings.hr_manager_id == user.id:
+            return True, ""
+        return False, "Табель проверен начальником отдела кадров — редактировать может только начальник отдела кадров"
+    if tabel.author_id != user.id:
+        return False, "Редактировать может только создатель табеля"
+    return True, ""
+
+
+def _check_edit_access(tabel: Tabel, user: User, db: Session = None):
     """Редактировать/удалять табель может его ответственный (в т.ч. роль «Пользователь»)
-    или инспектор табелей."""
+    или инспектор табелей. Дополнительно применяется workflow-запрет согласования."""
     if not _can_access(tabel, user):
         raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
     if tabel.responsible_user_id != user.id and not can_manage_tabels(user):
         raise HTTPException(status_code=403, detail="Табель может редактировать только ответственный")
+    # ─── Workflow согласования ───
+    if db is not None:
+        can_edit, reason = get_tabel_edit_access(tabel, user, db)
+        if not can_edit:
+            raise HTTPException(status_code=403, detail=reason)
 
 
-def _check_access(tabel: Tabel, user: User):
+def _check_access(tabel: Tabel, user: User, db: Session = None):
     if not _can_access(tabel, user):
         raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
+    # Заполненные табели нельзя менять в обход прав редактирования
+    if db is not None:
+        can_edit, reason = get_tabel_edit_access(tabel, user, db)
+        if not can_edit:
+            raise HTTPException(status_code=403, detail=reason)
+
+
+def _check_write_access(tabel: Tabel, user: User, db: Session):
+    """Права на изменение содержимого табеля (cells/kdu/сотрудники)."""
+    _check_access(tabel, user, db)
 
 
 def _valid_codes(db: Session) -> set[str]:
@@ -280,6 +374,7 @@ def list_tabels(
             responsible_user_id=t.responsible_user_id,
             responsible_user_name=t.responsible_user.full_name or t.responsible_user.username if t.responsible_user else None,
             employees_count=db.query(TabelEntry).filter(TabelEntry.tabel_id == t.id).count(),
+            **approval_fields(t),
         ))
     return result
 
@@ -308,7 +403,8 @@ def create_tabel(payload: TabelCreate, db: Session = Depends(get_db),
         raise HTTPException(status_code=400, detail="Ответственный пользователь не найден")
 
     tabel = Tabel(year=payload.year, month=payload.month,
-                  department_id=payload.department_id, responsible_user_id=responsible_id)
+                  department_id=payload.department_id, responsible_user_id=responsible_id,
+                  created_by=user.id)  # создатель табеля (workflow согласования)
     db.add(tabel)
     db.commit()
     db.refresh(tabel)
@@ -319,12 +415,15 @@ def create_tabel(payload: TabelCreate, db: Session = Depends(get_db),
         responsible_user_id=tabel.responsible_user_id,
         responsible_user_name=tabel.responsible_user.full_name or tabel.responsible_user.username,
         employees_count=0,
+        **approval_fields(tabel),
     )
 
 
 @router.get("/{tabel_id}", response_model=TabelDetailOut)
 def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tabel = _get_tabel_or_404(tabel_id, db)
+    # Просмотр табеля — доступ по ролям; права на редактирование возвращаются
+    # в полях can_edit/edit_reason (workflow согласования не блокирует просмотр)
     _check_access(tabel, user)
     dim = calendar.monthrange(tabel.year, tabel.month)[1]
     # Нормы часов по дням недели из графиков работы (0=Пн ... 6=Вс)
@@ -388,6 +487,7 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             start_date=d.start_date, end_date=d.end_date,
         ) for d in doc_rows
     ]
+    can_edit, edit_reason = get_tabel_edit_access(tabel, user, db)
     return TabelDetailOut(
         id=tabel.id, year=tabel.year, month=tabel.month, days_in_month=dim,
         department_id=tabel.department_id,
@@ -396,8 +496,98 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
         responsible_user_name=tabel.responsible_user.full_name or tabel.responsible_user.username if tabel.responsible_user else None,
         entries=entries,
         documents=documents_brief,
+        created_at=tabel.created_at.isoformat() if tabel.created_at else None,
+        can_edit=can_edit,
+        edit_reason=edit_reason,
+        **approval_fields(tabel),
         **nonworking_days_map(tabel.year, tabel.month, dim, db),
     )
+
+
+# ---------- согласование табеля (workflow) ----------
+
+def _approval_response(tabel: Tabel) -> dict:
+    return {
+        "ok": True,
+        "hr_approved": bool(tabel.hr_approved),
+        "security_approved": bool(tabel.security_approved),
+        "current_state": tabel.state,
+    }
+
+
+@router.post("/{tabel_id}/approve-hr")
+def approve_by_hr(tabel_id: int, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """Начальник отдела кадров проверяет табель (повторный вызов снимает проверку)."""
+    settings = _get_settings(db)
+    if not settings or settings.hr_manager_id != user.id:
+        raise HTTPException(status_code=403, detail="Только начальник отдела кадров может проверять табель")
+
+    tabel = _get_tabel_or_404(tabel_id, db)
+    # Доступ к просмотру табеля тоже нужен (свои подразделения)
+    if not _can_access(tabel, user):
+        raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
+
+    if tabel.security_approved:
+        raise HTTPException(status_code=400, detail="Табель уже проверен службой безопасности")
+
+    if tabel.hr_approved:
+        # toggle: снимаем свою проверку — табель возвращается в состояние черновика
+        tabel.hr_approved = False
+        tabel.hr_approved_by = None
+        tabel.hr_approved_at = None
+    else:
+        tabel.hr_approved = True
+        tabel.hr_approved_by = user.id
+        tabel.hr_approved_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(tabel)
+    return _approval_response(tabel)
+
+
+@router.post("/{tabel_id}/approve-security")
+def approve_by_security(tabel_id: int, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """Специалист службы безопасности проверяет табель (повторный вызов снимает проверку)."""
+    settings = _get_settings(db)
+    if not settings or settings.security_specialist_id != user.id:
+        raise HTTPException(status_code=403, detail="Только специалист СБ может проверять табель")
+
+    tabel = _get_tabel_or_404(tabel_id, db)
+    if not _can_access(tabel, user):
+        raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
+
+    if not tabel.hr_approved:
+        raise HTTPException(status_code=400, detail="Сначала табель должен проверить начальник отдела кадров")
+
+    if tabel.security_approved:
+        # toggle: СБ снимает свою финальную проверку
+        tabel.security_approved = False
+        tabel.security_approved_by = None
+        tabel.security_approved_at = None
+    else:
+        tabel.security_approved = True
+        tabel.security_approved_by = user.id
+        tabel.security_approved_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(tabel)
+    return _approval_response(tabel)
+
+
+@router.get("/{tabel_id}/can-edit")
+def can_edit_tabel(tabel_id: int, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """Может ли текущий пользователь редактировать табель (учитывает workflow)."""
+    tabel = _get_tabel_or_404(tabel_id, db)
+    _check_access(tabel, user)  # только просмотр-доступ
+    can_edit, reason = get_tabel_edit_access(tabel, user, db)
+    return {
+        "can_edit": can_edit,
+        "reason": reason,
+        "current_state": tabel.state,
+    }
 
 
 def nonworking_days_map(year: int, month: int, dim: int, db: Session) -> dict:
@@ -439,7 +629,7 @@ def add_employees(tabel_id: int, payload: EntriesAdd, db: Session = Depends(get_
                   user: User = Depends(get_current_user)):
     """Добавить сотрудников в табель (выбор из списка с поиском на фронтенде)."""
     tabel = _get_tabel_or_404(tabel_id, db)
-    _check_access(tabel, user)
+    _check_write_access(tabel, user, db)
     added = 0
     next_pos = (db.query(func.max(TabelEntry.position)).filter(
         TabelEntry.tabel_id == tabel_id).scalar() or 0) + 1
@@ -464,7 +654,7 @@ def update_cells(tabel_id: int, updates: List[CellUpdate], db: Session = Depends
                  user: User = Depends(get_current_user)):
     """Сохранить ячейки табеля. Значение — число часов (0…23.59) или код из справочника."""
     tabel = _get_tabel_or_404(tabel_id, db)
-    _check_access(tabel, user)
+    _check_write_access(tabel, user, db)
     dim = calendar.monthrange(tabel.year, tabel.month)[1]
     codes = _valid_codes(db)
 
@@ -508,7 +698,7 @@ def update_kdu(tabel_id: int, updates: List[KduUpdate], db: Session = Depends(ge
     что ввёл пользователь.
     """
     tabel = _get_tabel_or_404(tabel_id, db)
-    _check_access(tabel, user)
+    _check_write_access(tabel, user, db)
     # Кэш записей по employee_id: повторные изменения одного сотрудника
     # применяются к одному объекту (последнее значение побеждает).
     cache: Dict[int, TabelEntry] = {}
@@ -548,7 +738,7 @@ def update_kdu_beacon(tabel_id: int, updates: List[KduUpdate], db: Session = Dep
 def remove_employee(tabel_id: int, employee_id: int, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
     tabel = _get_tabel_or_404(tabel_id, db)
-    _check_access(tabel, user)
+    _check_write_access(tabel, user, db)
     entry = db.query(TabelEntry).filter(
         TabelEntry.tabel_id == tabel_id, TabelEntry.employee_id == employee_id).first()
     if not entry:
@@ -563,7 +753,7 @@ def delete_tabel(tabel_id: int, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
     """Удалить табель — ответственный (в т.ч. роль «Пользователь») или инспектор табелей."""
     tabel = _get_tabel_or_404(tabel_id, db)
-    _check_edit_access(tabel, user)
+    _check_edit_access(tabel, user, db)
     for e in list(tabel.entries):
         db.delete(e)
     db.delete(tabel)
