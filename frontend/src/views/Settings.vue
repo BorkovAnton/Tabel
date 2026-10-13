@@ -109,6 +109,68 @@
       </v-col>
 
       <v-col cols="12" md="6">
+        <!-- Роли и согласование табеля -->
+        <v-card class="pa-4 mb-4" elevation="2">
+          <v-card-title class="px-0 pt-0">Роли и согласование табеля</v-card-title>
+          <v-card-subtitle class="px-0 pb-3">
+            Эти пользователи смогут проверять табели. После проверки табель блокируется для редактирования создателем.
+          </v-card-subtitle>
+
+          <v-row>
+            <v-col cols="12">
+              <v-autocomplete
+                v-model="form.hr_manager_id"
+                :items="users"
+                item-title="full_name_display"
+                item-value="id"
+                label="Начальник отдела кадров"
+                variant="outlined"
+                density="comfortable"
+                clearable
+                class="mb-4"
+                :disabled="!auth.isAdmin || loading"
+                prepend-inner-icon="mdi-account-tie"
+                placeholder="Выберите пользователя..."
+                hint="Может проверять табели после создателя"
+                persistent-hint
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props" :subtitle="item.raw.username" prepend-icon="mdi-account-tie" />
+                </template>
+              </v-autocomplete>
+            </v-col>
+
+            <v-col cols="12">
+              <v-autocomplete
+                v-model="form.security_specialist_id"
+                :items="users"
+                item-title="full_name_display"
+                item-value="id"
+                label="Специалист службы безопасности"
+                variant="outlined"
+                density="comfortable"
+                clearable
+                :disabled="!auth.isAdmin || loading"
+                prepend-inner-icon="mdi-shield-account"
+                placeholder="Выберите пользователя..."
+                hint="Проверяет табель после начальника отдела кадров"
+                persistent-hint
+              >
+                <template #item="{ props, item }">
+                  <v-list-item v-bind="props" :subtitle="item.raw.username" prepend-icon="mdi-shield-account" />
+                </template>
+              </v-autocomplete>
+            </v-col>
+          </v-row>
+
+          <v-alert type="info" variant="tonal" density="compact" class="mt-4">
+            Порядок согласования: создатель заполняет табель → начальник отдела кадров
+            ставит «Проверено» (создатель теряет право редактировать) → специалист СБ
+            ставит «Проверено» (табель полностью блокируется). Повторная установка галочки
+            снимает проверку.
+          </v-alert>
+        </v-card>
+
         <v-card class="pa-4" elevation="2">
           <v-card-title class="px-0 pt-0">Предпросмотр в документах</v-card-title>
           <v-card-subtitle class="px-0 pb-3">
@@ -145,7 +207,25 @@ const form = reactive({
   director_position: 'Генеральный директор',
   director_name: '',
   overtime_threshold: 0,
+  hr_manager_id: null,
+  security_specialist_id: null,
 })
+
+// Пользователи для выбора ролей согласования (список доступен всем авторизованным)
+const users = ref([])
+
+async function loadUsers() {
+  try {
+    const { data } = await api.get('/auth/users')
+    users.value = (data || []).map(u => ({
+      id: u.id,
+      username: u.username,
+      full_name_display: u.full_name ? `${u.full_name} (${u.username})` : u.username,
+    }))
+  } catch (e) {
+    console.error('Ошибка загрузки пользователей:', e)
+  }
+}
 
 const isDirty = computed(() => {
   if (!original.value) return false
@@ -153,7 +233,9 @@ const isDirty = computed(() => {
     form.company_name !== original.value.company_name ||
     form.director_position !== original.value.director_position ||
     form.director_name !== original.value.director_name ||
-    Number(form.overtime_threshold) !== Number(original.value.overtime_threshold ?? 0)
+    Number(form.overtime_threshold) !== Number(original.value.overtime_threshold ?? 0) ||
+    (form.hr_manager_id ?? null) !== (original.value.hr_manager_id ?? null) ||
+    (form.security_specialist_id ?? null) !== (original.value.security_specialist_id ?? null)
   )
 })
 
@@ -166,6 +248,8 @@ async function load() {
     form.director_position = data.director_position || 'Генеральный директор'
     form.director_name = data.director_name || ''
     form.overtime_threshold = Number(data.overtime_threshold ?? 0)
+    form.hr_manager_id = data.hr_manager_id ?? null
+    form.security_specialist_id = data.security_specialist_id ?? null
     original.value = { ...data }
   } catch (e) {
     error.value = e.response?.data?.detail || 'Не удалось загрузить настройки'
@@ -192,11 +276,15 @@ async function save() {
       director_position: (form.director_position || 'Генеральный директор').trim(),
       director_name: form.director_name.trim(),
       overtime_threshold: Number(form.overtime_threshold) || 0,
+      hr_manager_id: form.hr_manager_id ?? null,
+      security_specialist_id: form.security_specialist_id ?? null,
     })
     form.company_name = data.company_name
     form.director_position = data.director_position
     form.director_name = data.director_name
     form.overtime_threshold = Number(data.overtime_threshold ?? 0)
+    form.hr_manager_id = data.hr_manager_id ?? null
+    form.security_specialist_id = data.security_specialist_id ?? null
     original.value = { ...data }
     saved.value = true
   } catch (e) {
@@ -206,7 +294,10 @@ async function save() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadUsers()
+})
 </script>
 
 <style scoped>

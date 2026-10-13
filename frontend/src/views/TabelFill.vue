@@ -11,23 +11,28 @@
       <v-btn variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
         Коды часов
       </v-btn>
-      <v-btn variant="outlined" color="primary" prepend-icon="mdi-calendar-clock" :disabled="!tabel?.entries?.length" @click="openFillByScheduleDialog">
+      <v-btn variant="outlined" color="primary" prepend-icon="mdi-calendar-clock" :disabled="!tabel?.entries?.length || !canEdit" @click="openFillByScheduleDialog">
         Заполнить по графику
       </v-btn>
       <!-- ЗАПОЛНИТЬ ЧИСЛО: выбранный код в конкретную дату для всех сотрудников -->
       <v-btn variant="outlined" color="success" prepend-icon="mdi-calendar-check"
-             :disabled="!tabel?.entries?.length" @click="openFillDayDialog">
+             :disabled="!tabel?.entries?.length || !canEdit" @click="openFillDayDialog">
         Заполнить число
       </v-btn>
       <!-- ЗАПОЛНИТЬ СОТРУДНИКА: выбранный код на весь месяц для выделенного сотрудника -->
       <v-btn variant="outlined" color="success" prepend-icon="mdi-account-edit"
-             :disabled="selectedRow === null" @click="openFillEmployeeDialog">
+             :disabled="selectedRow === null || !canEdit" @click="openFillEmployeeDialog">
         Заполнить сотрудника
       </v-btn>
-      <v-btn color="green darken-1" prepend-icon="mdi-content-save" :loading="saving" @click="save(true)">
+      <v-btn color="green darken-1" prepend-icon="mdi-content-save" :loading="saving" :disabled="!canEdit" @click="save(true)">
         Сохранить
       </v-btn>
     </div>
+
+    <v-alert v-if="!canEdit" type="warning" density="compact" class="mb-3">
+      <v-icon start>{{ tabel.current_state === 'fully_approved' ? 'mdi-shield-check' : 'mdi-lock-outline' }}</v-icon>
+      <strong>Редактирование запрещено.</strong> {{ editReason || 'Табель заблокирован для редактирования.' }}
+    </v-alert>
 
     <v-alert v-if="message" :type="messageType" closable density="compact" class="mb-3" @click:close="message=''">
       {{ message }}
@@ -190,7 +195,7 @@
                   <v-chip v-for="c in codesForRow(row)" :key="c.code" size="x-small"
                           variant="tonal" color="#2d5a3d" style="margin:1px;">{{ c.code }}</v-chip>
                 </span>
-                <a href="#" class="text-red text-caption" style="white-space:nowrap;"
+                <a v-if="canEdit" href="#" class="text-red text-caption" style="white-space:nowrap;"
                    @click.prevent.stop="removeEmployee(row)">Удалить</a>
               </div>
             </td>
@@ -708,6 +713,99 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- ══════ Подвал табеля — блок согласования ══════ -->
+    <v-card class="mt-4 pa-4" variant="outlined">
+      <v-card-title class="text-h6 px-0 pt-0">Согласование табеля</v-card-title>
+      <v-card-text class="px-0 pb-0">
+        <v-row>
+          <!-- Создатель табеля -->
+          <v-col cols="12" md="4">
+            <div class="approval-block">
+              <div class="approval-label">Табель подготовил(а):</div>
+              <div class="approval-value">
+                <v-icon start color="primary">mdi-account</v-icon>
+                {{ tabel.created_by_name || tabel.responsible_user_name || 'Неизвестно' }}
+              </div>
+              <div v-if="tabel.created_at" class="approval-date">
+                {{ formatApprovalDate(tabel.created_at) }}
+              </div>
+            </div>
+          </v-col>
+
+          <!-- Начальник отдела кадров -->
+          <v-col cols="12" md="4">
+            <div class="approval-block" :class="{ approved: tabel.hr_approved }">
+              <div class="approval-label">Начальник отдела кадров:</div>
+              <div class="approval-value">
+                <v-icon start :color="tabel.hr_approved ? 'success' : 'grey'">
+                  {{ tabel.hr_approved ? 'mdi-account-check' : 'mdi-account' }}
+                </v-icon>
+                {{ tabel.hr_approved_by_name || hrManagerName || 'Не назначен' }}
+              </div>
+              <div class="approval-actions mt-2">
+                <v-checkbox
+                  :model-value="tabel.hr_approved"
+                  :disabled="!canApproveHr || approving"
+                  :loading="approving"
+                  color="success"
+                  label="Проверено"
+                  hide-details
+                  density="compact"
+                  @update:model-value="toggleHrApproval"
+                />
+                <div v-if="tabel.hr_approved_at" class="approval-date">
+                  {{ formatApprovalDate(tabel.hr_approved_at) }}
+                </div>
+              </div>
+              <div v-if="!canApproveHr && !tabel.hr_approved" class="approval-hint text-caption text-grey mt-1">
+                Проверять может только пользователь, назначенный в Настройках → «Роли и согласование табеля».
+              </div>
+            </div>
+          </v-col>
+
+          <!-- Специалист СБ -->
+          <v-col cols="12" md="4">
+            <div class="approval-block" :class="{ approved: tabel.security_approved }">
+              <div class="approval-label">Специалист службы безопасности:</div>
+              <div class="approval-value">
+                <v-icon start :color="tabel.security_approved ? 'success' : 'grey'">
+                  {{ tabel.security_approved ? 'mdi-shield-check' : 'mdi-shield' }}
+                </v-icon>
+                {{ tabel.security_approved_by_name || securitySpecialistName || 'Не назначен' }}
+              </div>
+              <div class="approval-actions mt-2">
+                <v-checkbox
+                  :model-value="tabel.security_approved"
+                  :disabled="!canApproveSecurity || approving"
+                  :loading="approving"
+                  color="success"
+                  label="Проверено"
+                  hide-details
+                  density="compact"
+                  @update:model-value="toggleSecurityApproval"
+                />
+                <div v-if="tabel.security_approved_at" class="approval-date">
+                  {{ formatApprovalDate(tabel.security_approved_at) }}
+                </div>
+              </div>
+              <div v-if="!canApproveSecurity && !tabel.security_approved" class="approval-hint text-caption text-grey mt-1">
+                {{ !tabel.hr_approved
+                     ? 'Доступно после проверки начальником отдела кадров.'
+                     : 'Проверять может только назначенный специалист СБ.' }}
+              </div>
+            </div>
+          </v-col>
+        </v-row>
+
+        <!-- Статус табеля -->
+        <v-alert :type="statusAlertType" variant="tonal" class="mt-4" density="compact">
+          <v-icon start>{{ statusIcon }}</v-icon>
+          <strong>Статус:</strong> {{ statusText }}
+          <span v-if="!canEdit"> — {{ editReason }}</span>
+        </v-alert>
+      </v-card-text>
+    </v-card>
   </div>
   <v-progress-circular v-else indeterminate color="#2d5a3d" />
 </template>
@@ -726,6 +824,117 @@ const dayOfWeekNames = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
 
 const tabel = ref(null)
 const timeCodes = ref([])
+
+// ─── Согласование табеля (workflow: draft → hr_approved → fully_approved) ───
+const approvalSettings = ref({})       // company_settings (hr_manager_id / security_specialist_id)
+const approvalUsers = ref([])          // пользователи для имён назначенных ролей
+const approving = ref(false)           // блокировка чекбоксов на время запроса
+
+// Права редактирования приходят с бэкенда в самом табеле (can_edit / edit_reason)
+const canEdit = computed(() => (tabel.value ? tabel.value.can_edit !== false : true))
+const editReason = computed(() => tabel.value?.edit_reason || '')
+
+// Текущий пользователь берётся из локального состояния авторизации
+// (обновляется при логине; id совпадает с /auth/me)
+const currentUserId = computed(() => auth.user?.id ?? null)
+
+const hrManagerName = computed(() => {
+  const u = approvalUsers.value.find(x => x.id === approvalSettings.value.hr_manager_id)
+  return u ? (u.full_name || u.username) : ''
+})
+const securitySpecialistName = computed(() => {
+  const u = approvalUsers.value.find(x => x.id === approvalSettings.value.security_specialist_id)
+  return u ? (u.full_name || u.username) : ''
+})
+
+const canApproveHr = computed(() => {
+  const uid = currentUserId.value
+  if (uid == null || !approvalSettings.value.hr_manager_id) return false
+  if (uid === approvalSettings.value.hr_manager_id) return true
+  // Администратор может снять проверку кадровика, если СБ ещё не проверил
+  return !!auth.isAdmin && !!tabel.value?.hr_approved && !tabel.value?.security_approved
+})
+
+const canApproveSecurity = computed(() => {
+  const uid = currentUserId.value
+  if (uid == null || !approvalSettings.value.security_specialist_id) return false
+  if (!tabel.value?.hr_approved && !tabel.value?.security_approved) return false // сначала — кадровик
+  if (uid === approvalSettings.value.security_specialist_id) return true
+  // Администратор может снять проверку СБ (разблокировка табеля)
+  return !!auth.isAdmin && !!tabel.value?.security_approved
+})
+
+async function loadApprovalContext() {
+  try {
+    const { data } = await api.get('/company-settings/')
+    approvalSettings.value = data || {}
+  } catch (e) {
+    console.error('Ошибка загрузки настроек:', e)
+  }
+  try {
+    const { data } = await api.get('/auth/users')
+    approvalUsers.value = data || []
+  } catch (e) {
+    console.error('Ошибка загрузки пользователей:', e)
+  }
+}
+
+async function toggleHrApproval() {
+  if (!canApproveHr.value || approving.value) return
+  approving.value = true
+  try {
+    await api.post(`/tabels/${route.params.id}/approve-hr`)
+    await loadTabel()
+  } catch (e) {
+    message.value = e.response?.data?.detail || 'Ошибка согласования (кадровик)'
+    messageType.value = 'error'
+    await loadTabel() // откатить чекбокс к фактическому состоянию
+  } finally {
+    approving.value = false
+  }
+}
+
+async function toggleSecurityApproval() {
+  if (!canApproveSecurity.value || approving.value) return
+  approving.value = true
+  try {
+    await api.post(`/tabels/${route.params.id}/approve-security`)
+    await loadTabel()
+  } catch (e) {
+    message.value = e.response?.data?.detail || 'Ошибка согласования (СБ)'
+    messageType.value = 'error'
+    await loadTabel()
+  } finally {
+    approving.value = false
+  }
+}
+
+const statusText = computed(() => {
+  if (!tabel.value) return ''
+  if (tabel.value.security_approved) return 'Проверен службой безопасности (финальный)'
+  if (tabel.value.hr_approved) return 'Проверен начальником отдела кадров'
+  return 'Черновик (не проверен)'
+})
+const statusIcon = computed(() => {
+  if (!tabel.value) return 'mdi-file'
+  if (tabel.value.security_approved) return 'mdi-shield-check'
+  if (tabel.value.hr_approved) return 'mdi-account-check'
+  return 'mdi-file-edit-outline'
+})
+const statusAlertType = computed(() => {
+  if (!tabel.value) return 'info'
+  if (tabel.value.security_approved) return 'success'
+  if (tabel.value.hr_approved) return 'info'
+  return 'warning'
+})
+
+function formatApprovalDate(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'))
+  if (isNaN(d)) return dateStr
+  return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 const dirty = ref({})
 const dirtyKdu = ref({})   // изменённые ручные значения КДУ: key = `${employee_id}_${field}`
 const cellErrors = ref({})
@@ -1348,6 +1557,12 @@ const filteredCellItems = computed(() => {
 })
 
 function openCellPicker(empId, day, event) {
+  // Workflow согласования: заблокированный табель не открывается для редактирования
+  if (!canEdit.value) {
+    message.value = editReason.value || 'Табель заблокирован для редактирования'
+    messageType.value = 'warning'
+    return
+  }
   const key = empId + '_' + day
   if (openCell.value === key) { openCell.value = null; return }
   menuX.value = event?.clientX ?? 0
@@ -1820,6 +2035,12 @@ async function saveKdu() {
 }
 
 async function save(showMsg = true) {
+  // Workflow согласования: защита от сохранения заблокированного табеля
+  if (!canEdit.value) {
+    message.value = editReason.value || 'Редактирование запрещено'
+    messageType.value = 'error'
+    return false
+  }
   const hasCellChanges = Object.keys(dirty.value).length > 0
   const hasKduChanges = Object.keys(dirtyKdu.value).length > 0
   if (!hasCellChanges && !hasKduChanges) {
@@ -1985,7 +2206,7 @@ function onWindowUnload() {
 window.addEventListener('beforeunload', onWindowUnload)
 
 onMounted(async () => {
-  await Promise.all([loadTabel(), loadCodes()])
+  await Promise.all([loadTabel(), loadCodes(), loadApprovalContext()])
   await loadEmployees()
 })
 </script>
@@ -2429,5 +2650,51 @@ td.col-fio.sticky-left-2 > .sticky-fill { justify-content: flex-start; }
 }
 .code-menu-clear :deep(.v-list-item-title) {
   font-weight: 600;
+}
+
+/* ══ Блок согласования табеля (подвал) ══ */
+.approval-block {
+  padding: 16px;
+  border-radius: 8px;
+  border: 2px solid #e0e0e0;
+  background: #fafafa;
+  transition: all 0.3s ease;
+  height: 100%;
+}
+
+.approval-block.approved {
+  border-color: #4caf50;
+  background: #e8f5e9;
+}
+
+.approval-label {
+  font-size: 12px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.approval-value {
+  font-size: 15px;
+  font-weight: 500;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.approval-date {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.approval-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 </style>
