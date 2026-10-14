@@ -330,36 +330,30 @@
           <div class="reason-checkboxes mt-4">
             <div class="text-subtitle-2 mb-1">Причина отсутствия:</div>
             <v-checkbox
-              :model-value="dayForm.reason === 'work'"
-              true-value="work"
-              false-value=""
+              v-model="dayForm.reason"
+              value="work"
               label="По работе"
               color="primary"
               density="compact"
               hide-details
               class="mb-1"
-              @update:model-value="setDayReason"
             />
             <v-checkbox
-              :model-value="dayForm.reason === 'personal'"
-              true-value="personal"
-              false-value=""
+              v-model="dayForm.reason"
+              value="personal"
               label="Личная"
               color="secondary"
               density="compact"
               hide-details
               class="mb-1"
-              @update:model-value="setDayReason"
             />
             <v-checkbox
-              :model-value="dayForm.reason === 'undefined'"
-              true-value="undefined"
-              false-value=""
+              v-model="dayForm.reason"
+              value="undefined"
               label="Неопределённо"
               color="grey"
               density="compact"
               hide-details
-              @update:model-value="setDayReason"
             />
           </div>
 
@@ -612,13 +606,16 @@ function openDayDialog(entry, day) {
   showDayDialog.value = true
 }
 
-// Поведение radio, но визуально чекбоксы: можно выбрать только одну причину.
-// true-value/false-value: при отметке приходит код причины ('work'/'personal'/'undefined'),
-// при снятии галочки — '' (игнорируем, чтобы всегда была выбрана одна причина).
-function setDayReason(val) {
-  if (!val) return
-  dayForm.value.reason = val
-}
+// Поведение radio, но визуально чекбоксы: все три v-checkbox привязаны к одному
+// dayForm.reason и имеют value="work"/"personal"/"undefined". Отметка одного чекбокса
+// записывает его код в reason, поэтому галочка «переезжает» — активна ровно одна причина.
+watch(() => dayForm.value.reason, (val) => {
+  // Если пользователь случайно снял последнюю галочку (model стал null/'') —
+  // возвращаем значение по умолчанию «Неопределённо», чтобы причина была всегда.
+  if (val !== 'work' && val !== 'personal' && val !== 'undefined') {
+    dayForm.value.reason = 'undefined'
+  }
+})
 
 function calculateDayHours() {
   if (!dayForm.value.time_out || !dayForm.value.time_in) {
