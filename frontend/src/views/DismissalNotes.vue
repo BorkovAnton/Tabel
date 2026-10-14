@@ -438,6 +438,20 @@ const dayForm = ref({
   hours: 0
 })
 
+// Строки 'ГГГГ-ММ-ДД' начала и конца месяца (месяц передан как 1..12)
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+function monthStartStr(year, month) {
+  return `${year}-${pad2(month)}-01`
+}
+
+function monthEndStr(year, month) {
+  const lastDay = new Date(year, month, 0).getDate()
+  return `${year}-${pad2(month)}-${pad2(lastDay)}`
+}
+
 // Дни периода текущей редактируемой записки (для таблицы в диалоге) — весь месяц
 const daysInPeriod = computed(() => {
   const m = form.value.month || (_now.getMonth() + 1)
@@ -468,8 +482,11 @@ async function loadNotes() {
   loading.value = true
   try {
     const params = {}
-    if (filterDateFrom.value) params.date_from = filterDateFrom.value
-    if (filterDateTo.value) params.date_to = filterDateTo.value
+    // Фильтр по месяцу/году — как при просмотре табелей: пересечение с периодом месяца
+    if (filterMonth.value && filterYear.value) {
+      params.date_from = monthStartStr(filterYear.value, filterMonth.value)
+      params.date_to = monthEndStr(filterYear.value, filterMonth.value)
+    }
     if (filterDepartment.value) params.department_id = filterDepartment.value.id
 
     const { data } = await api.get('/dismissal-notes/', { params })
@@ -515,10 +532,9 @@ async function searchEmployees(query) {
 function openCreateDialog() {
   isEditing.value = false
   currentNoteId.value = null
-  const today = new Date().toISOString().split('T')[0]
   form.value = {
-    period_start: today,
-    period_end: today,
+    month: filterMonth.value || (_now.getMonth() + 1),
+    year: filterYear.value || _now.getFullYear(),
     department_id: filterDepartment.value || null,
     comment: '',
     entries: []
@@ -526,12 +542,19 @@ function openCreateDialog() {
   showNoteDialog.value = true
 }
 
+// 'ГГГГ-ММ-ДД' -> { month: 1..12, year }
+function parsePeriodToMonthYear(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  return { month: d.getMonth() + 1, year: d.getFullYear() }
+}
+
 function openEditDialog(note) {
   isEditing.value = true
   currentNoteId.value = note.id
+  const { month, year } = parsePeriodToMonthYear(note.period_start)
   form.value = {
-    period_start: note.period_start,
-    period_end: note.period_end,
+    month,
+    year,
     department_id: note.department_id
       ? departments.value.find(d => d.id === note.department_id) || { id: note.department_id, name: note.department_name }
       : null,
@@ -717,13 +740,16 @@ function getDayCellClass(entry, day) {
 }
 
 async function saveNote() {
-  if (!form.value.period_start || !form.value.period_end || periodError.value) return
+  const month = form.value.month || (_now.getMonth() + 1)
+  const year = form.value.year || _now.getFullYear()
+  const periodStart = monthStartStr(year, month)
+  const periodEnd = monthEndStr(year, month)
 
   saving.value = true
   try {
     const payload = {
-      period_start: form.value.period_start,
-      period_end: form.value.period_end,
+      period_start: periodStart,
+      period_end: periodEnd,
       department_id: form.value.department_id?.id || null,
       comment: form.value.comment || null,
       entries: form.value.entries.map(e => ({
@@ -768,6 +794,13 @@ function formatDate(dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr + (dateStr.length === 10 ? 'T00:00:00' : ''))
   return d.toLocaleDateString('ru-RU')
+}
+
+// Период записки для отображения в списке
+function formatPeriod(startStr, endStr) {
+  if (!startStr || !endStr) return ''
+  if (startStr === endStr) return formatDate(startStr)
+  return `${formatDate(startStr)} — ${formatDate(endStr)}`
 }
 
 onMounted(() => {
