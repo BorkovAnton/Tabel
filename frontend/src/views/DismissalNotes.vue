@@ -431,10 +431,14 @@ const form = ref({
   entries: []
 })
 
+// Причина отсутствия по умолчанию при заполнении увольнительной записки — «Личная».
+// (Сохраняется как код 'personal'; старые записи без причины тоже считаются личной.)
+const DEFAULT_REASON = 'personal'
+
 const dayForm = ref({
   time_out: '',
   time_in: '',
-  reason: 'undefined',  // 'work' | 'personal' | 'undefined'
+  reason: DEFAULT_REASON,  // 'work' | 'personal' | 'undefined'
   hours: 0
 })
 
@@ -569,7 +573,7 @@ function openEditDialog(note) {
         time_out: dr.time_out,
         time_in: dr.time_in,
         hours: dr.hours,
-        reason: dr.reason || 'undefined'
+        reason: dr.reason || DEFAULT_REASON
       })),
       total_hours: e.total_hours || 0,
       work_hours: e.work_hours || 0,
@@ -630,14 +634,14 @@ function openDayDialog(entry, day) {
     dayForm.value = {
       time_out: existing.time_out || '',
       time_in: existing.time_in || '',
-      reason: existing.reason || 'undefined',
+      reason: existing.reason || DEFAULT_REASON,
       hours: existing.hours || 0
     }
   } else {
     dayForm.value = {
       time_out: '',
       time_in: '',
-      reason: 'undefined',
+      reason: DEFAULT_REASON,
       hours: 0
     }
   }
@@ -650,9 +654,9 @@ function openDayDialog(entry, day) {
 // записывает его код в reason, поэтому галочка «переезжает» — активна ровно одна причина.
 watch(() => dayForm.value.reason, (val) => {
   // Если пользователь случайно снял последнюю галочку (model стал null/'') —
-  // возвращаем значение по умолчанию «Неопределённо», чтобы причина была всегда.
+  // возвращаем значение по умолчанию («Личная»), чтобы причина была всегда.
   if (val !== 'work' && val !== 'personal' && val !== 'undefined') {
-    dayForm.value.reason = 'undefined'
+    dayForm.value.reason = DEFAULT_REASON
   }
 })
 
@@ -713,7 +717,7 @@ function saveDay() {
       time_out: dayForm.value.time_out || null,
       time_in: dayForm.value.time_in || null,
       hours: dayForm.value.hours || 0,
-      reason: dayForm.value.reason || 'undefined'
+      reason: dayForm.value.reason || DEFAULT_REASON
     })
   }
 
@@ -723,7 +727,7 @@ function saveDay() {
 }
 
 function clearDay() {
-  dayForm.value = { time_out: '', time_in: '', reason: 'undefined', hours: 0 }
+  dayForm.value = { time_out: '', time_in: '', reason: DEFAULT_REASON, hours: 0 }
   saveDay()
 }
 
@@ -758,7 +762,7 @@ async function saveNote() {
           day: dr.day,
           time_out: dr.time_out || null,
           time_in: dr.time_in || null,
-          reason: dr.reason || 'undefined'
+          reason: dr.reason || DEFAULT_REASON
         }))
       }))
     }
