@@ -231,9 +231,14 @@ def _get_tabel_or_404(tabel_id: int, db: Session) -> Tabel:
     return tabel
 
 
-def _can_access(tabel: Tabel, user: User) -> bool:
+def _can_access(tabel: Tabel, user: User, db: Session = None) -> bool:
     if (user.is_admin or user.is_hr) and user.timesheet_inspector:
         return True
+    # Назначенные роли согласования видят все табели (чтобы проверять и редактировать)
+    if db is not None:
+        settings = _get_settings(db)
+        if settings and user.id in (settings.hr_manager_id, settings.security_specialist_id):
+            return True
     # Роль «Пользователь»: доступ к табелям, где он ответственный
     if user.is_user and tabel.responsible_user_id == user.id:
         return True
@@ -250,28 +255,52 @@ def get_tabel_edit_access(tabel: Tabel, user: User, db: Session):
     """Права редактирования табеля с учётом workflow согласования.
 
     Возвращает (can_edit: bool, reason: str):
-      - fully_approved (проверено СБ) — редактировать не может никто;
-      - hr_approved (проверен кадровиком) — только начальник отдела кадров;
-      - draft — только создатель табеля (для старых табелей — ответственный).
+      - fully_approved (проверено СБ) — только специалист СБ
+        (СБ может вносить финальные правки даже после своей проверки);
+      - hr_approved (проверен кадровиком) — начальник отдела кадров + специалист СБ
+        (создатель больше не может редактировать);
+      - draft — создатель табеля (для старых табелей — ответственный)
+        + начальник отдела кадров + специалист СБ.
     """
     settings = _get_settings(db)
+    is_hr_manager = bool(settings) and settings.hr_manager_id == user.id
+    is_security = bool(settings) and settings.security_specialist_id == user.id
+    is_creator = tabel.author_id == user.id
+
     if tabel.security_approved:
-        return False, "Табель проверен службой безопасности — редактирование запрещено"
-    if tabel.hr_approved:
-        if settings.hr_manager_id == user.id:
+        # Состояние 3: финальное — только СБ
+        if is_security:
             return True, ""
-        return False, "Табель проверен начальником отдела кадров — редактировать может только начальник отдела кадров"
-    if tabel.author_id != user.id:
-        return False, "Редактировать может только создатель табеля"
-    return True, ""
+        # Администратор может разблокировать табель, сняв проверку СБ
+        if user.is_admin:
+            return True, ""
+        return False, ("Табель проверен службой безопасности — "
+                       "редактировать может только специалист СБ")
+    if tabel.hr_approved:
+        # Состояние 2: проверено кадровиком — кадровик + СБ
+        if is_hr_manager or is_security:
+            return True, ""
+        return False, ("Табель проверен начальником отдела кадров — "
+                       "редактировать могут только кадровик или специалист СБ")
+    # Состояние 1: черновик — создатель + кадровик + СБ
+    if is_creator or is_hr_manager or is_security:
+        return True, ""
+    return False, ("Табель не проверен — редактировать могут только создатель, "
+                   "начальник отдела кадров или специалист СБ")
 
 
 def _check_edit_access(tabel: Tabel, user: User, db: Session = None):
-    """Редактировать/удалять табель может его ответственный (в т.ч. роль «Пользователь»)
-    или инспектор табелей. Дополнительно применяется workflow-запрет согласования."""
-    if not _can_access(tabel, user):
+    """Редактировать/удалять табель может его ответственный (в т.ч. роль «Пользователь»),
+    инспектор табелей, а также назначенные кадровик/специалист СБ (с учётом workflow)."""
+    if not _can_access(tabel, user, db):
         raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
-    if tabel.responsible_user_id != user.id and not can_manage_tabels(user):
+    # Назначенные роли согласования могут редактировать табель согласно workflow
+    settings = _get_settings(db) if db is not None else None
+    is_approval_role = bool(settings) and user.id in (
+        settings.hr_manager_id, settings.security_specialist_id)
+    if (tabel.responsible_user_id != user.id
+            and not can_manage_tabels(user)
+            and not is_approval_role):
         raise HTTPException(status_code=403, detail="Табель может редактировать только ответственный")
     # ─── Workflow согласования ───
     if db is not None:
@@ -281,7 +310,7 @@ def _check_edit_access(tabel: Tabel, user: User, db: Session = None):
 
 
 def _check_access(tabel: Tabel, user: User, db: Session = None):
-    if not _can_access(tabel, user):
+    if not _can_access(tabel, user, db):
         raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
     # Заполненные табели нельзя менять в обход прав редактирования
     if db is not None:
@@ -423,8 +452,9 @@ def create_tabel(payload: TabelCreate, db: Session = Depends(get_db),
 def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tabel = _get_tabel_or_404(tabel_id, db)
     # Просмотр табеля — доступ по ролям; права на редактирование возвращаются
-    # в полях can_edit/edit_reason (workflow согласования не блокирует просмотр)
-    _check_access(tabel, user)
+    # в полях can_edit/edit_reason (workflow согласования НЕ блокирует просмотр)
+    if not _can_access(tabel, user, db):
+        raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
     dim = calendar.monthrange(tabel.year, tabel.month)[1]
     # Нормы часов по дням недели из графиков работы (0=Пн ... 6=Вс)
     from app.models.work_schedule import WorkScheduleDay
@@ -525,7 +555,7 @@ def approve_by_hr(tabel_id: int, db: Session = Depends(get_db),
 
     tabel = _get_tabel_or_404(tabel_id, db)
     # Доступ к просмотру табеля тоже нужен (свои подразделения)
-    if not _can_access(tabel, user):
+    if not _can_access(tabel, user, db):
         raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
 
     if tabel.security_approved:
@@ -555,10 +585,10 @@ def approve_by_security(tabel_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=403, detail="Только специалист СБ может проверять табель")
 
     tabel = _get_tabel_or_404(tabel_id, db)
-    if not _can_access(tabel, user):
+    if not _can_access(tabel, user, db):
         raise HTTPException(status_code=403, detail="Нет доступа к этому табелю")
 
-    if not tabel.hr_approved:
+    if not tabel.hr_approved and not tabel.security_approved:
         raise HTTPException(status_code=400, detail="Сначала табель должен проверить начальник отдела кадров")
 
     if tabel.security_approved:
@@ -583,10 +613,14 @@ def can_edit_tabel(tabel_id: int, db: Session = Depends(get_db),
     tabel = _get_tabel_or_404(tabel_id, db)
     _check_access(tabel, user)  # только просмотр-доступ
     can_edit, reason = get_tabel_edit_access(tabel, user, db)
+    settings = _get_settings(db)
     return {
         "can_edit": can_edit,
         "reason": reason,
         "current_state": tabel.state,
+        "is_hr_manager": bool(settings) and settings.hr_manager_id == user.id,
+        "is_security": bool(settings) and settings.security_specialist_id == user.id,
+        "is_creator": tabel.author_id == user.id,
     }
 
 

@@ -790,9 +790,9 @@
                 </div>
               </div>
               <div v-if="!canApproveSecurity && !tabel.security_approved" class="approval-hint text-caption text-grey mt-1">
-                {{ !tabel.hr_approved
-                     ? 'Доступно после проверки начальником отдела кадров.'
-                     : 'Проверять может только назначенный специалист СБ.' }}
+                {{ tabel.hr_approved
+                     ? 'Проверять может только назначенный специалист СБ.'
+                     : 'Доступно после проверки начальником отдела кадров.' }}
               </div>
             </div>
           </v-col>
