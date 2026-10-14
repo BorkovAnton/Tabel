@@ -6,18 +6,26 @@
     <v-card class="mb-4 pa-4">
       <v-row>
         <v-col cols="12" md="3">
-          <v-text-field
-            v-model="filterDateFrom"
-            label="Период с"
-            type="date"
+          <v-select
+            v-model="filterMonth"
+            :items="monthItems"
+            item-title="title"
+            item-value="value"
+            label="Месяц"
+            clearable
+            density="compact"
+            hide-details
             variant="outlined"
           />
         </v-col>
         <v-col cols="12" md="3">
-          <v-text-field
-            v-model="filterDateTo"
-            label="Период по"
-            type="date"
+          <v-select
+            v-model="filterYear"
+            :items="years"
+            label="Год"
+            clearable
+            density="compact"
+            hide-details
             variant="outlined"
           />
         </v-col>
@@ -52,7 +60,7 @@
     <v-card v-for="note in notes" :key="note.id" class="mb-4">
       <v-card-title class="d-flex justify-space-between align-center flex-wrap">
         <div>
-          <strong>Период:</strong> {{ formatDate(note.period_start) }} — {{ formatDate(note.period_end) }}
+          <strong>Период:</strong> {{ formatPeriod(note.period_start, note.period_end) }}
           <span v-if="note.department_name" class="ml-4">
             <strong>Подразделение:</strong> {{ note.department_name }}
           </span>
@@ -138,22 +146,26 @@
         <v-card-title>{{ isEditing ? 'Редактировать записку' : 'Новая увольнительная записка' }}</v-card-title>
         <v-card-text>
           <v-row>
-            <v-col cols="12" md="4">
-              <v-text-field
-                v-model="form.period_start"
-                label="Период с"
-                type="date"
+            <v-col cols="12" md="3">
+              <v-select
+                v-model="form.month"
+                :items="monthItems"
+                item-title="title"
+                item-value="value"
+                label="Месяц"
                 variant="outlined"
-                :rules="[v => !!v || 'Укажите дату']"
+                density="compact"
+                hide-details
               />
             </v-col>
-            <v-col cols="12" md="4">
-              <v-text-field
-                v-model="form.period_end"
-                label="Период по"
-                type="date"
+            <v-col cols="12" md="3">
+              <v-select
+                v-model="form.year"
+                :items="years"
+                label="Год"
                 variant="outlined"
-                :rules="[v => !!v || 'Укажите дату']"
+                density="compact"
+                hide-details
               />
             </v-col>
             <v-col cols="12" md="4">
@@ -390,9 +402,15 @@ const departments = ref([])
 const employees = ref([])
 const employeesLoading = ref(false)
 const loading = ref(false)
-const filterDateFrom = ref('')
-const filterDateTo = ref('')
+const filterMonth = ref(null)
+const filterYear = ref(new Date().getFullYear())
 const filterDepartment = ref(null)
+
+// Месяцы/годы — как при просмотре табелей (Tabels.vue)
+const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+const _now = new Date()
+const years = Array.from({ length: 6 }, (_, i) => _now.getFullYear() - 3 + i)
+const monthItems = monthNames.map((title, idx) => ({ title, value: idx + 1 }))
 
 const showNoteDialog = ref(false)
 const showAddEmployeeDialog = ref(false)
@@ -406,8 +424,8 @@ const currentEntry = ref(null)
 const currentDay = ref(null)
 
 const form = ref({
-  period_start: '',
-  period_end: '',
+  month: _now.getMonth() + 1,
+  year: _now.getFullYear(),
   department_id: null,
   comment: '',
   entries: []
@@ -420,16 +438,14 @@ const dayForm = ref({
   hours: 0
 })
 
-// Дни периода текущей редактируемой записки (для таблицы в диалоге)
-const daysInPeriod = computed(() => buildDays(form.value.period_start, form.value.period_end))
-
-const periodError = computed(() => {
-  if (form.value.period_start && form.value.period_end &&
-      form.value.period_end < form.value.period_start) {
-    return 'Дата окончания не может быть раньше даты начала'
-  }
-  return ''
+// Дни периода текущей редактируемой записки (для таблицы в диалоге) — весь месяц
+const daysInPeriod = computed(() => {
+  const m = form.value.month || (_now.getMonth() + 1)
+  const y = form.value.year || _now.getFullYear()
+  return buildDays(monthStartStr(y, m), monthEndStr(y, m))
 })
+
+const periodError = computed(() => '')
 
 function buildDays(startStr, endStr) {
   if (!startStr || !endStr) return Array.from({ length: 31 }, (_, i) => i + 1)
