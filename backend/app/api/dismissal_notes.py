@@ -63,6 +63,9 @@ def build_note_response(note: DismissalNote, db: Session) -> DismissalNoteRespon
         emp = db.get(Employee, entry.employee_id)
         day_records = []
         entry_total = 0.0
+        work_hours = 0.0
+        personal_hours = 0.0
+        undefined_hours = 0.0
 
         for dr in sorted(entry.day_records, key=lambda r: r.day):
             day_records.append(DismissalDayRecordResponse(
@@ -70,9 +73,17 @@ def build_note_response(note: DismissalNote, db: Session) -> DismissalNoteRespon
                 time_out=time_to_str(dr.time_out),
                 time_in=time_to_str(dr.time_in),
                 hours=float(dr.hours or 0),
-                comment=dr.comment
+                comment=dr.comment,
+                reason=dr.reason
             ))
-            entry_total += float(dr.hours or 0)
+            h = float(dr.hours or 0)
+            entry_total += h
+            if dr.reason == 'work':
+                work_hours += h
+            elif dr.reason == 'personal':
+                personal_hours += h
+            else:
+                undefined_hours += h
 
         entries.append(DismissalEntryResponse(
             id=entry.id,
@@ -81,7 +92,10 @@ def build_note_response(note: DismissalNote, db: Session) -> DismissalNoteRespon
             employee_tab_number=emp.tab_number if emp else None,
             department_name=emp.department.name if emp and emp.department else None,
             day_records=day_records,
-            total_hours=round(entry_total, 2)
+            total_hours=round(entry_total, 2),
+            work_hours=round(work_hours, 2),
+            personal_hours=round(personal_hours, 2),
+            undefined_hours=round(undefined_hours, 2)
         ))
         total_hours += entry_total
 
@@ -153,7 +167,8 @@ def _write_entries(db: Session, note: DismissalNote, payload: DismissalNoteCreat
                 time_out=str_to_time(dr_data.time_out),
                 time_in=str_to_time(dr_data.time_in),
                 hours=hours,
-                comment=dr_data.comment
+                comment=dr_data.comment,
+                reason=dr_data.reason or 'undefined'
             )
             db.add(day_record)
 

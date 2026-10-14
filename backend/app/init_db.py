@@ -47,6 +47,8 @@ MIGRATIONS = [
     ("tabels", "security_approved", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("tabels", "security_approved_by", "INTEGER REFERENCES users(id)"),
     ("tabels", "security_approved_at", "TIMESTAMP NULL"),
+    # ─── Увольнительные записки: причина отсутствия (work/personal/undefined) ───
+    ("dismissal_day_records", "reason", "VARCHAR(20) DEFAULT NULL"),
 ]
 
 

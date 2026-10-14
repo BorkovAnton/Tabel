@@ -48,5 +48,6 @@ class DismissalDayRecord(Base):
     time_in: Mapped[time | None] = mapped_column(Time, nullable=True)
     hours: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     comment: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 'work', 'personal', 'undefined'
 
     entry: Mapped["DismissalEntry"] = relationship("DismissalEntry", back_populates="day_records")

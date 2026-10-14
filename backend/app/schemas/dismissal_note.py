@@ -8,6 +8,7 @@ class DismissalDayRecordCreate(BaseModel):
     time_out: Optional[str] = None
     time_in: Optional[str] = None
     comment: Optional[str] = None
+    reason: Optional[str] = None  # 'work', 'personal', 'undefined'
 
 
 class DismissalEntryCreate(BaseModel):
@@ -37,6 +38,7 @@ class DismissalDayRecordResponse(BaseModel):
     time_in: Optional[str] = None
     hours: float = 0
     comment: Optional[str] = None
+    reason: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -50,6 +52,9 @@ class DismissalEntryResponse(BaseModel):
     department_name: Optional[str] = None
     day_records: List[DismissalDayRecordResponse] = []
     total_hours: float = 0
+    work_hours: float = 0
+    personal_hours: float = 0
+    undefined_hours: float = 0
 
     class Config:
         from_attributes = True

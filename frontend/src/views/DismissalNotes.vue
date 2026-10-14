@@ -82,7 +82,10 @@
                 <th v-for="day in getNoteDays(note)" :key="day" class="col-day">
                   {{ day }}
                 </th>
-                <th class="col-total">Итого</th>
+                <th class="col-total col-work">По работе</th>
+                <th class="col-total col-personal">Личная</th>
+                <th class="col-total col-undefined">Неопределённо</th>
+                <th class="col-total col-grand-total">Итого</th>
               </tr>
             </thead>
             <tbody>
@@ -113,12 +116,13 @@
                     </div>
                   </template>
                 </td>
-                <td class="col-total">
-                  <strong>{{ entry.total_hours }}</strong>
-                </td>
+                <td class="col-total col-work"><strong>{{ entry.work_hours || 0 }}</strong></td>
+                <td class="col-total col-personal"><strong>{{ entry.personal_hours || 0 }}</strong></td>
+                <td class="col-total col-undefined"><strong>{{ entry.undefined_hours || 0 }}</strong></td>
+                <td class="col-total col-grand-total"><strong>{{ entry.total_hours }}</strong></td>
               </tr>
               <tr v-if="note.entries.length === 0">
-                <td :colspan="getNoteDays(note).length + 4" class="text-center py-4 text-grey">
+                <td :colspan="getNoteDays(note).length + 7" class="text-center py-4 text-grey">
                   Нет сотрудников. Нажмите «Редактировать», чтобы добавить.
                 </td>
               </tr>
@@ -198,7 +202,10 @@
                     <th v-for="day in daysInPeriod" :key="day" class="col-day">
                       {{ day }}
                     </th>
-                    <th class="col-total">Итого</th>
+                    <th class="col-total col-work">По работе</th>
+                    <th class="col-total col-personal">Личная</th>
+                    <th class="col-total col-undefined">Неопределённо</th>
+                    <th class="col-total col-grand-total">Итого</th>
                     <th class="col-actions">Действия</th>
                   </tr>
                 </thead>
@@ -230,9 +237,10 @@
                         </div>
                       </template>
                     </td>
-                    <td class="col-total">
-                      <strong>{{ entry.total_hours }}</strong>
-                    </td>
+                    <td class="col-total col-work"><strong>{{ entry.work_hours || 0 }}</strong></td>
+                    <td class="col-total col-personal"><strong>{{ entry.personal_hours || 0 }}</strong></td>
+                    <td class="col-total col-undefined"><strong>{{ entry.undefined_hours || 0 }}</strong></td>
+                    <td class="col-total col-grand-total"><strong>{{ entry.total_hours }}</strong></td>
                     <td class="col-actions">
                       <CustomDeleteButton @click="removeEntry(idx)" />
                     </td>
@@ -319,13 +327,41 @@
             </v-col>
           </v-row>
 
-          <v-text-field
-            v-model="dayForm.comment"
-            label="Комментарий"
-            variant="outlined"
-            placeholder="Например: к врачу"
-            class="mt-4"
-          />
+          <div class="reason-checkboxes mt-4">
+            <div class="text-subtitle-2 mb-1">Причина отсутствия:</div>
+            <v-checkbox
+              :model-value="dayForm.reason === 'work'"
+              true-value="work"
+              false-value=""
+              label="По работе"
+              color="primary"
+              density="compact"
+              hide-details
+              class="mb-1"
+              @update:model-value="setDayReason"
+            />
+            <v-checkbox
+              :model-value="dayForm.reason === 'personal'"
+              true-value="personal"
+              false-value=""
+              label="Личная"
+              color="secondary"
+              density="compact"
+              hide-details
+              class="mb-1"
+              @update:model-value="setDayReason"
+            />
+            <v-checkbox
+              :model-value="dayForm.reason === 'undefined'"
+              true-value="undefined"
+              false-value=""
+              label="Неопределённо"
+              color="grey"
+              density="compact"
+              hide-details
+              @update:model-value="setDayReason"
+            />
+          </div>
 
           <v-alert v-if="dayForm.hours > 0" type="success" variant="tonal" class="mt-2">
             Итого часов: <strong>{{ dayForm.hours }}</strong>
@@ -334,7 +370,7 @@
             Укажите оба времени (уход и возврат), чтобы рассчитать часы
           </v-alert>
 
-          <div v-if="dayForm.time_out || dayForm.time_in || dayForm.comment" class="d-flex align-center mt-3" style="gap: 8px;">
+          <div v-if="dayForm.time_out || dayForm.time_in" class="d-flex align-center mt-3" style="gap: 8px;">
             <CustomDeleteButton title="Очистить запись" @click="clearDay" />
             <span class="text-body-2">Очистить запись</span>
           </div>
@@ -386,7 +422,7 @@ const form = ref({
 const dayForm = ref({
   time_out: '',
   time_in: '',
-  comment: '',
+  reason: 'undefined',  // 'work' | 'personal' | 'undefined'
   hours: 0
 })
 
@@ -500,9 +536,12 @@ function openEditDialog(note) {
         time_out: dr.time_out,
         time_in: dr.time_in,
         hours: dr.hours,
-        comment: dr.comment
+        reason: dr.reason || 'undefined'
       })),
-      total_hours: e.total_hours
+      total_hours: e.total_hours || 0,
+      work_hours: e.work_hours || 0,
+      personal_hours: e.personal_hours || 0,
+      undefined_hours: e.undefined_hours || 0
     }))
   }
   showNoteDialog.value = true
@@ -530,7 +569,10 @@ function addEmployee() {
     employee_tab_number: emp.tab_number,
     department_name: emp.department_name || '',
     day_records: [],
-    total_hours: 0
+    total_hours: 0,
+    work_hours: 0,
+    personal_hours: 0,
+    undefined_hours: 0
   })
 
   selectedEmployee.value = null
@@ -555,19 +597,27 @@ function openDayDialog(entry, day) {
     dayForm.value = {
       time_out: existing.time_out || '',
       time_in: existing.time_in || '',
-      comment: existing.comment || '',
+      reason: existing.reason || 'undefined',
       hours: existing.hours || 0
     }
   } else {
     dayForm.value = {
       time_out: '',
       time_in: '',
-      comment: '',
+      reason: 'undefined',
       hours: 0
     }
   }
 
   showDayDialog.value = true
+}
+
+// Поведение radio, но визуально чекбоксы: можно выбрать только одну причину.
+// true-value/false-value: при отметке приходит код причины ('work'/'personal'/'undefined'),
+// при снятии галочки — '' (игнорируем, чтобы всегда была выбрана одна причина).
+function setDayReason(val) {
+  if (!val) return
+  dayForm.value.reason = val
 }
 
 function calculateDayHours() {
@@ -594,6 +644,20 @@ function calculateDayHours() {
 watch(() => [dayForm.value.time_out, dayForm.value.time_in], calculateDayHours)
 
 function recalcEntryTotal(entry) {
+  let work = 0
+  let personal = 0
+  let undef = 0
+
+  for (const dr of entry.day_records) {
+    const h = dr.hours || 0
+    if (dr.reason === 'work') work += h
+    else if (dr.reason === 'personal') personal += h
+    else undef += h
+  }
+
+  entry.work_hours = Math.round(work * 100) / 100
+  entry.personal_hours = Math.round(personal * 100) / 100
+  entry.undefined_hours = Math.round(undef * 100) / 100
   const sum = entry.day_records.reduce((acc, dr) => acc + (dr.hours || 0), 0)
   entry.total_hours = Math.round(sum * 100) / 100
 }
@@ -606,14 +670,14 @@ function saveDay() {
   // Удаляем старую запись за этот день
   entry.day_records = entry.day_records.filter(dr => dr.day !== day)
 
-  // Если есть время или комментарий — добавляем новую
-  if (dayForm.value.time_out || dayForm.value.time_in || dayForm.value.comment) {
+  // Если есть время — добавляем новую запись с причиной
+  if (dayForm.value.time_out || dayForm.value.time_in) {
     entry.day_records.push({
       day: day,
       time_out: dayForm.value.time_out || null,
       time_in: dayForm.value.time_in || null,
       hours: dayForm.value.hours || 0,
-      comment: dayForm.value.comment || null
+      reason: dayForm.value.reason || 'undefined'
     })
   }
 
@@ -623,14 +687,19 @@ function saveDay() {
 }
 
 function clearDay() {
-  dayForm.value = { time_out: '', time_in: '', comment: '', hours: 0 }
+  dayForm.value = { time_out: '', time_in: '', reason: 'undefined', hours: 0 }
   saveDay()
 }
 
 function getDayCellClass(entry, day) {
   const record = getDayRecord(entry, day)
   if (!record) return ''
-  if (record.hours > 0) return 'day-cell-filled'
+  if (record.hours > 0) {
+    // Разные цвета подсветки ячеек в зависимости от причины
+    if (record.reason === 'work') return 'day-cell-work'
+    if (record.reason === 'personal') return 'day-cell-personal'
+    return 'day-cell-undefined'
+  }
   return 'day-cell-partial'
 }
 
@@ -650,7 +719,7 @@ async function saveNote() {
           day: dr.day,
           time_out: dr.time_out || null,
           time_in: dr.time_in || null,
-          comment: dr.comment || null
+          reason: dr.reason || 'undefined'
         }))
       }))
     }
@@ -749,9 +818,36 @@ onMounted(() => {
 
 .col-total {
   width: 70px;
+  min-width: 70px;
   text-align: center;
   font-weight: bold;
   background-color: #f5f5f5;
+}
+
+/* Цветные колонки итогов по причинам */
+.dismissal-table tbody .col-work {
+  background-color: #e3f2fd !important;  /* светло-синий */
+  color: #1565c0;
+}
+
+.dismissal-table tbody .col-personal {
+  background-color: #fce4ec !important;  /* светло-розовый */
+  color: #c2185b;
+}
+
+.dismissal-table tbody .col-undefined {
+  background-color: #f5f5f5 !important;  /* светло-серый */
+  color: #616161;
+}
+
+.dismissal-table tbody .col-grand-total {
+  background-color: #e8f5e9 !important;  /* светло-зелёный */
+  color: #2e7d32;
+  font-weight: bold;
+}
+
+.reason-checkboxes {
+  padding: 8px 0;
 }
 
 .col-actions {
@@ -761,6 +857,19 @@ onMounted(() => {
 
 .day-cell-filled {
   background-color: #e8f5e9 !important;
+}
+
+/* Подсветка ячеек дней по причине */
+.day-cell-work {
+  background-color: #e3f2fd !important;  /* синий — по работе */
+}
+
+.day-cell-personal {
+  background-color: #fce4ec !important;  /* розовый — личная */
+}
+
+.day-cell-undefined {
+  background-color: #eeeeee !important;  /* серый — неопределённо */
 }
 
 .day-cell-partial {
