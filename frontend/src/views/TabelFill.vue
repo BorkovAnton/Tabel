@@ -56,8 +56,14 @@
             <th class="col-fio sticky-top sticky-left-2" rowspan="2">Ф.И.О.</th>
             <th class="col-days-header sticky-top" :colspan="tabel.days_in_month">Дни недели</th>
             <th v-for="col in summaryColumns" :key="col.key" class="col-summary-header sticky-top" rowspan="2"
-                :title="col.label">
-              {{ col.label }}
+                :class="{ 'overtime-header': col.key === 'overtime_hours' }" :title="col.label">
+              <!-- ИЗМЕНЕНО: заголовок колонки сверхурочных в две строки:
+                   основная надпись + пояснение меньшим шрифтом -->
+              <template v-if="col.key === 'overtime_hours'">
+                <span class="ot-header-main">Сверхурочные часы итого</span>
+                <span class="ot-header-sub">(Сверхурочные часы без дней)</span>
+              </template>
+              <template v-else>{{ col.label }}</template>
             </th>
             <th class="col-del sticky-top sticky-right" rowspan="2"></th>
           </tr>
@@ -187,6 +193,14 @@
                 @keyup.enter="onKduBlur(row, col.key); $event.target.blur()"
                 @click.stop
               />
+              <!-- ИЗМЕНЕНО: ячейка сверхурочных: «итого (только часы)», напр. «21ч (5ч)»:
+                   итого = overtime_hours + overtime_days × норма дня; в скобках — часы без дней -->
+              <template v-else-if="col.key === 'overtime_hours'">
+                <div class="overtime-cell-inner">
+                  <span class="overtime-total">{{ formatHours(calculateSummary(row).overtime_total) }}</span>
+                  <span class="overtime-hours-only">({{ formatHours(calculateSummary(row).overtime_hours) }})</span>
+                </div>
+              </template>
               <template v-else>{{ calculateSummary(row)[col.key] || 0 }}</template>
             </td>
             <td class="col-del sticky-right">
@@ -1239,7 +1253,10 @@ const summaryColumns = ref([
   { key: 'weekend_holiday', label: 'выходные и праздн.', unit: 'days' },
   { key: 'other_absence', label: 'Другие неявки', unit: 'days' },
   { key: 'overtime_days', label: 'сверхурочные дни', unit: 'days' },
-  { key: 'overtime_hours', label: 'Сверхурочные часы', unit: 'hours' },
+  // ИЗМЕНЕНО: колонка показывает два значения — «итого» (сверхурочные часы
+  // + сверхурочные дни × норма дня) и в скобках только часы без учёта дней,
+  // формат «21ч (5ч)»; рендер — в шаблоне по col.key === 'overtime_hours'.
+  { key: 'overtime_hours', label: 'Сверхурочные часы итого (Сверхурочные часы без дней)', unit: 'hours' },
   { key: 'night_hours', label: 'ночные часы', unit: 'hours' },
   { key: 'kdu_work_days', label: 'КДУ', unit: 'manual' },
   { key: 'kdu_weekend_days', label: 'КДУ вых. дня', unit: 'manual' },
@@ -1371,6 +1388,17 @@ function tooltipDateLabel(day) {
 function fmtNum(n) {
   const v = Number(n) || 0
   return String(Number(v.toFixed(2)))
+}
+
+// Форматирование часов для колонки «Сверхурочные часы итого»: 8.5 → «8ч30м»,
+// 21 → «21ч», 0 → «0ч» (требование: «8.5ч = 8ч30м»)
+function formatHours(hours) {
+  const v = Math.round((Number(hours) || 0) * 60) / 60
+  if (!v) return '0ч'
+  const h = Math.floor(v)
+  const m = Math.round((v - h) * 60)
+  if (m === 0) return `${h}ч`
+  return `${h}ч${m}м`
 }
 
 // Разбор числового значения ячейки («8.5», «8ч15м», «8:15») в часы
@@ -1862,6 +1890,21 @@ function calculateSummary(row) {
     }
   }
 
+  // ИЗМЕНЕНО: сверхурочные ДНИ тоже считаются сверхурочной работой:
+  // 1 день = норма часов этого дня (из графика сотрудника; fallback employees.norm_hours/8).
+  // Итого = сверхурочные часы + Σ(дни × норма); overtime_hours остаётся «часы без дней».
+  let otDaysHours = 0
+  for (let d = 1; d <= tabel.value.days_in_month; d++) {
+    const val = String(row.days[d] || '').trim().toLowerCase()
+    if (!val) continue
+    const codeObj = timeCodes.value.find(c => String(c.code).trim().toLowerCase() === val)
+    if (codeObj && (codeObj.destinations || []).includes('overtime_days')) {
+      const n = getDayNorm(row, d)
+      otDaysHours += n > 0 ? n : (normOf(row) > 0 ? normOf(row) : 8)
+    }
+  }
+  summary.overtime_total = Math.round((summary.overtime_hours + otDaysHours) * 100) / 100
+
   // Округление на основе типа единицы измерения
   for (const key in summary) {
     const colDef = summaryColumns.value.find(c => c.key === key)
@@ -2321,6 +2364,15 @@ td.col-fio.sticky-left-2 > .sticky-fill { justify-content: flex-start; }
   white-space: nowrap; vertical-align: middle;
   background-color: white !important; border-left: 1px solid #000 !important;
 }
+
+/* ИЗМЕНЕНО: стили колонки «Сверхурочные часы итого (…без дней)» */
+.overtime-header { white-space: normal !important; width: 96px !important;
+  min-width: 96px !important; max-width: 96px !important; }
+.overtime-header .ot-header-main { display: block; font-weight: bold; }
+.overtime-header .ot-header-sub { display: block; font-size: 9px; color: #666; font-weight: normal; }
+.overtime-cell-inner { display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
+.overtime-total { font-weight: bold; color: #d32f2f; font-size: 12px; }
+.overtime-hours-only { font-size: 9px; color: #666; margin-top: 2px; }
 
 .col-summary-cell {
   width: 28px; min-width: 28px; max-width: 28px; padding: 2px 1px !important;

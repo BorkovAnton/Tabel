@@ -106,8 +106,13 @@ def code_effective_hours(code, day_norm: float) -> tuple[float, float, float]:
 
 
 def summary_overtime_hours(entry, dim: int, codes: dict, norms_by_dow: dict,
-                           year: int, month: int, emp_norm: float) -> float:
-    """Сумма сверхурочных ЧАСОВ за месяц из заполненного вручную табеля.
+                           year: int, month: int, emp_norm: float) -> tuple[float, float]:
+    """Сверхурочные за месяц из заполненного вручную табеля.
+
+    ИЗМЕНЕНО: возвращает пару (часы_без_дней, часы_из_сверхурочных_дней).
+    Сверхурочный ДЕНЬ (код с направлением overtime_days) = норма часов этого дня
+    по графику (fallback: employees.norm_hours или 8). Итоговые сверхурочные =
+    часы + дни × норма (см. overtime_total в ReportRow и колонку в TabelFill).
 
     Повторяет логику calculateSummary() из frontend/src/views/TabelFill.vue:
       - числовой ввод ячейки («10», «8ч15м»): ot = max(0, часы − норма дня);
@@ -156,7 +161,16 @@ def summary_overtime_hours(entry, dim: int, codes: dict, norms_by_dow: dict,
                 total_ot += max(0.0, h - norm)
     # КДУ — ручное поле табеля (переработки, отмеченные составителем вручную)
     total_ot += float(entry.kdu_work_days or 0) + float(entry.kdu_weekend_days or 0)
-    return round(total_ot, 2)
+    # Сверхурочные ДНИ: код справочника с направлением overtime_days = 1 день,
+    # равный норме часов этого дня по графику (зеркало расчёта в TabelFill.vue).
+    total_ot_days_hours = 0.0
+    for d in range(1, dim + 1):
+        val = str(getattr(entry, f"day_{d}", None) or "").strip().lower().replace(",", ".")
+        code = codes.get(val) if val else None
+        if code is not None and "overtime_days" in list(code.destinations or []):
+            n = day_norm(d)
+            total_ot_days_hours += n if n > 0 else (emp_norm if emp_norm > 0 else 8.0)
+    return round(total_ot, 2), round(total_ot_days_hours, 2)
 
 
 class ReportRow(BaseModel):
@@ -166,7 +180,9 @@ class ReportRow(BaseModel):
     department_name: str = ""
     tabel_hours: float = 0.0      # отработано часов с табеля
     fact_hours: float = 0.0       # отработано часов фактически (СКУД)
-    overtime_planned: float = 0.0  # сверхурочно с табеля (из итогов заполненного вручную табеля: превышение нормы + КДУ)
+    overtime_planned: float = 0.0  # сверхурочно с табеля: только ЧАСЫ (без сверхурочных дней)
+    overtime_days_hours: float = 0.0  # сверхурочные дни, переведённые в часы (день = норма дня)
+    overtime_total: float = 0.0  # итого: часы + дни × норма (формат «итого (часы)» как в табеле)
     overtime_hours: float = 0.0   # сверхурочно факт = сумма ежедневных overtime из TimesheetRecord
 
 
@@ -237,6 +253,7 @@ def hours_report(
         Tabel.year == year, Tabel.month == month)
     tabel_hours: dict[int, float] = {}
     overtime_tab: dict[int, float] = {}
+    overtime_tab_days: dict[int, float] = {}  # сверхурочные дни, переведённые в часы
 
     # Активные «Документы и приказы» за период — по сотрудникам. Если код дня
     # табеля совпадает с кодом документа, в отчёт берутся часы из документа.
@@ -293,9 +310,11 @@ def hours_report(
             else:
                 h += cell_hours(getattr(e, f"day_{d}", None), codes, _norm_for_day(d))
         tabel_hours[e.employee_id] = tabel_hours.get(e.employee_id, 0.0) + h
-        ot = summary_overtime_hours(e, dim, codes, norms_by_dow, year, month, emp_norm)
-        if ot > 0:
-            overtime_tab[e.employee_id] = overtime_tab.get(e.employee_id, 0.0) + ot
+        ot_h, ot_d = summary_overtime_hours(e, dim, codes, norms_by_dow, year, month, emp_norm)
+        if ot_h > 0:
+            overtime_tab[e.employee_id] = overtime_tab.get(e.employee_id, 0.0) + ot_h
+        if ot_d > 0:
+            overtime_tab_days[e.employee_id] = overtime_tab_days.get(e.employee_id, 0.0) + ot_d
 
     # --- фактические часы по СКУД за период ---
     fact_q = db.query(
@@ -347,6 +366,7 @@ def hours_report(
         # по отдельным дням не «съедаются» недоотработкой за другие дни.
         ot = round(overtime_fact.get(emp.id, 0.0), 2)
         otp = round(overtime_tab.get(emp.id, 0.0), 2)
+        otd = round(overtime_tab_days.get(emp.id, 0.0), 2)
         rows.append(ReportRow(
             employee_id=emp.id,
             full_name=emp.full_name or "",
@@ -355,6 +375,8 @@ def hours_report(
             tabel_hours=th,
             fact_hours=fh,
             overtime_planned=otp,
+            overtime_days_hours=otd,
+            overtime_total=round(otp + otd, 2),
             overtime_hours=ot,
         ))
 
