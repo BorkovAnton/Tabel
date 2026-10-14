@@ -84,8 +84,8 @@
           <table class="dismissal-table">
             <thead>
               <tr>
-                <th class="col-num">№</th>
-                <th class="col-fio">Ф.И.О.</th>
+                <th class="col-num col-sticky col-sticky-1">№</th>
+                <th class="col-fio col-sticky col-sticky-2">Ф.И.О.</th>
                 <th class="col-dept">Подразделение</th>
                 <th v-for="day in getNoteDays(note)" :key="day" class="col-day">
                   {{ day }}
@@ -97,9 +97,9 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(entry, idx) in note.entries" :key="entry.id">
-                <td class="col-num">{{ idx + 1 }}</td>
-                <td class="col-fio">
+              <tr v-for="(entry, idx) in sortedEntries(note.entries)" :key="entry.id">
+                <td class="col-num col-sticky col-sticky-1">{{ idx + 1 }}</td>
+                <td class="col-fio col-sticky col-sticky-2">
                   <div>{{ entry.employee_name }}</div>
                   <div class="text-caption text-grey">Таб. {{ entry.employee_tab_number }}</div>
                 </td>
@@ -208,8 +208,8 @@
               <table class="dismissal-table">
                 <thead>
                   <tr>
-                    <th class="col-num">№</th>
-                    <th class="col-fio">Ф.И.О.</th>
+                    <th class="col-num col-sticky col-sticky-1">№</th>
+                    <th class="col-fio col-sticky col-sticky-2">Ф.И.О.</th>
                     <th class="col-dept">Подразделение</th>
                     <th v-for="day in daysInPeriod" :key="day" class="col-day">
                       {{ day }}
@@ -222,9 +222,9 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(entry, idx) in form.entries" :key="idx">
-                    <td class="col-num">{{ idx + 1 }}</td>
-                    <td class="col-fio">
+                  <tr v-for="(entry, idx) in sortedEntries(form.entries)" :key="idx">
+                    <td class="col-num col-sticky col-sticky-1">{{ idx + 1 }}</td>
+                    <td class="col-fio col-sticky col-sticky-2">
                       <div>{{ entry.employee_name }}</div>
                       <div class="text-caption text-grey">Таб. {{ entry.employee_tab_number }}</div>
                     </td>
@@ -445,6 +445,14 @@ const dayForm = ref({
 // Строки 'ГГГГ-ММ-ДД' начала и конца месяца (месяц передан как 1..12)
 function pad2(n) {
   return String(n).padStart(2, '0')
+}
+
+// Сортировка строк записки по ФИО (алфавитно, без учёта регистра)
+function sortedEntries(entries) {
+  if (!Array.isArray(entries)) return []
+  return [...entries].sort((a, b) =>
+    String(a.employee_name || '').localeCompare(String(b.employee_name || ''), 'ru', { sensitivity: 'base' })
+  )
 }
 
 function monthStartStr(year, month) {
@@ -833,6 +841,35 @@ onMounted(() => {
   text-align: center;
   position: sticky;
   top: 0;
+}
+
+/* Закреплённые ("плавающие") колонки слева: № и Ф.И.О. */
+.col-sticky {
+  position: sticky;
+  z-index: 2;
+}
+
+.dismissal-table thead .col-sticky {
+  z-index: 3; /* выше обычных заголовков и ячеек тела */
+}
+
+.col-sticky-1 {
+  left: 0;
+}
+
+.col-sticky-2 {
+  left: 30px; /* ширина колонки № */
+}
+
+/* Непрозрачный фон, чтобы при прокрутке дни не просвечивали под закреплёнными колонками */
+tbody .col-sticky-1,
+tbody .col-sticky-2 {
+  background-color: #fff;
+}
+
+/* Разделитель справа у закреплённой зоны */
+.col-sticky-2 {
+  border-right: 2px solid #bbb !important;
 }
 
 .col-num {
