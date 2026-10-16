@@ -1,5 +1,5 @@
 <template>
-  <v-container fluid>
+  <v-container fluid class="dismissal-container">
     <h1 class="text-h4 mb-4">Увольнительные записки</h1>
 
     <!-- Фильтры -->
@@ -79,8 +79,8 @@
       </v-card-text>
 
       <v-card-text>
-        <!-- Таблица увольнительной записки -->
-        <div style="overflow-x: auto;">
+        <!-- Таблица увольнительной записки (прокрутка только внутри таблицы) -->
+        <div class="table-wrapper">
           <table class="dismissal-table">
             <thead>
               <tr>
@@ -204,7 +204,7 @@
             </div>
 
             <!-- Таблица увольнения (как в табеле): клик по ячейке дня — ввод времени -->
-            <div v-if="form.entries.length > 0" style="overflow-x: auto;">
+            <div v-if="form.entries.length > 0" class="table-wrapper">
               <table class="dismissal-table">
                 <thead>
                   <tr>
@@ -822,10 +822,30 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.dismissal-table {
-  border-collapse: collapse;
+/* Страница должна помещаться по ширине экрана: горизонтальный скролл —
+   только у таблицы, а не у всей страницы */
+.dismissal-container {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Контейнер таблицы: единственная горизонтальная прокрутка — внутри таблицы.
+   overflow-y: auto + фиксированная высота нужны, чтобы sticky-шапка
+   с числами месяца была видна при вертикальной прокрутке таблицы. */
+.table-wrapper {
   width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 260px);
+  position: relative;
+}
+
+.dismissal-table {
+  border-collapse: separate; /* иначе sticky-границы «уезжают» при прокрутке */
+  border-spacing: 0;
   font-size: 12px;
+  table-layout: fixed;
 }
 
 .dismissal-table th, .dismissal-table td {
@@ -841,6 +861,7 @@ onMounted(() => {
   text-align: center;
   position: sticky;
   top: 0;
+  z-index: 5;
 }
 
 /* Закреплённые ("плавающие") колонки слева: № и Ф.И.О. */
@@ -850,7 +871,7 @@ onMounted(() => {
 }
 
 .dismissal-table thead .col-sticky {
-  z-index: 3; /* выше обычных заголовков и ячеек тела */
+  z-index: 6; /* выше обычных заголовков и ячеек тела */
 }
 
 .col-sticky-1 {
@@ -874,26 +895,34 @@ tbody .col-sticky-2 {
 
 .col-num {
   width: 30px;
+  min-width: 30px;
+  max-width: 30px;
   text-align: center;
 }
 
 .col-fio {
+  width: 180px;
   min-width: 180px;
-  max-width: 220px;
+  max-width: 180px;
   text-align: left;
   padding-left: 4px !important;
+  word-wrap: break-word;
 }
 
 .col-dept {
-  min-width: 120px;
-  max-width: 150px;
-  font-size: 11px;
+  width: 110px;
+  min-width: 110px;
+  max-width: 130px;
+  font-size: 10px;
   word-wrap: break-word;
 }
 
 .col-day {
-  width: 50px;
-  min-width: 50px;
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  padding: 2px !important;
+  font-size: 10px;
   text-align: center;
   cursor: pointer;
   position: relative;
@@ -904,8 +933,9 @@ tbody .col-sticky-2 {
 }
 
 .col-total {
-  width: 70px;
-  min-width: 70px;
+  width: 60px;
+  min-width: 60px;
+  max-width: 60px;
   text-align: center;
   font-weight: bold;
   background-color: #f5f5f5;
