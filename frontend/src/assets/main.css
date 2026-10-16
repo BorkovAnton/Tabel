@@ -45,3 +45,39 @@ table {
 .v-card {
   margin-bottom: 12px !important;
 }
+
+/* ===== РАСТЯНУТЬ КОНТЕНТ НА ВСЮ ШИРИНУ ЭКРАНА (финальный блок) =====
+   Vuetify задаёт .v-container max-width из breakpoints темы (xl = 1280px),
+   поэтому контент (таблицы, карточки) занимал ~70% ширины, а шапка — 100%.
+   В vuetify.js breakpoint xl переопределён на 100000px и defaults.VContainer
+   = { fluid: true, maxWidth: false }, а этот блок перебивает любые остатки.
+   Используется width: 100% (не 100vw), чтобы zoom: 0.8 работал корректно
+   и не появлялся горизонтальный скролл. */
+.v-application,
+.v-application__wrap {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.v-container,
+.v-container--fluid,
+.v-container.full-width-container {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.v-main,
+.v-main__wrap {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.v-data-table,
+.v-table,
+.v-card,
+table {
+  width: 100% !important;
+  max-width: 100% !important;
+}
