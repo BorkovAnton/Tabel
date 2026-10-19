@@ -1,0 +1,24 @@
+/* === ПРОСТОЕ МАСШТАБИРОВАНИЕ САЙТА === */
+
+/* Уменьшить весь сайт до 80% */
+html {
+  zoom: 0.8;
+}
+
+/* Убрать горизонтальную прокрутку */
+html, body {
+  overflow-x: hidden !important;
+  max-width: 100vw;
+}
+
+/* Убедиться что контейнеры не ограничены */
+.v-container {
+  max-width: 100% !important;
+}
+
+/* Таблицы на всю ширину */
+.v-data-table,
+.v-table,
+table {
+  width: 100% !important;
+}
