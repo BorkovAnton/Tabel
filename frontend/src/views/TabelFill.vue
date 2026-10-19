@@ -180,7 +180,7 @@
               </div>
             </td>
             <!-- ЗНАЧЕНИЯ ИТОГОВЫХ КОЛОНОК -->
-            <td v-for="col in summaryColumns" :key="col.key" class="col-summary-cell text-center">
+            <td v-for="col in summaryColumns" :key="col.key" class="col-summary-cell text-center" :class="{ 'overtime-cell': col.key === 'overtime_hours' }">
               <!-- Ручные колонки КДУ: редактируемый input (0..5, шаг 0.01) -->
               <input
                 v-if="col.unit === 'manual'"
@@ -2366,16 +2366,35 @@ td.col-fio.sticky-left-2 > .sticky-fill { justify-content: flex-start; }
 }
 
 /* ИЗМЕНЕНО: стили колонки «Сверхурочные часы итого (…без дней)» */
-.overtime-header { white-space: normal !important; width: 96px !important;
-  min-width: 96px !important; max-width: 96px !important; }
+.overtime-header { 
+  white-space: normal !important; 
+  width: 130px !important;       /* Увеличенная ширина заголовка */
+  min-width: 130px !important; 
+  max-width: 130px !important; 
+}
 .overtime-header .ot-header-main { display: block; font-weight: bold; }
 .overtime-header .ot-header-sub { display: block; font-size: 9px; color: #666; font-weight: normal; }
+
 .overtime-cell-inner { display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
 .overtime-total { font-weight: bold; color: #d32f2f; font-size: 12px; }
 .overtime-hours-only { font-size: 9px; color: #666; margin-top: 2px; }
 
+/* НОВОЕ: стиль для ячеек тела таблицы в колонке сверхурочных */
+.overtime-cell {
+  width: 130px !important;       /* Увеличенная ширина ячейки (должна совпадать с заголовком) */
+  min-width: 130px !important; 
+  max-width: 130px !important; 
+  padding: 2px 1px !important;
+  font-size: 11px; font-weight: normal; text-align: center;
+  background-color: white !important; border-left: 1px solid #000 !important;
+}
+
+/* Остальные итоговые колонки остаются узкими (28px) */
 .col-summary-cell {
-  width: 28px; min-width: 28px; max-width: 28px; padding: 2px 1px !important;
+  width: 28px !important; 
+  min-width: 28px !important; 
+  max-width: 28px !important; 
+  padding: 2px 1px !important;
   font-size: 11px; font-weight: normal; text-align: center;
   background-color: white !important; border-left: 1px solid #000 !important;
 }
