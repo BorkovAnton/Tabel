@@ -72,3 +72,9 @@ export const auth = reactive({
     localStorage.removeItem('user')
   }
 })
+
+// Синхронизация reactive-состояния при внешней очистке сессии (глобальный перехватчик 401 в api.js)
+window.addEventListener('auth:session-expired', () => {
+  auth.token = null
+  auth.user = null
+})

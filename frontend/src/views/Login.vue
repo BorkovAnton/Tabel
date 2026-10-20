@@ -47,9 +47,10 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { auth } from '../auth'
 
+const route = useRoute()
 const router = useRouter()
 const username = ref('')
 const password = ref('')
@@ -62,7 +63,11 @@ async function doLogin() {
   loading.value = true
   try {
     await auth.login(username.value.trim(), password.value)
-    router.push('/tabels')
+    // УМНЫЙ РЕДИРЕКТ: возвращаемся туда, откуда пришёл пользователь (?redirect=...),
+    // иначе — на список табелей.
+    let redirectPath = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    if (!redirectPath || redirectPath.startsWith('/login')) redirectPath = '/tabels'
+    router.push(redirectPath)
   } catch (e) {
     error.value = e.response?.status === 401
       ? 'Неверный логин или пароль'

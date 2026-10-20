@@ -62,8 +62,18 @@ router.beforeEach((to) => {
 // Пуская на сайт — сразу на окно авторизации модуля Табель
 router.beforeEach((to) => {
   const token = localStorage.getItem('token')
+  // Уже авторизованному не нужно окно входа — отправляем его туда, откуда он пришёл
+  // (или на страницу из ?redirect=), либо на список табелей.
+  if (to.name === 'Login' && token) {
+    const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : null
+    if (redirect && redirect !== '/login' && !redirect.startsWith('/login?')) {
+      return redirect
+    }
+    return { name: 'Tabels' }
+  }
   if (to.meta.requiresAuth && !token) {
-    return { name: 'Login' }
+    // Редирект на логин с сохранением целевого пути для возврата после входа
+    return { name: 'Login', query: { redirect: to.fullPath } }
   }
   if (to.meta.requiresAdmin) {
     let user = null
@@ -88,7 +98,7 @@ router.beforeEach((to) => {
     }
   }
   if (to.name === 'Home' && !token) {
-    return { name: 'Login' }
+    return { name: 'Login', query: { redirect: to.fullPath } }
   }
   return true
 })
