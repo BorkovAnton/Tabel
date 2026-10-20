@@ -237,7 +237,10 @@ def recalc_timesheet_for_employee(db: Session, day_map: dict) -> dict:
             continue
 
         day_start = datetime.combine(day, datetime.min.time())
-        day_end = datetime.combine(day, datetime.max.time())
+        # Окно расширяем на сутки вперёд, чтобы захватить выход ночной смены
+        # через полночь (вход 23:00 D -> выход 07:00 D+1), как в основном
+        # расчёте табеля (app.api.timesheet.calculate_timesheet).
+        day_end = datetime.combine(day + timedelta(days=1), datetime.max.time())
         events = (
             db.query(TurnstileEvent)
             .filter(
@@ -250,6 +253,18 @@ def recalc_timesheet_for_employee(db: Session, day_map: dict) -> dict:
         )
         if not events:
             continue
+
+        # Отсекаем события следующей смены (повторный вход следующего дня,
+        # отстоящий более чем на 20 часов от первого входа текущего дня).
+        _in_times = [e.datetime for e in events if e.event_type == "in"]
+        if len(_in_times) >= 2:
+            _first_in_min = min(_in_times)
+            _next_shift_in = max(_in_times)
+            if (
+                _next_shift_in.date() > day
+                and (_next_shift_in - _first_in_min) >= timedelta(hours=20)
+            ):
+                events = [e for e in events if e.datetime < _next_shift_in]
 
         schedule = employee.schedule
         lunch_minutes = schedule_lunch_minutes(schedule, day)

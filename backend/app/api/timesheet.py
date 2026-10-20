@@ -132,9 +132,50 @@ def schedule_norm_hours(schedule: Optional[WorkSchedule], day: date) -> float:
     return round(max(net, 0.0), 2)
 
 
-def calculate_day_record(events: List[TurnstileEvent], lunch_minutes: int):
+# Ночная смена: считаем ночной смену, которая ЛИБО началась вечером/ночью
+# (час входа >= NIGHT_IN_START_HOUR, например 22:00 или 23:00), ЛИБО
+# закончилась ранним утром (час выхода < NIGHT_OUT_END_HOUR) при малой
+# длительности. Примеры: вход 23:00 -> выход 07:00 следующего дня — ночная;
+# вход 23:00 -> выход 09:00 — тоже ночная с переработкой.
+NIGHT_OUT_END_HOUR = 8
+NIGHT_IN_START_HOUR = 20
+
+
+def is_night_shift(first_in: Optional[datetime], last_out: Optional[datetime]) -> bool:
+    """Автоматическое определение ночной смены через полночь.
+
+    Примеры: вход 23:00, выход 07:00 следующего дня — ночная.
+    Вход 08:00, выход 17:00 — дневная.
+    """
+    if not first_in or not last_out:
+        return False
+    duration = (last_out - first_in).total_seconds() / 3600.0
+    if duration >= 24:
+        # неопознанная последовательность событий — не ночная
+        return False
+    if last_out <= first_in:
+        # выход раньше входа в рамках одного дня — переход через полночь
+        return True
+    if first_in.hour >= NIGHT_IN_START_HOUR:
+        # смена началась вечером/ночью — ночная (выход на следующий день
+        # либо короткая смена до полуночи того же дня)
+        return True
+    return last_out.hour < NIGHT_OUT_END_HOUR and duration <= 12
+
+
+def calculate_day_record(
+    events: List[TurnstileEvent],
+    lunch_minutes: int,
+    night_lunch_minutes: Optional[int] = None,
+):
     """Вычисляет first_in, last_out, fact_hours, needs_review, review_reason
-    по списку событий проходной за один день."""
+    по списку событий проходной за один день.
+
+    Автоматически определяет ночную смену через полночь (23:00-07:00):
+    длительность считается с коррекцией на переход суток, а обеденный
+    перерыв вычитается по правилу ночных смен (night_lunch_minutes;
+    None = не вычитать вовсе).
+    """
 
     in_events = [e for e in events if e.event_type == "in"]
     out_events = [e for e in events if e.event_type == "out"]
@@ -171,7 +212,16 @@ def calculate_day_record(events: List[TurnstileEvent], lunch_minutes: int):
             needs_review = False
             review_reason = None
 
-        fact_hours -= lunch_minutes / 60
+        # Обед: для ночной смены — по особому правилу (по умолчанию не
+        # вычитается), для дневной — обычный перерыв из графика.
+        if is_night_shift(first_in, last_out):
+            lunch_to_subtract = (
+                night_lunch_minutes if night_lunch_minutes is not None else 0
+            )
+        else:
+            lunch_to_subtract = lunch_minutes
+
+        fact_hours -= lunch_to_subtract / 60
         fact_hours = round(fact_hours, 2)
         if fact_hours < 0:
             fact_hours = 0.0
@@ -303,8 +353,15 @@ def calculate_timesheet(
             # (или это отпуск — тогда проверяем, был ли сотрудник на работе)
             events = []
             if doc_code_obj is None or is_vacation_doc:
+                # Окно событий расширяем на сутки вперёд, чтобы захватить
+                # отметку выхода ночной смены через полночь
+                # (вход 23:00 D -> выход 07:00 D+1). Это позволяет корректно
+                # рассчитать длительность ночной смены, привязанной к дню
+                # входа. Сдвоенные утренние события следующего дня не
+                # искажают расчёт: first_in — минимум, last_out — максимум;
+                # смена длиннее суток помечается на проверку.
                 day_start = datetime.combine(day, time.min)
-                day_end = datetime.combine(day, time.max)
+                day_end = datetime.combine(day + timedelta(days=1), time.max)
                 events = (
                     db.query(TurnstileEvent)
                     .filter(
@@ -315,6 +372,27 @@ def calculate_timesheet(
                     .order_by(TurnstileEvent.datetime)
                     .all()
                 )
+
+            # Ограничиваем расчёт рамками смены текущего дня: если в
+            # расширенном окне есть повторный вход следующего дня, отстоящий
+            # не менее чем на 8 часов от первого входа текущего дня — это
+            # начало ДРУГОЙ смены (например, после ночной смены D сотрудник
+            # вышел в 07:00 и пошёл в дневную смену D+1 в 08:00); события
+            # после этого входа относятся к следующему дню табеля.
+            # Порог 8 ч: короткий перерыв (сдвоенная смена через 1-2 часа)
+            # остаётся в текущем дне как суммарное время работы.
+            if events:
+                _in_times = [e.datetime for e in events if e.event_type == "in"]
+                if len(_in_times) >= 2:
+                    _day_in_min = min(_in_times)
+                    _next_shift_in = max(_in_times)
+                    if (
+                        _next_shift_in.date() > day
+                        and (_next_shift_in - _day_in_min) >= timedelta(hours=8)
+                    ):
+                        events = [
+                            e for e in events if e.datetime < _next_shift_in
+                        ]
 
             # Отпуск + есть фактические приходы → считаем день по проходной,
             # но сохраняем код документа («О») для начисления отпускных.
