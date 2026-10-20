@@ -788,13 +788,54 @@ def export_timesheet_excel(
         ws = wb.active
         ws.title = f"Табель {month}.{year}"
 
-        # Стили
+        # Стили — цветовая схема как в веб-интерфейсе (TimesheetReport.vue)
         header_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
-        weekend_fill = PatternFill(start_color="E3F2FD", end_color="E3F2FD", fill_type="solid")
-        overtime_fill = PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")
-        review_fill = PatternFill(start_color="FFCDD2", end_color="FFCDD2", fill_type="solid")
+        weekend_fill = PatternFill(start_color="E3F2FD", end_color="E3F2FD", fill_type="solid")   # синий: выходной «в»
+        overtime_fill = PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")   # жёлтый: сверхурочные
+        norm_met_fill = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")   # зелёный: норма выполнена
+        underwork_fill = PatternFill(start_color="FCE4EC", end_color="FCE4EC", fill_type="solid")  # розовый: недовыработка
+        doc_fill = norm_met_fill                                                                   # день по документу — зелёный (как .cell-from-document)
+        review_fill = PatternFill(start_color="FFCDD2", end_color="FFCDD2", fill_type="solid")     # «О6» требует проверки
         bold_font = Font(bold=True)
         center_align = Alignment(horizontal="center", vertical="center")
+
+        # Допуск округления нормы, мин. (совпадает с NORM_TOLERANCE = 5 мин на фронтенде)
+        NORM_TOL_MIN = 5
+        ot_threshold_min = get_overtime_threshold(db)
+
+        def day_cell_style(cell_obj, rec):
+            """Применить к ячейке дня цвет из веб-схемы:
+            жёлтый — сверхурочные, зелёный — норма выполнена / день по документу,
+            розовый — недовыработка, красный — «О6»."""
+            if rec is None:
+                return
+            if rec.needs_review:
+                cell_obj.fill = review_fill
+                return
+            # Числовые часы в ячейке? (факт или отпуск+приход)
+            has_numeric_hours = bool(rec.fact_hours) and not (
+                rec.document_code and not rec.first_in and not rec.fact_hours
+            )
+            if rec.document_code and not has_numeric_hours:
+                # День только по документу («К», «Б», «О» без приходов)
+                cell_obj.fill = doc_fill
+                return
+            fact = round(rec.fact_hours or 0.0, 2)
+            norm = rec.default_hours
+            if fact > 0 and norm and norm > 0:
+                over_min = (fact - norm) * 60.0
+                if (rec.overtime or 0) > 0 or (over_min > NORM_TOL_MIN and over_min > ot_threshold_min):
+                    cell_obj.fill = overtime_fill   # сверхурочные
+                elif abs(over_min) <= max(NORM_TOL_MIN, ot_threshold_min):
+                    cell_obj.fill = norm_met_fill   # норма выполнена
+                else:
+                    cell_obj.fill = underwork_fill  # недовыработка
+            elif fact > 0:
+                # Старые данные без нормы по графику: ориентируемся на поле overtime
+                if (rec.overtime or 0) > 0:
+                    cell_obj.fill = overtime_fill
+                else:
+                    cell_obj.fill = norm_met_fill
 
         # Заголовки
         headers = ["№", "Ф.И.О.", "Подразделение"]
@@ -844,7 +885,6 @@ def export_timesheet_excel(
                 if record:
                     if record.needs_review:
                         value = "О6"
-                        cell.fill = review_fill
                     elif record.document_code and not (record.first_in or record.fact_hours):
                         # День по документу: код («К», «Б», «О» без приходов). Для
                         # документов-присутствий часы идут по графику и
@@ -864,7 +904,6 @@ def export_timesheet_excel(
                         fact = round(record.fact_hours, 2)
                         if record.overtime and record.overtime > 0:
                             value = f"{format_time(fact)} ({format_time(round(record.overtime, 2))}с)"
-                            cell.fill = overtime_fill
                         else:
                             value = format_time(fact)
                         total_hours += fact
@@ -872,7 +911,6 @@ def export_timesheet_excel(
                         fact = round(record.fact_hours, 2)
                         overtime = round(record.overtime, 2)
                         value = f"{format_time(fact)} ({format_time(overtime)}с)"
-                        cell.fill = overtime_fill
                         if not record.needs_review:
                             total_hours += fact
                     elif record.fact_hours > 0:
@@ -884,11 +922,14 @@ def export_timesheet_excel(
                 else:
                     value = "в"
                 
-                # Подсветка выходных
+                # Цвет ячейки — по веб-схеме (жёлтый/зелёный/розовый/красный)
+                day_cell_style(cell, record)
+
+                # Подсветка выходных: синим только пустые дни («в»); рабочие дни
+                # со сверхурочными/недовыработкой сохраняют свой цвет, как в web
                 day_of_week = date(year, month, day).weekday()
-                if day_of_week >= 5:  # Суббота или Воскресенье
-                    if not cell.fill or cell.fill.start_color.rgb == "00000000":
-                        cell.fill = weekend_fill
+                if day_of_week >= 5 and value == "в":  # Суббота или Воскресенье
+                    cell.fill = weekend_fill
                 
                 cell.value = value
             
