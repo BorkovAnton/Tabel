@@ -18,7 +18,9 @@ router = APIRouter(prefix="/api/turnstile-fix", tags=["Turnstile Fix"])
 NIGHT_IN_HOUR = 20
 NIGHT_OUT_MAX_HOUR = 12
 # Если выхода нет в течение стольких часов после входа — считаем, что выхода нет.
-MAX_SHIFT_HOURS = 16
+# Увеличено до 24 часов: сотрудники могут работать по 14-15 часов (две смены
+# подряд), чтобы длинная смена не разрывалась ложным «Нет выхода».
+MAX_SHIFT_HOURS = 24
 
 
 def _pair_shifts(events):
