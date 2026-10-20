@@ -88,6 +88,9 @@ const isManager = () => auth.isAdmin || auth.isHR || auth.isTimesheetInspector
 
 const navItems = computed(() => allNavItems.filter(i => {
   if (i.auth && !auth.isAuthenticated) return false
+  // ✅ Система управления доступом к вкладкам: показываем только разрешённые страницы
+  // (администраторам — все; пользователя без permissions — тоже все, обратная совместимость)
+  if (!auth.hasPermission(i.path)) return false
   if (i.admin && !auth.isAdmin) return false
   if (i.reportRole && !auth.isReport) return false
   if (i.documentsRole && !auth.isDocumentsManager) return false

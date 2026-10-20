@@ -75,6 +75,25 @@
             <div class="text-caption text-grey mt-1">Если не выбрано ни одного подразделения — сотрудник будет недоступен в списке при создании табеля.</div>
           </div>
 
+          <!-- ✅ НОВОЕ: доступ к вкладкам сайта -->
+          <div class="mt-4">
+            <div class="field-label mb-1">Доступ к вкладкам сайта</div>
+            <v-alert v-if="form.is_admin" type="info" variant="tonal" density="compact" class="mb-2">
+              Администратор имеет автоматический доступ ко всем вкладкам
+            </v-alert>
+            <template v-else>
+              <v-checkbox v-model="form.allTabs" label="Все вкладки (по умолчанию)" density="compact" hide-details color="#2d5a3d" class="mb-1" />
+              <div v-if="!form.allTabs" class="d-flex flex-column pl-6" style="gap: 2px;">
+                <v-checkbox v-for="tab in tabOptions" :key="tab.value" v-model="form.permissions"
+                            :value="tab.value" :label="tab.title" density="compact" hide-details color="#2d5a3d" />
+              </div>
+              <div class="text-caption text-grey mt-1">
+                Если выбраны конкретные вкладки — в меню пользователю будут показаны только они;
+                вход по прямой ссылке на закрытую вкладку приведёт к переходу на первую доступную страницу.
+              </div>
+            </template>
+          </div>
+
           <v-alert v-if="dialogError" type="error" density="compact" variant="tonal" class="mt-3">{{ dialogError }}</v-alert>
         </v-card-text>
         <v-card-actions>
@@ -112,7 +131,26 @@ const dialogError = ref('')
 const editing = ref(null)
 const allDepartments = ref(false)
 const deptItems = ref([])
-const form = ref({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false, deptIds: [] })
+
+// ✅ Доступ к вкладкам сайта: ключ = путь страницы (совпадает с ALLOWED_PAGE_KEYS на бэкенде)
+const tabOptions = [
+  { title: 'Сводка', value: '/' },
+  { title: 'Табель', value: '/tabels' },
+  { title: 'Сотрудники', value: '/employees' },
+  { title: 'Импорт', value: '/import' },
+  { title: 'Расчёт событий', value: '/turnstile-fix' },
+  { title: 'Табель фактический', value: '/timesheet-report' },
+  { title: 'Отчёт по часам', value: '/hours-report' },
+  { title: 'Подразделения', value: '/departments' },
+  { title: 'Графики', value: '/schedules' },
+  { title: 'Настройки', value: '/settings' },
+  { title: 'Увольнительные записки', value: '/dismissal-notes' },
+  { title: 'Документы', value: '/documents' },
+  { title: 'Пользователи', value: '/users' }
+]
+
+const emptyForm = () => ({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false, deptIds: [], allTabs: true, permissions: [] })
+const form = ref(emptyForm())
 
 async function loadDepartments() {
   try {
@@ -151,7 +189,7 @@ function openCreate() {
   editing.value = null
   dialogError.value = ''
   allDepartments.value = false
-  form.value = { username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false, deptIds: [] }
+  form.value = emptyForm()
   loadDepartments()
   dialog.value = true
 }
@@ -159,6 +197,7 @@ function openCreate() {
 function openEdit(item) {
   editing.value = item
   dialogError.value = ''
+  const perms = Array.isArray(item.permissions) ? item.permissions.slice() : null
   form.value = {
     username: item.username,
     full_name: item.full_name,
@@ -170,6 +209,9 @@ function openEdit(item) {
     is_report: !!item.is_report,
     is_documents_manager: !!item.is_documents_manager,
     deptIds: parseAllowed(item.allowed_departments),
+    // ✅ null/пусто — все вкладки; список — только выбранные
+    allTabs: !perms || perms.length === 0,
+    permissions: perms || [],
   }
   allDepartments.value = !!item.all_departments
   loadDepartments()
@@ -181,19 +223,27 @@ async function saveUser() {
   dialogError.value = ''
   try {
     const allowed = allDepartments.value ? '*' : JSON.stringify(form.value.deptIds || [])
+    // ✅ Права к вкладкам: все вкладки -> null (обратная совместимость), иначе — выбранный список
+    const permissions = (!form.value.is_admin && !form.value.allTabs)
+      ? (form.value.permissions || [])
+      : null
     if (editing.value) {
-      const payload = { ...form.value, allowed_departments: allowed }
+      const payload = { ...form.value, allowed_departments: allowed, permissions }
       if (!payload.password) delete payload.password
       payload.username = undefined
       delete payload.deptIds
+      delete payload.allTabs
       await api.put(`/users/with-roles/${editing.value.id}`, payload)
     } else {
-      const payload = { ...form.value, allowed_departments: allowed }
+      const payload = { ...form.value, allowed_departments: allowed, permissions }
       delete payload.deptIds
+      delete payload.allTabs
       await api.post('/users/with-roles', payload)
     }
     dialog.value = false
     await load()
+    // Если меняли права текущего пользователя — обновляем его данные с сервера
+    if (editing.value && editing.value.id === auth.user?.id) await auth.refresh()
   } catch (e) {
     const d = e.response?.data?.detail
     dialogError.value = typeof d === 'string' ? d : 'Ошибка сохранения'

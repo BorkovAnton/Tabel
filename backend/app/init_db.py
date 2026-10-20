@@ -49,6 +49,8 @@ MIGRATIONS = [
     ("tabels", "security_approved_at", "TIMESTAMP NULL"),
     # ─── Увольнительные записки: причина отсутствия (work/personal/undefined) ───
     ("dismissal_day_records", "reason", "VARCHAR(20) DEFAULT NULL"),
+    # ✅ Права доступа к вкладкам сайта: JSON-список путей, NULL — все страницы
+    ("users", "permissions", "JSON DEFAULT NULL"),
 ]
 
 

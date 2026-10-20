@@ -14,6 +14,36 @@ from app.models.user import User
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
+# ✅ Допустимые ключи вкладок сайта (путь страницы). Пустой путь "/" — главная (Сводка).
+ALLOWED_PAGE_KEYS = {
+    "/", "/tabels", "/employees", "/import", "/turnstile-fix", "/timesheet-report",
+    "/hours-report", "/departments", "/schedules", "/settings", "/dismissal-notes",
+    "/documents", "/users", "/time-codes",
+}
+
+
+def _normalize_permissions(raw) -> Optional[List[str]]:
+    """Валидирует и нормализует список прав доступа к вкладкам.
+
+    None/пусто -> None (доступны все страницы — обратная совместимость).
+    Бросает HTTPException(400) на недопустимом ключе.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        raise HTTPException(status_code=400, detail="Недопустимый формат прав доступа")
+    clean: List[str] = []
+    for item in raw:
+        key = str(item or "").strip()
+        if not key:
+            continue
+        if key not in ALLOWED_PAGE_KEYS:
+            raise HTTPException(status_code=400, detail=f"Недопустимое право: {key}")
+        if key not in clean:
+            clean.append(key)
+    return clean or None
+
+
 class RoleFlags(BaseModel):
     is_admin: bool = False            # Администратор
     is_hr: bool = False               # Кадровик
@@ -21,6 +51,8 @@ class RoleFlags(BaseModel):
     is_user: bool = True              # Пользователь (базовая роль)
     is_report: bool = False           # Отчёт (страница сводного отчёта часов)
     is_documents_manager: bool = False  # Документы и приказы
+    # ✅ Права доступа к вкладкам: список путей или null (все страницы)
+    permissions: Optional[List[str]] = None
     # Права на подразделения: JSON-строка '["*"]'-список id или "*" (все).
     # Фронтенд может прислать и список чисел — нормализуем валидатором.
     allowed_departments: str = ""
@@ -108,6 +140,7 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
         is_user=payload.is_user,
         is_report=payload.is_report,
         is_documents_manager=payload.is_documents_manager,
+        permissions=_normalize_permissions(payload.permissions),  # ✅ НОВОЕ ПОЛЕ
         allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
     )
     db.add(obj)
@@ -129,6 +162,8 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
     target.is_user = payload.is_user
     target.is_report = payload.is_report
     target.is_documents_manager = payload.is_documents_manager
+    # ✅ НОВОЕ: обновление прав доступа к вкладкам (None — все страницы)
+    target.permissions = _normalize_permissions(payload.permissions)
     target.allowed_departments = _normalize_allowed_departments(payload.allowed_departments, db)
     db.commit()
     db.refresh(target)

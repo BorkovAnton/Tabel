@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy import Boolean, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -20,6 +20,11 @@ class User(Base):
     is_user: Mapped[bool] = mapped_column(Boolean, default=True)            # Пользователь (базовая роль)
     is_report: Mapped[bool] = mapped_column(Boolean, default=False)         # Отчёт (страница сводного отчёта часов)
     is_documents_manager: Mapped[bool] = mapped_column(Boolean, default=False)  # Документы и приказы
+
+    # ✅ Права доступа к вкладкам сайта: JSON-список ключей страниц,
+    # напр. ["tabels", "timesheet-report", "employees"].
+    # NULL/пусто — доступны все страницы (обратная совместимость со старыми пользователями).
+    permissions: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
 
     # Права на подразделения: JSON-список id, напр. "[3, 7]".
     # Пусто/NULL — подразделений нет; "*" — все подразделения.

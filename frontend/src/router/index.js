@@ -15,6 +15,7 @@ import HoursReport from '../views/HoursReport.vue'
 import Settings from '../views/Settings.vue'
 import Documents from '../views/Documents.vue'
 import DismissalNotes from '../views/DismissalNotes.vue'
+import { auth } from '../auth'
 
 const routes = [
   // Модуль «Табель»: авторизация обязательна
@@ -95,6 +96,18 @@ router.beforeEach((to) => {
     try { user = JSON.parse(localStorage.getItem('user') || 'null') } catch (e) { /* noop */ }
     if (!user || !(user.is_report || user.is_admin || user.is_hr)) {
       return { name: 'Tabels' }
+    }
+  }
+  // ✅ Система управления доступом к вкладкам: если у пользователя заданы permissions
+  // и текущая страница в них отсутствует — редирект на первую доступную страницу.
+  // (Администраторы и пользователи без permissions имеют доступ ко всем вкладкам.)
+  if (auth.isAuthenticated && auth.user && Array.isArray(auth.user.permissions) && auth.user.permissions.length > 0 && !auth.user.is_admin) {
+    const pagePath = to.path === '/tabels' || to.path.startsWith('/tabels/') ? '/tabels' : to.path
+    const isPublicPage = to.name === 'Login' || to.name === 'Home'
+    if (!isPublicPage && !auth.hasPermission(pagePath)) {
+      const firstAvailable = auth.user.permissions.find(p => p !== '/') || '/tabels'
+      if (firstAvailable === to.path) return true
+      return firstAvailable
     }
   }
   if (to.name === 'Home' && !token) {

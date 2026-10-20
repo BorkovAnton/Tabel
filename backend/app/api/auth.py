@@ -60,6 +60,7 @@ class UserOut(BaseModel):
     is_user: bool = True
     is_report: bool = False
     is_documents_manager: bool = False  # Документы и приказы
+    permissions: Optional[List[str]] = None  # ✅ Права доступа к вкладкам (null — все страницы)
     allowed_departments: str = ""   # JSON-список id подразделений или "*" — все
 
     class Config:
@@ -82,6 +83,7 @@ class UserCreate(BaseModel):
     is_user: bool = True
     is_report: bool = False
     is_documents_manager: bool = False
+    permissions: Optional[List[str]] = None  # ✅ Права доступа к вкладкам (null — все страницы)
     allowed_departments: str = ""
 
 
@@ -94,6 +96,7 @@ class UserUpdate(BaseModel):
     is_user: Optional[bool] = None
     is_report: Optional[bool] = None
     is_documents_manager: Optional[bool] = None
+    permissions: Optional[List[str]] = None  # ✅ Права доступа к вкладкам (null — все страницы)
     allowed_departments: Optional[str] = None
 
 
@@ -133,6 +136,7 @@ def create_user(payload: UserCreate, user: User = Depends(get_current_user), db:
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,
         is_user=payload.is_user,
+        permissions=payload.permissions,  # ✅ Права доступа к вкладкам (null — все страницы)
         allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
     )
     db.add(new_user)
@@ -155,6 +159,8 @@ def update_user(user_id: int, payload: UserUpdate, user: User = Depends(get_curr
         data.pop("password", None)
     if "allowed_departments" in data:
         data["allowed_departments"] = _normalize_allowed_departments(data["allowed_departments"], db)
+    if "permissions" in data and data["permissions"] is not None and not isinstance(data["permissions"], list):
+        raise HTTPException(status_code=400, detail="Недопустимый формат прав доступа")
     for k, v in data.items():
         setattr(target, k, v)
     db.commit()

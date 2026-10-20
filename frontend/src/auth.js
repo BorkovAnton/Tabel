@@ -38,6 +38,21 @@ export const auth = reactive({
     return !!this.user && !!this.user.is_admin
   },
 
+  // ✅ Права доступа к вкладкам сайта.
+  // Ключ вкладки = путь страницы ('/', '/tabels', '/employees', ...).
+  // Правила:
+  //  - администратор имеет доступ ко всем вкладкам;
+  //  - если permissions не заданы (null/пусто) — доступны все вкладки
+  //    (обратная совместимость со старыми пользователями);
+  //  - иначе — только вкладки из списка permissions.
+  hasPermission(path) {
+    if (!this.user) return false
+    if (this.user.is_admin) return true
+    const perms = this.user.permissions
+    if (!Array.isArray(perms) || perms.length === 0) return true
+    return perms.includes(path)
+  },
+
   // Обновить данные пользователя с сервера (например, после смены прав)
   async refresh() {
     if (!this.token) return null
