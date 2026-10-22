@@ -22,6 +22,7 @@ const routes = [
   { path: '/login', name: 'Login', component: Login },
   { path: '/tabels', name: 'Tabels', component: Tabels, meta: { requiresAuth: true } },
   { path: '/tabels/:id', name: 'TabelFill', component: TabelFill, meta: { requiresAuth: true } },
+  { path: '/tabels/:id/print', name: 'TabelPrint', component: () => import('../views/TabelPrint.vue'), meta: { requiresAuth: true } },
   // Увольнительные записки — авторизация обязательна
   { path: '/dismissal-notes', name: 'DismissalNotes', component: DismissalNotes, meta: { requiresAuth: true } },
   { path: '/users', name: 'Users', component: Users, meta: { requiresAuth: true, requiresAdmin: true } },
