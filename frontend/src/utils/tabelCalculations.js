@@ -11,6 +11,19 @@ export const DAY_NAMES_RU_FULL = ['Воскресенье', 'Понедельн�
 
 export const dayOfWeekNames = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
 
+// ===== Нормализация ответов API =====
+// Axios-перехватчики и разные версии бэкенда могут возвращать ответ либо как
+// массив напрямую, либо в обёртке { items: [...] } / { data: [...] }.
+// Раньше в печатной форме ожидался «голый» массив; если приходила обёртка —
+// справочник кодов оставался пустым и ВСЕ ИТОГОВЫЕ КОЛОНКИ выходили пустыми.
+export function normalizeListResponse(data) {
+  if (Array.isArray(data)) return data
+  if (data && Array.isArray(data.items)) return data.items
+  if (data && Array.isArray(data.data)) return data.data
+  if (data && Array.isArray(data.results)) return data.results
+  return []
+}
+
 // Итоговые колонки — ТОЧНО КАК В TABELFILL.VUE
 // Колонка «Итого часов» намеренно НЕ последняя: после неё идут остальные
 // итоговые колонки, а самой правой является «Часы по тарифу».
@@ -108,7 +121,8 @@ export function codeHoursForDay(codeObj, row, d, normOverride = null) {
 export function cellHoursForDay(timeCodes, val) {
   const s = String(val ?? '').trim()
   if (!s) return null
-  const codeObj = timeCodes.find(c => c.code.toLowerCase() === s.toLowerCase())
+  const codes = Array.isArray(timeCodes) ? timeCodes : []
+  const codeObj = codes.find(c => String(c.code || '').toLowerCase() === s.toLowerCase())
   if (codeObj) return null
   return rawToHours(s)
 }
@@ -124,7 +138,8 @@ export function cellMinutes(timeCodes, v, row, d) {
   m = s.match(/^(\d+):([0-5]\d)$/)
   if (m) return parseInt(m[1]) * 60 + parseInt(m[2])
   if (/^\d+(\.\d+)?$/.test(s)) return Math.round(parseFloat(s) * 60)
-  const c = timeCodes.find(x => x.code.toLowerCase() === s)
+  const codes = Array.isArray(timeCodes) ? timeCodes : []
+  const c = codes.find(x => String(x.code || '').toLowerCase() === s)
   if (c) {
     // «Время по графику»: часы = норма графика на этот день (если есть контекст дня)
     if (c.use_schedule_hours && row && d) return Math.round(codeHoursForDay(c, row, d).total * 60)
@@ -152,14 +167,20 @@ export function calculateSummary(row, tabel, timeCodes) {
   const summary = {}
   summaryColumns.forEach(col => { if (col.unit !== 'manual') summary[col.key] = 0 })
 
-  for (let d = 1; d <= tabel.days_in_month; d++) {
-    const val = String(row.days[d] || '').trim()
+  // Defensive: без справочника кодов расчёт всё равно должен показывать
+  // числовые значения ячеек, а не «пустоту».
+  const codes = Array.isArray(timeCodes) ? timeCodes : []
+  const daysInMonth = Number(tabel && tabel.days_in_month) || 31
+  const rowDays = (row && row.days) || {}
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const val = String(rowDays[d] || '').trim()
     if (!val) continue
 
     // Норма по графику работы для этого дня недели (fallback: norm_hours или 8)
     const norm = getDayNorm(row, d)
 
-    const hours = cellHoursForDay(timeCodes, val)
+    const hours = cellHoursForDay(codes, val)
     if (hours !== null && hours > 0) {
       // числовой ввод: обычные часы + сверхурочные сверх нормы по графику.
       // «Сверхурочные дни» при числовом вводе НЕ добавляются.
@@ -174,7 +195,7 @@ export function calculateSummary(row, tabel, timeCodes) {
       continue
     }
 
-    const codeObj = timeCodes.find(c => c.code.toLowerCase() === val.toLowerCase())
+    const codeObj = codes.find(c => String(c.code || '').toLowerCase() === val.toLowerCase())
     if (codeObj) {
       // «Время по графику»: часы кода = норма графика на этот день (см. codeHoursForDay)
       const eff = codeHoursForDay(codeObj, row, d)
@@ -226,10 +247,10 @@ export function calculateSummary(row, tabel, timeCodes) {
   // 1 день = норма часов этого дня (из графика; fallback norm_hours/8).
   // Итого = сверхурочные часы + Σ(дни × норма); overtime_hours — «часы без дней».
   let otDaysHours = 0
-  for (let d = 1; d <= tabel.days_in_month; d++) {
-    const val = String(row.days[d] || '').trim().toLowerCase()
+  for (let d = 1; d <= daysInMonth; d++) {
+    const val = String(rowDays[d] || '').trim().toLowerCase()
     if (!val) continue
-    const codeObj = timeCodes.find(c => String(c.code).trim().toLowerCase() === val)
+    const codeObj = codes.find(c => String(c.code || '').trim().toLowerCase() === val)
     if (codeObj && (codeObj.destinations || []).includes('overtime_days')) {
       const n = getDayNorm(row, d)
       otDaysHours += n > 0 ? n : (normOf(row) > 0 ? normOf(row) : 8)
@@ -264,7 +285,8 @@ export function getCellCode(val) {
 export function getCellHours(val, row, d, timeCodes) {
   if (!val) return ''
   const s = String(val).trim()
-  const codeObj = timeCodes.find(c => c.code.toLowerCase() === s.toLowerCase())
+  const codes = Array.isArray(timeCodes) ? timeCodes : []
+  const codeObj = codes.find(c => String(c.code || '').toLowerCase() === s.toLowerCase())
   if (codeObj) {
     const eff = codeHoursForDay(codeObj, row, d)
     return eff.total > 0 ? fmtNum(eff.total) : ''

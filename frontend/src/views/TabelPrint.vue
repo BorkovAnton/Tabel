@@ -63,23 +63,46 @@
               :class="{ 'col-overtime-cell': col.key === 'overtime_hours' }">
             <!-- Сверхурочные: итого (красным) и в скобках только часы без дней -->
             <template v-if="col.key === 'overtime_hours'">
-              <div class="overtime-total">{{ formatHours(summaryFor(row).overtime_total) }}</div>
-              <div class="overtime-hours-only">({{ formatHours(summaryFor(row).overtime_hours) }})</div>
+              <div class="overtime-total">{{ formatHours(summaryOf(row).overtime_total) }}</div>
+              <div class="overtime-hours-only">({{ formatHours(summaryOf(row).overtime_hours) }})</div>
             </template>
             <!-- КДУ — ручные значения из табеля -->
             <template v-else-if="col.unit === 'manual'">
               {{ fmtNum(row[col.key] ?? 0) }}
             </template>
             <template v-else-if="col.unit === 'hours'">
-              {{ formatHours(summaryFor(row)[col.key]) }}
+              {{ formatHours(summaryOf(row)[col.key]) }}
             </template>
             <template v-else>
-              {{ summaryFor(row)[col.key] || 0 }}
+              {{ summaryOf(row)[col.key] || 0 }}
+            </template>
+          </td>
+        </tr>
+        <!-- Строка «ИТОГО» по отделу — суммирует все строки, как принято в Т-13 -->
+        <tr v-if="tabel.entries.length" class="t13-total-row">
+          <td :colspan="3 + tabel.days_in_month" class="col-total-label">ИТОГО</td>
+          <td v-for="col in summaryColumns" :key="'tot-' + col.key" class="col-summary-cell"
+              :class="{ 'col-overtime-cell': col.key === 'overtime_hours' }">
+            <template v-if="col.key === 'overtime_hours'">
+              <div class="overtime-total">{{ formatHours(totals.overtime_total) }}</div>
+              <div class="overtime-hours-only">({{ formatHours(totals.overtime_hours) }})</div>
+            </template>
+            <template v-else-if="col.unit === 'hours'">
+              {{ formatHours(totals[col.key]) }}
+            </template>
+            <template v-else>
+              {{ fmtNum(totals[col.key]) }}
             </template>
           </td>
         </tr>
       </tbody>
     </table>
+
+    <!-- Итоги НЕ рассчитались (например, не загрузился справочник кодов) -->
+    <div v-if="showCalcWarning" class="no-print calc-warning">
+      ⚠ Не удалось рассчитать итоги (не загружен справочник «Коды часов»).
+      Проверьте доступность сервера и обновите страницу.
+    </div>
 
     <!-- Подписи внизу -->
     <div class="t13-signatures">
@@ -118,17 +141,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 import {
   summaryColumns, calculateSummary, formatHours, fmtNum, getCellHours, getCellCode,
-  dayOfWeekNames, MONTH_NAMES_RU
+  dayOfWeekNames, MONTH_NAMES_RU, rawToHours, normalizeListResponse
 } from '../utils/tabelCalculations'
 
 const route = useRoute()
 const tabel = ref(null)
 const timeCodes = ref([])
+const codesLoadError = ref(false)
+const loadError = ref('')
 
 const monthName = computed(() => {
   if (!tabel.value) return ''
@@ -153,50 +178,186 @@ function getDayOfWeekShort(d) {
   return dayOfWeekNames[date.getDay()]
 }
 
-// Кэш итогов по строке — расчёт через ОБЩИЙ МОДУЛЬ (идентичен TabelFill.vue),
+// Итоги по строкам — расчёт через ОБЩИЙ МОДУЛЬ (идентичен TabelFill.vue),
 // поэтому итоги в печати совпадают с табелем заполнения.
-const summaryCache = new WeakMap()
-function summaryFor(row) {
-  let s = summaryCache.get(row)
-  if (!s) {
-    s = calculateSummary(row, tabel.value, timeCodes.value)
-    summaryCache.set(row, s)
+// Реактивная вычисляемая карта (computed): пересчитывается автоматически,
+// когда завершится загрузка табеля и справочника кодов (раньше из-за кэша на
+// WeakMap, заполненного до загрузки данных, итоговые колонки были пустыми).
+const summaries = computed(() => {
+  const map = new Map()
+  const t = tabel.value
+  if (!t || !Array.isArray(t.entries)) return map
+  for (const row of t.entries) {
+    try {
+      map.set(row.employee_id, calculateSummary(row, t, timeCodes.value))
+    } catch (e) {
+      console.error('Ошибка расчёта итогов для строки:', row && row.employee_id, e)
+    }
   }
-  return s
+  return map
+})
+
+function summaryOf(row) {
+  return summaries.value.get(row.employee_id) || {}
 }
 
+// Строка «ИТОГО»: сумма по всем сотрудникам (КДУ — тоже суммируются)
+const totals = computed(() => {
+  const res = {}
+  summaryColumns.forEach(col => { res[col.key] = 0 })
+  res.overtime_total = 0
+  summaries.value.forEach(s => {
+    summaryColumns.forEach(col => {
+      // КДУ (unit === 'manual') не входят в summary — добавляются ниже из строк
+      if (col.unit === 'manual') return
+      res[col.key] += Number(s[col.key]) || 0
+    })
+    res.overtime_total += Number(s.overtime_total) || 0
+  })
+  // КДУ хранятся в строке (ручной ввод), не в summary
+  if (tabel.value && Array.isArray(tabel.value.entries)) {
+    for (const row of tabel.value.entries) {
+      res.kdu_work_days += Number(row.kdu_work_days) || 0
+      res.kdu_weekend_days += Number(row.kdu_weekend_days) || 0
+    }
+  }
+  // округление
+  summaryColumns.forEach(col => {
+    res[col.key] = col.unit === 'hours' || col.unit === 'manual'
+      ? Math.round(res[col.key] * 100) / 100
+      : Math.round(res[col.key])
+  })
+  res.overtime_total = Math.round(res.overtime_total * 100) / 100
+  return res
+})
+
+// Предупреждение, если в табеле есть данные, но ни один код не распознан
+// (пустой/недогруженный справочник) — иначе пользователь видит «пустые» итоги
+// и думает, что расчётов нет.
+const showCalcWarning = computed(() => {
+  const t = tabel.value
+  if (!t || !Array.isArray(t.entries) || !t.entries.length) return false
+  if (codesLoadError.value) return true
+  const hasAnyValue = t.entries.some(r => Object.values(r.days || {}).some(v => String(v || '').trim()))
+  const hasAnyNonNumeric = t.entries.some(r =>
+    Object.values(r.days || {}).some(v => {
+      const s = String(v || '').trim()
+      return s && rawToHours(s) === null
+    })
+  )
+  return hasAnyValue && hasAnyNonNumeric && timeCodes.value.length === 0
+})
+
 async function loadTabel() {
-  const id = route.params.id
+  // Табель и справочник кодов грузятся ПАРАЛЛЕЛЬНО и оба до конца, прежде чем
+  // что-либо отобразится. Раньше табель мог отрисоваться раньше кодов — итоги
+  // считались с пустым справочником и в печатной форме выходили пустыми.
+  const raw = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id
+  const id = Number(raw)
+  if (!Number.isInteger(id) || id <= 0) {
+    console.error('Некорректный id табеля в URL:', raw)
+    return
+  }
+  let tabelData = null
   try {
-    const { data } = await api.get(`/tabels/${id}`)
-    tabel.value = data
+    const [tabelRes, codesRes] = await Promise.all([
+      api.get(`/tabels/${id}`),
+      api.get('/time-codes/').catch(e => {
+        console.error('Ошибка загрузки справочника кодов часов:', e)
+        codesLoadError.value = true
+        return null
+      })
+    ])
+    tabelData = tabelRes && tabelRes.data ? tabelRes.data : tabelRes
+    // ИСПРАВЛЕНО: раньше здесь ожидался «голый» массив; если API возвращал
+    // обёртку ({ items: [...] } и т.п.) или ответ уже был развёрнут,
+    // timeCodes оставался пустым → ВСЕ итоговые колонки на печати были пусты.
+    const codesRaw = codesRes && codesRes.data !== undefined ? codesRes.data : codesRes
+    timeCodes.value = normalizeListResponse(codesRaw).filter(c => c && c.code)
   } catch (e) {
+    loadError.value = e && e.response && e.response.status === 403
+      ? 'У вас нет доступа к этому табелю.'
+      : 'Не удалось загрузить данные табеля. Проверьте доступность сервера и обновите страницу.'
     console.error('Ошибка загрузки табеля:', e)
     return
   }
 
-  // Коды рабочего времени справочника — нужны для расчёта итогов
-  try {
-    const { data: codes } = await api.get('/time-codes/')
-    timeCodes.value = Array.isArray(codes) ? codes : []
-  } catch (e) {
-    console.error('Ошибка загрузки кодов:', e)
+  if (!tabelData) return
+  // Defensive: нормализуем структуру данных табеля, чтобы расчёт итогов
+  // не падал на отсутствии полей (entries/days/days_in_month).
+  if (!Array.isArray(tabelData.entries)) tabelData.entries = []
+  for (const row of tabelData.entries) {
+    if (!row.days || typeof row.days !== 'object') row.days = {}
   }
+  tabel.value = tabelData
 
   // Настройки предприятия — реквизиты шапки (не критично при ошибке)
   try {
-    const { data } = await api.get('/company-settings/')
-    settings.value = data || {}
+    const res = await api.get('/company-settings/')
+    settings.value = (res && res.data) || res || {}
   } catch (e) {
     /* используем значения по умолчанию */
   }
 }
 
 function printTable() {
-  window.print()
+  doPrint()
 }
 
-onMounted(loadTabel)
+// ===== ГАРАНТИЯ АКТУАЛЬНЫХ ИТОГОВ ПРИ ПЕЧАТИ =====
+// Браузер печатает текущий DOM. Если в момент Ctrl+P итоги ещё не досчитаны
+// (данные/справочник кодов грузятся асинхронно или открыт системный диалог
+// печати до готовности), в итоговых колонках окажутся пустые ячейки.
+// Поэтому перед каждой печатью принудительно перезагружаем данные и ждём
+// полной перерисовки таблицы, и только потом вызываем window.print().
+let printing = false
+
+async function ensureFreshData() {
+  try {
+    await loadTabel()
+  } catch (e) {
+    console.error('Не удалось обновить данные перед печатью:', e)
+  }
+  await nextTick()
+}
+
+function doPrint() {
+  if (printing) return
+  printing = true
+  ensureFreshData().finally(() => {
+    // двойной nextTick: к этому моменту Vue гарантированно отрисует
+    // пересчитанные итоговые значения в DOM
+    nextTick(() => nextTick(() => {
+      printing = false
+      window.print()
+    }))
+  })
+}
+
+const onBeforePrint = (e) => {
+  // preventDefault не работает для beforeprint — но это единственный способ
+  // перехватить пользовательский Ctrl+P: помечаем событие и после открытия
+  // предпросмотра обновляем данные; сам предпросмотр браузер уже построит по
+  // текущему DOM, поэтому надёжнее всего печатать через кнопку «Печать Т-13».
+  if (!printing) ensureFreshData()
+}
+
+const onAfterPrint = () => { printing = false }
+
+watch(() => route.params.id, (newId, oldId) => {
+  if (newId && newId !== oldId) loadTabel()
+})
+
+onMounted(() => {
+  loadTabel()
+  window.addEventListener('beforeprint', onBeforePrint)
+  window.addEventListener('afterprint', onAfterPrint)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeprint', onBeforePrint)
+  window.removeEventListener('afterprint', onAfterPrint)
+})
 </script>
 
 <style scoped>
@@ -416,6 +577,30 @@ onMounted(loadTabel)
   font-size: 5px;
   color: #666;
   line-height: 1.2;
+}
+
+/* Строка ИТОГО */
+.t13-total-row td {
+  font-weight: bold;
+  background-color: #f7f7f7;
+}
+
+.col-total-label {
+  text-align: right;
+  padding-right: 6px !important;
+  font-size: 8px;
+  letter-spacing: 2px;
+}
+
+/* Предупреждение о нерассчитанных итогах (только на экране, не при печати) */
+.calc-warning {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid #d32f2f;
+  border-radius: 4px;
+  color: #d32f2f;
+  background: #ffebee;
+  font-size: 12px;
 }
 
 /* ===== Подписи ===== */
