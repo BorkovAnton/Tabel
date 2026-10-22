@@ -63,18 +63,12 @@
               :class="{ 'col-overtime-cell': col.key === 'overtime_hours' }">
             <!-- Сверхурочные: итого (красным) и в скобках только часы без дней -->
             <template v-if="col.key === 'overtime_hours'">
-              <div class="overtime-total">{{ formatHours(summaryOf(row).overtime_total) }}</div>
-              <div class="overtime-hours-only">({{ formatHours(summaryOf(row).overtime_hours) }})</div>
+              <div class="overtime-total">{{ overtimeTotalText(summaryOf(row)) }}</div>
+              <div class="overtime-hours-only">({{ overtimeHoursOnlyText(summaryOf(row)) }})</div>
             </template>
-            <!-- КДУ — ручные значения из табеля -->
-            <template v-else-if="col.unit === 'manual'">
-              {{ fmtNum(row[col.key] ?? 0) }}
-            </template>
-            <template v-else-if="col.unit === 'hours'">
-              {{ formatHours(summaryOf(row)[col.key]) }}
-            </template>
+            <!-- Остальные итоги: дни — число, часы — «NчMм», КДУ — ручное значение -->
             <template v-else>
-              {{ summaryOf(row)[col.key] || 0 }}
+              {{ summaryCellText(col, row) }}
             </template>
           </td>
         </tr>
@@ -84,14 +78,11 @@
           <td v-for="col in summaryColumns" :key="'tot-' + col.key" class="col-summary-cell"
               :class="{ 'col-overtime-cell': col.key === 'overtime_hours' }">
             <template v-if="col.key === 'overtime_hours'">
-              <div class="overtime-total">{{ formatHours(totals.overtime_total) }}</div>
-              <div class="overtime-hours-only">({{ formatHours(totals.overtime_hours) }})</div>
-            </template>
-            <template v-else-if="col.unit === 'hours'">
-              {{ formatHours(totals[col.key]) }}
+              <div class="overtime-total">{{ overtimeTotalText(totals) }}</div>
+              <div class="overtime-hours-only">({{ overtimeHoursOnlyText(totals) }})</div>
             </template>
             <template v-else>
-              {{ fmtNum(totals[col.key]) }}
+              {{ totalsCellText(col) }}
             </template>
           </td>
         </tr>
@@ -127,7 +118,7 @@
 
     <!-- Кнопка печати (не выводится на бумаге) -->
     <div class="no-print" style="margin-top: 20px; text-align: center;">
-      <v-btn color="primary" prepend-icon="mdi-printer" @click="printTable">
+      <v-btn color="primary" prepend-icon="mdi-printer" @click="onPrintClick">
         Распечатать
       </v-btn>
       <v-btn variant="outlined" class="ml-2" @click="$router.back()">
@@ -178,12 +169,37 @@ function getDayOfWeekShort(d) {
   return dayOfWeekNames[date.getDay()]
 }
 
+// ===== КЛЮЧ ДАННЫХ ДЛЯ РАСЧЁТА ИТОГОВ =====
+// Исправление бага «в итоговых столбцах при печати нет расчётов»: раньше
+// расчёт запускался ровно ОДИН раз — сразу после первой загрузки данных.
+// Если в этот момент справочник «Коды часов» ещё не дошёл (или страница
+// открылась до готовности API), все коды в ячейках не распознавались,
+// и итоговые колонки оставались пустыми НАВСЕГДА — даже после того, как
+// справочник догружался. Теперь ключом служите и данные табеля, и сам
+// справочник кодов: как только приходит ЛЮБОЕ из них — итоги пересчитываются.
+const calcKey = computed(() => JSON.stringify([
+  tabel.value ? {
+    y: tabel.value.year, m: tabel.value.month, d: tabel.value.days_in_month,
+    w: tabel.value.weekend_days || [], h: tabel.value.holiday_days || [],
+    e: (tabel.value.entries || []).map(r => ({
+      id: r.employee_id, n: r.norm_hours,
+      dn: r.day_norms || {}, k1: r.kdu_work_days, k2: r.kdu_weekend_days,
+      days: r.days || {},
+    })),
+  } : null,
+  // нормализованный снимок справочника: код + часы + флаг графика + назначения
+  (timeCodes.value || []).map(c => [
+    c.code, Number(c.hours_day) || 0, Number(c.hours_night) || 0,
+    !!c.use_schedule_hours, Number(c.weekend_hours) || 0,
+    (c.destinations || []).join('|'),
+  ]),
+]))
+
 // Итоги по строкам — расчёт через ОБЩИЙ МОДУЛЬ (идентичен TabelFill.vue),
-// поэтому итоги в печати совпадают с табелем заполнения.
-// Реактивная вычисляемая карта (computed): пересчитывается автоматически,
-// когда завершится загрузка табеля и справочника кодов (раньше из-за кэша на
-// WeakMap, заполненного до загрузки данных, итоговые колонки были пустыми).
+// поэтому итоги в печати совпадают с табелем заполнения. Пересчитывается
+// автоматически при любом изменении calcKey (см. выше).
 const summaries = computed(() => {
+  void calcKey.value // подписка: пересчёт при смене данных табеля/справочника
   const map = new Map()
   const t = tabel.value
   if (!t || !Array.isArray(t.entries)) return map
@@ -200,6 +216,59 @@ const summaries = computed(() => {
 function summaryOf(row) {
   return summaries.value.get(row.employee_id) || {}
 }
+
+// ===== ФОРМАТ ИТОГОВ — КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (TabelFill.vue) =====
+// В табеле заполнения дни выводятся числом, часовые колонки — в формате
+// «NчMм» (formatHours), а сверхурочные показывают «итого (только часы)»,
+// например «21ч (5ч)». Печать использует те же правила, чтобы значения на
+// бумаге совпадали с экраном один-в-один.
+
+// Часы → «21ч» / «8ч30м» / «0ч»
+function hoursText(v) {
+  return formatHours(v)
+}
+
+// Колонка «Сверхурочные часы итого»: итого (дни+часы и часы без дней уже
+// сложены в overtime_total); в скобках — только сверхурочные часы без дней.
+function overtimeTotalText(s) {
+  return hoursText(Number(s.overtime_total) || 0)
+}
+
+// Значение в скобках: только сверхурочные часы БЕЗ дней.
+function overtimeHoursOnlyText(s) {
+  return hoursText(Number(s.overtime_hours) || 0)
+}
+
+// Универсальный вывод ячейки итоговой колонки (строка сотрудника).
+function summaryCellText(col, row) {
+  const s = summaryOf(row)
+  if (col.key === 'overtime_hours') return overtimeTotalText(s)
+  if (col.unit === 'manual') return fmtNum(row[col.key] ?? 0)
+  if (col.unit === 'hours') return hoursText(s[col.key])
+  // days — просто число, как в табеле заполнения
+  return String(Math.round(Number(s[col.key]) || 0))
+}
+
+// Универсальный вывод ячейки строки «ИТОГО».
+function totalsCellText(col) {
+  const t = totals.value
+  if (col.key === 'overtime_hours') return overtimeTotalText(t)
+  if (col.unit === 'hours') return hoursText(t[col.key])
+  return fmtNum(t[col.key])
+}
+
+// Данные ещё грузятся (табель или справочник кодов) — показываем явное
+// состояние вместо молчаливых нулей/пустоты в итоговых колонках.
+const dataReady = computed(() => !!tabel.value && Array.isArray(tabel.value.entries))
+const codesPending = computed(() => dataReady.value && hasCodeValues.value && timeCodes.value.length === 0 && !codesLoadError.value)
+const hasCodeValues = computed(() => {
+  const t = tabel.value
+  if (!t || !Array.isArray(t.entries)) return false
+  return t.entries.some(r => Object.values(r.days || {}).some(v => {
+    const s = String(v || '').trim()
+    return s && rawToHours(s) === null
+  }))
+})
 
 // Строка «ИТОГО»: сумма по всем сотрудникам (КДУ — тоже суммируются)
 const totals = computed(() => {
@@ -334,11 +403,63 @@ function doPrint() {
   })
 }
 
-const onBeforePrint = (e) => {
-  // preventDefault не работает для beforeprint — но это единственный способ
-  // перехватить пользовательский Ctrl+P: помечаем событие и после открытия
-  // предпросмотра обновляем данные; сам предпросмотр браузер уже построит по
-  // текущему DOM, поэтому надёжнее всего печатать через кнопку «Печать Т-13».
+// ===== ПЕЧАТЬ В НОВОМ ОКНЕ — РЕШЕНИЕ «В ИТОГОВЫХ СТОЛБЦАХ ПРИ ПЕЧАТИ НЕТ РАСЧЁТОВ» =====
+// Браузер строит предпросмотр печати из ДОКУМЕНТА, в котором вызван print().
+// Если печать вызывается на другой странице (например, пользователь нажал
+// Ctrl+P, находясь ещё на табеле заполнения), печатается тот DOM — и в нём
+// расчётов нет. Поэтому кнопка «Распечатать» открывает новое окно, полностью
+// копирует в него ОТОБРАЖЁННУЮ таблицу (уже с посчитанными итогами), ждёт
+// загрузки стилей и вызывает print() внутри нового документа — там всегда
+// актуальные расчёты. Старое окно остаётся фоном для системного Ctrl+P.
+let printWin = null
+
+async function openPrintWindow() {
+  await nextTick()
+  const node = document.querySelector('.t13-page')
+  if (!node) return false
+  const win = window.open('', '_blank', 'width=1400,height=900')
+  if (!win) return false // браузер заблокировал всплывающее окно
+  printWin = win
+  const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+    .map(n => n.outerHTML).join('\n')
+  const html = node.cloneNode(true)
+  const noPrintEls = html.querySelectorAll('.no-print')
+  for (const el of noPrintEls) el.parentNode.removeChild(el)
+  win.document.open()
+  win.document.write(
+    '<!doctype html><html lang="ru"><head><meta charset="utf-8">' +
+    '<title>Табель Т-13 — печать</title>' + styles + '</head><body>' +
+    html.outerHTML + '</body></html>'
+  )
+  win.document.close()
+  // даём новому окну применить стили и отрисовать таблицы перед диалогом печати
+  await new Promise(res => setTimeout(res, 350))
+  try { win.focus() } catch (e) { /* noop */ }
+  win.print()
+  return true
+}
+
+async function onPrintClick() {
+  if (printing) return
+  printing = true
+  try {
+    await loadTabel()          // свежие данные + справочник кодов
+    await nextTick()           // Vue пересчитает итоги (summaries/totals)
+    const ok = await openPrintWindow()
+    if (!ok) {
+      // fallback: печать текущего окна после полной перерисовки
+      await nextTick()
+      window.print()
+    }
+  } finally {
+    printing = false
+  }
+}
+
+const onBeforePrint = () => {
+  // beforeprint синхронный и не даёт дождаться асинхронного расчёта, но если
+  // данные уже загружены — итоги в текущем документе актуальны; дополнительно
+  // запускаем обновление на случай «печатают прямо из-под Ctrl+P».
   if (!printing) ensureFreshData()
 }
 
@@ -667,6 +788,23 @@ onBeforeUnmount(() => {
   .overtime-total {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  /* Печать только формы Т-13: скрываем всё остальное на странице
+     (навигация сайта, кнопки) — иначе в предпросмотре вместо расчётов
+     печатается чужой DOM. */
+  body * {
+    visibility: hidden;
+  }
+  .t13-page,
+  .t13-page * {
+    visibility: visible;
+  }
+  .t13-page {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
   }
 }
 </style>
