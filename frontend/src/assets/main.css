@@ -22,3 +22,47 @@ html, body {
 table {
   width: 100% !important;
 }
+
+/* === СТИЛИ ДЛЯ ПЕЧАТИ — СКРЫТЬ UI-ЭЛЕМЕНТЫ === */
+@media print {
+  /* Скрыть шапку сайта (навигацию) */
+  .v-app-bar,
+  .v-navigation-drawer,
+  .v-footer,
+  nav,
+  header,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Скрыть кнопки, скроллбары */
+  button,
+  .v-btn,
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  /* Основной контент на всю страницу */
+  .v-main,
+  .v-main__wrap,
+  .v-container,
+  .v-application__wrap {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    min-height: 0 !important;
+  }
+
+  /* Отключить масштабирование при печати */
+  #app {
+    transform: none !important;
+    width: 100% !important;
+  }
+
+  /* Сохранить фоновые цвета ячеек */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

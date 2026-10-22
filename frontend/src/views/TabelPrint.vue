@@ -262,80 +262,80 @@ onMounted(loadTabel)
   margin-bottom: 15px;
 }
 
-/* ===== Таблица ===== */
+/* ===== Таблица (сжатая, чтобы влезла по ширине) ===== */
 .t13-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 8px;
+  table-layout: fixed;
+  font-size: 6px;
 }
 
 .t13-table th,
 .t13-table td {
   border: 1px solid #000;
-  padding: 1px;
+  padding: 0.5px;
   text-align: center;
   vertical-align: middle;
+  overflow: hidden;
 }
 
 .col-num {
-  width: 20px;
-  min-width: 20px;
-  font-size: 8px;
+  width: 15px;
+  min-width: 15px;
+  max-width: 15px;
+  font-size: 6px;
 }
 
 .col-fio {
-  width: 110px;
-  min-width: 110px;
+  width: 70px;
+  min-width: 70px;
   text-align: left;
-  padding-left: 3px;
-  font-size: 8px;
+  padding-left: 2px;
+  font-size: 6px;
 }
 
 .col-tabno {
-  width: 40px;
-  min-width: 40px;
-  font-size: 7px;
+  width: 28px;
+  min-width: 28px;
+  font-size: 5px;
 }
 
 .col-days-header {
   font-weight: bold;
-  font-size: 9px;
+  font-size: 7px;
 }
 
 .col-day-header {
-  width: 24px;
-  min-width: 24px;
-  font-size: 6px;
+  font-size: 5px;
   line-height: 1.1;
+  padding: 0.5px 0 !important;
 }
 
 .day-name {
-  font-size: 6px;
+  font-size: 4px;
   font-weight: normal;
   color: #666;
 }
 
 .day-number {
-  font-size: 7px;
+  font-size: 5px;
   font-weight: bold;
 }
 
 /* Ячейка дня: ДВЕ строки — код сверху, часы снизу */
 .col-day-cell {
-  width: 24px;
-  min-width: 24px;
-  padding: 0;
+  padding: 0 !important;
 }
 
 .day-code {
-  font-size: 8px;
+  font-size: 6px;
   font-weight: bold;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 
 .day-hours {
-  font-size: 7px;
-  line-height: 1.2;
+  font-size: 5px;
+  line-height: 1.1;
   color: #333;
 }
 
@@ -348,62 +348,74 @@ onMounted(loadTabel)
   background-color: #fff3cd;
 }
 
-/* Итоговые колонки: вертикальные заголовки, кроме сверхурочных */
+/* Итоговые колонки: ВСЕ вертикальные, включая сверхурочные */
 .col-summary-header {
-  width: 40px;
-  min-width: 40px;
-  font-size: 7px;
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  font-size: 5px;
   font-weight: bold;
-  line-height: 1.2;
+  line-height: 1.1;
   writing-mode: vertical-rl;
   text-orientation: mixed;
   transform: rotate(180deg);
   white-space: nowrap;
+  padding: 2px 1px !important;
 }
 
+/* Сверхурочные — вертикальная, как все остальные итоговые колонки */
 .col-overtime {
-  width: 96px !important;
-  min-width: 96px !important;
-  max-width: 96px !important;
-  writing-mode: horizontal-tb !important;
-  transform: none !important;
-  white-space: normal !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  writing-mode: vertical-rl !important;
+  text-orientation: mixed;
+  transform: rotate(180deg) !important;
+  white-space: nowrap !important;
+  font-size: 5px !important;
+  line-height: 1.1 !important;
+  padding: 2px 1px !important;
 }
 
 .col-overtime .ot-main {
-  display: block;
+  display: inline;
   font-weight: bold;
 }
 
 .col-overtime .ot-sub {
-  display: block;
-  font-size: 6px;
+  display: inline;
+  font-size: 5px !important;
   color: #666;
   font-weight: normal;
 }
 
 .col-summary-cell {
-  font-size: 8px;
+  font-size: 6px;
   font-weight: normal;
-  width: 40px;
-  min-width: 40px;
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
 }
 
+/* Ячейки тела таблицы для сверхурочных — тоже узкие */
 .col-overtime-cell {
-  width: 96px !important;
-  min-width: 96px !important;
-  max-width: 96px !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  font-size: 6px !important;
 }
 
 .overtime-total {
   font-weight: bold;
   color: #d32f2f;
-  font-size: 9px;
+  font-size: 7px;
+  line-height: 1.2;
 }
 
 .overtime-hours-only {
-  font-size: 7px;
+  font-size: 5px;
   color: #666;
+  line-height: 1.2;
 }
 
 /* ===== Подписи ===== */
@@ -434,14 +446,16 @@ onMounted(loadTabel)
 
 /* ===== Печать ===== */
 @media print {
+  /* A3 landscape — шире, вмещает все колонки */
   @page {
-    size: A4 landscape;
-    margin: 8mm;
+    size: A3 landscape;
+    margin: 5mm;
   }
 
   body {
     margin: 0;
     padding: 0;
+    font-size: 6px;
   }
 
   .no-print {
@@ -450,15 +464,24 @@ onMounted(loadTabel)
 
   .t13-page {
     padding: 0;
+    width: 100%;
   }
 
   .t13-table {
-    font-size: 7px;
+    font-size: 6px !important;
   }
 
   .t13-table th,
   .t13-table td {
     padding: 0.5px;
+  }
+
+  /* Сохранить фоновые цвета ячеек при печати */
+  .cell-weekend,
+  .cell-holiday,
+  .overtime-total {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
 </style>
