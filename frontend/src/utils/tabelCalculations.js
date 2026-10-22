@@ -163,6 +163,40 @@ export function totalHours(timeCodes, row, daysInMonth) {
 // Идентична функции из TabelFill.vue (unit === 'manual' — КДУ — не считается,
 // заполняется вручную). Часы сверх нормы автоматически уходят в сверхурочные:
 // «Итого часов» = все часы; «по тарифу» = только обычные; превышение — в overtime_*.
+// Ключ поиска в справочнике: trim + lowercase (единый нормализатор для
+// кодов справочника и значений ячеек — иначе «я » / « Я» не совпадали).
+export function normalizeCodeKey(v) {
+  return String(v ?? '').trim().toLowerCase()
+}
+
+// Предупреждение о значениях, которых нет в справочнике «Коды часов»:
+// раньше они молча исчезали из итогов (пустые колонки на печати).
+// Логируем один раз на значение, чтобы не спамить при каждом пересчёте.
+const warnedUnknownCodes = new Set()
+export function warnUnknownCode(val) {
+  const s = String(val ?? '').trim()
+  if (!s) return
+  if (rawToHours(s) !== null) return // числовой ввод — не ошибка
+  if (warnedUnknownCodes.has(s)) return
+  warnedUnknownCodes.add(s)
+  console.warn(`Значение «${s}» не найдено в справочнике «Коды часов» — в итоги оно не войдёт.`)
+}
+
+// Значение ячейки за день d. FastAPI сериализует dict[int, str] с КЛЮЧАМИ-
+// СТРОКАМИ («{"1": "Я", "2": "В"}»), поэтому обращение по ЧИСЛУ row.days[1]
+// в JS работает только благодаря автоконвертации ключей объекта… НО если days
+// пришёл/собран иначе (Map, вложенный объект), доступ мог промахнуться и
+// расчёт получил бы пустоту. Читаем оба варианта.
+function dayValue(rowDays, d) {
+  if (!rowDays) return ''
+  if (typeof rowDays.get === 'function' && !(d in rowDays)) {
+    const v = rowDays.get(d) ?? rowDays.get(String(d))
+    return v == null ? '' : String(v)
+  }
+  const v = rowDays[d] ?? rowDays[String(d)]
+  return v == null ? '' : String(v)
+}
+
 export function calculateSummary(row, tabel, timeCodes) {
   const summary = {}
   summaryColumns.forEach(col => { if (col.unit !== 'manual') summary[col.key] = 0 })
@@ -173,72 +207,116 @@ export function calculateSummary(row, tabel, timeCodes) {
   const daysInMonth = Number(tabel && tabel.days_in_month) || 31
   const rowDays = (row && row.days) || {}
 
+  // Индекс справочника по нормализованному коду. Раньше поиск шёл через
+  // strict-equality lowercase-строк: любое отличие в регистре/пробелах
+  // (лидер/трейл пробелы, разная раскладка «e»/«е») — и код НЕ распознавался,
+  // все ячейки считались нераспознанными → ИТОГОВЫЕ КОЛОНКИ НА ПЕЧАТИ ВЫХОДИЛИ
+  // ПУСТЫМИ. Нормализуем обе стороны: trim + lowercase.
+  const codeIndex = new Map()
+  for (const c of codes) {
+    const key = normalizeCodeKey(c && c.code)
+    if (key && !codeIndex.has(key)) codeIndex.set(key, c)
+  }
+  const findCode = (val) => codeIndex.get(normalizeCodeKey(val)) || null
+
   for (let d = 1; d <= daysInMonth; d++) {
-    const val = String(rowDays[d] || '').trim()
+    const val = dayValue(rowDays, d).trim()
     if (!val) continue
 
     // Норма по графику работы для этого дня недели (fallback: norm_hours или 8)
     const norm = getDayNorm(row, d)
 
-    const hours = cellHoursForDay(codes, val)
-    if (hours !== null && hours > 0) {
-      // числовой ввод: обычные часы + сверхурочные сверх нормы по графику.
-      // «Сверхурочные дни» при числовом вводе НЕ добавляются.
-      const regular = Math.min(hours, norm)
-      const ot = Math.max(0, hours - norm)
-      summary.total_hours += hours
-      summary.fact_days += 1
-      summary.tariff_hours += regular
-      if (ot > 0) {
-        summary.overtime_hours += ot
+    const codeObj = findCode(val)
+
+    if (!codeObj) {
+      // Значение НЕ найдено в справочнике. Если оно похоже на код
+      // (не является числовым форматом часов) — молча обнулять итоги нельзя:
+      // раньше именно так и «терялись» расчёты. Показываем предупреждение
+      // (в консоли — один раз на код, чтобы не спамить при перерисовках).
+      warnUnknownCode(val)
+      continue
+    }
+
+    // Числовой ввод («8», «8ч15м», «8:15»), которого НЕТ в справочнике:
+    // обычные часы + сверхурочные сверх нормы по графику.
+    // «Сверхурочные дни» при числовом вводе НЕ добавляются.
+    // ВАЖНО: если код есть в справочнике (например «7» = Выходной),
+    // он обрабатывается ниже как код — а не как 7 часов.
+    if (rawToHours(val) !== null) {
+      const hours = rawToHours(val)
+      if (hours > 0) {
+        const regular = Math.min(hours, norm)
+        const ot = Math.max(0, hours - norm)
+        summary.total_hours += hours
+        summary.fact_days += 1
+        summary.tariff_hours += regular
+        if (ot > 0) {
+          summary.overtime_hours += ot
+        }
       }
       continue
     }
 
-    const codeObj = codes.find(c => String(c.code || '').toLowerCase() === val.toLowerCase())
-    if (codeObj) {
-      // «Время по графику»: часы кода = норма графика на этот день (см. codeHoursForDay)
-      const eff = codeHoursForDay(codeObj, row, d)
-      const hoursDay = eff.day
-      const hoursNight = eff.night
-      const totalHoursE = eff.total
-      const dests = codeObj.destinations || []
+    // ===== Обработка кода из справочника =====
+    // «Время по графику»: часы кода = норма графика на этот день (см. codeHoursForDay)
+    const eff = codeHoursForDay(codeObj, row, d)
+    const hoursDay = eff.day
+    const hoursNight = eff.night
+    const totalHoursE = eff.total
+    const dests = codeObj.destinations || []
 
-      dests.forEach(dest => {
-        const colDef = summaryColumns.find(c => c.key === dest)
-        if (colDef && Object.prototype.hasOwnProperty.call(summary, dest)) {
-          if (colDef.unit === 'days') {
-            summary[dest] += 1
-          } else if (dest === 'night_hours') {
-            summary[dest] += hoursNight
-          } else if (dest === 'day_hours') {
-            summary[dest] += hoursDay
-          } else if (dest === 'overtime_hours') {
-            // код с направлением overtime_hours — сверхурочный: ВСЕ его часы
-            // идут в «Сверхурочные часы», а не только превышение над нормой.
-            summary[dest] += totalHoursE
-          } else {
-            summary[dest] += totalHoursE
-          }
+    dests.forEach(dest => {
+      const colDef = summaryColumns.find(c => c.key === dest)
+      if (colDef && Object.prototype.hasOwnProperty.call(summary, dest)) {
+        if (colDef.unit === 'days') {
+          summary[dest] += 1
+        } else if (dest === 'night_hours') {
+          summary[dest] += hoursNight
+        } else if (dest === 'day_hours') {
+          summary[dest] += hoursDay
+        } else if (dest === 'overtime_hours') {
+          // код с направлением overtime_hours — сверхурочный: ВСЕ его часы
+          // идут в «Сверхурочные часы», а не только превышение над нормой.
+          summary[dest] += totalHoursE
+        } else {
+          summary[dest] += totalHoursE
         }
-      })
+      }
+    })
 
-      // Логика сверхурочных ЧАСОВ и ДНЕЙ разделена:
-      // - коды с направлением overtime_hours уже добавили ВСЕ свои часы выше;
-      // - «Время по графику» + выходные часы: работа в законный выходной
-      //   (норма = 0) — ВСЕ эти часы считаются сверхурочными;
-      // - обычный код: сверхурочные = превышение фактических часов над нормой.
-      const isOvertimeCode = dests.includes('overtime_hours') || dests.includes('overtime_days')
-      if (codeObj.use_schedule_hours && !isOvertimeCode && norm <= 0 && totalHoursE > 0) {
-        summary.overtime_hours += totalHoursE
-      } else if (totalHoursE > 0 && !isOvertimeCode && !codeObj.use_schedule_hours) {
-        const ot = Math.max(0, totalHoursE - norm)
-        if (ot > 0) {
-          summary.overtime_hours += ot
-          // из колонок обычных часов вычитаем превышение, если код туда попал
-          if (dests.includes('tariff_hours')) summary.tariff_hours = Math.max(0, summary.tariff_hours - ot)
-          // «Итого часов» остаётся полным (все введённые часы)
-        }
+    // ИСПРАВЛЕНИЕ БАГА «в итоговых столбцах при печати нет расчётов» (часть 2):
+    // раньше явка («фактической работы», «Итого часов», «по тарифу») засчитывалась
+    // ТОЛЬКО если код явно имел соответствующие destinations. Если справочник
+    // заполнен частично (назначения не заданы или заданы лишь частично), часы и
+    // дни рабочего кода «испарялись» — и печатная форма выходила с пустыми
+    // итоговыми колонками. Теперь явка досчитывается для ЛЮБОГО рабочего кода
+    // (часы > 0, код не относится к неявкам), ровно по одному разу на колонку:
+    // то, что уже добавлено через destinations, повторно не прибавляется.
+    const ABSENCE_DESTS = ['vacation', 'sick', 'admin_leave', 'other_absence']
+    const isAbsenceCode = dests.some(x => ABSENCE_DESTS.includes(x))
+    if (totalHoursE > 0 && !isAbsenceCode) {
+      if (!dests.includes('fact_days')) summary.fact_days += 1
+      if (!dests.includes('total_hours')) summary.total_hours += totalHoursE
+      if (!dests.includes('tariff_hours')) {
+        summary.tariff_hours += Math.min(totalHoursE, norm > 0 ? norm : totalHoursE)
+      }
+    }
+
+    // Логика сверхурочных ЧАСОВ и ДНЕЙ разделена:
+    // - коды с направлением overtime_hours уже добавили ВСЕ свои часы выше;
+    // - «Время по графику» + выходные часы: работа в законный выходной
+    //   (норма = 0) — ВСЕ эти часы считаются сверхурочными;
+    // - обычный код: сверхурочные = превышение фактических часов над нормой.
+    const isOvertimeCode = dests.includes('overtime_hours') || dests.includes('overtime_days')
+    if (codeObj.use_schedule_hours && !isOvertimeCode && norm <= 0 && totalHoursE > 0) {
+      summary.overtime_hours += totalHoursE
+    } else if (totalHoursE > 0 && !isOvertimeCode && !codeObj.use_schedule_hours) {
+      const ot = Math.max(0, totalHoursE - norm)
+      if (ot > 0) {
+        summary.overtime_hours += ot
+        // из колонок обычных часов вычитаем превышение, если код туда попал
+        if (dests.includes('tariff_hours')) summary.tariff_hours = Math.max(0, summary.tariff_hours - ot)
+        // «Итого часов» остаётся полным (все введённые часы)
       }
     }
   }
@@ -248,9 +326,7 @@ export function calculateSummary(row, tabel, timeCodes) {
   // Итого = сверхурочные часы + Σ(дни × норма); overtime_hours — «часы без дней».
   let otDaysHours = 0
   for (let d = 1; d <= daysInMonth; d++) {
-    const val = String(rowDays[d] || '').trim().toLowerCase()
-    if (!val) continue
-    const codeObj = codes.find(c => String(c.code || '').trim().toLowerCase() === val)
+    const codeObj = findCode(dayValue(rowDays, d))
     if (codeObj && (codeObj.destinations || []).includes('overtime_days')) {
       const n = getDayNorm(row, d)
       otDaysHours += n > 0 ? n : (normOf(row) > 0 ? normOf(row) : 8)
