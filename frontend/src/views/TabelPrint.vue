@@ -543,7 +543,11 @@ onBeforeUnmount(() => {
 .t13-table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  /* auto вместо fixed: колонка ФИО («процентная» колонка) автоматически
+     растягивается под самое длинное содержимое — ФИО всегда в одну строку.
+     Колонки дней и итоговые имеют фиксированные ширины (см. CSS/:style),
+     поэтому раскладка остаётся стабильной и компактной. */
+  table-layout: auto;
   font-size: 13px !important;  /* ЕДИНЫЙ РАЗМЕР ШРИФТА для всей таблицы */
   line-height: 0.9 !important; /* Минимальная высота строки */
 }
@@ -556,7 +560,6 @@ onBeforeUnmount(() => {
   text-align: center;
   vertical-align: middle;
   line-height: 0.9 !important; /* Минимальная высота строки */
-  overflow: hidden;
 }
 
 .col-num {
@@ -570,12 +573,16 @@ onBeforeUnmount(() => {
 }
 
 .col-fio {
-  /* Адаптивная ширина — колонка растягивается под содержимое,
-     ФИО всегда помещается в одну строку (без переноса) */
+  /* Адаптивная ширина: колонка занимает всё свободное место таблицы
+     (все остальные колонки зафиксированы), поэтому ФИО гарантированно
+     помещается в одну строку без обрезки и переносов */
   width: auto !important;
   min-width: 0 !important;
   max-width: none !important;
   white-space: nowrap;         /* Запрет переноса ФИО на новую строку */
+  overflow-wrap: normal;       /* Никаких разрывов длинных слов */
+  word-break: normal;
+  text-overflow: clip;         /* Обрезка не происходит — колонка адаптивна */
   text-align: left;
   font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: 500;
@@ -781,6 +788,8 @@ onBeforeUnmount(() => {
     min-width: 0 !important;
     max-width: none !important;
     white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
     padding: 0 2px !important;
   }
 
