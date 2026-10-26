@@ -570,12 +570,16 @@ onBeforeUnmount(() => {
 }
 
 .col-fio {
-  width: 90px !important;      /* Сузили с 100px */
-  min-width: 90px !important;
+  /* Адаптивная ширина — колонка растягивается под содержимое,
+     ФИО всегда помещается в одну строку (без переноса) */
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  white-space: nowrap;         /* Запрет переноса ФИО на новую строку */
   text-align: left;
   font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: 500;
-  padding: 0 !important;
+  padding: 0 2px !important;   /* Небольшой горизонтальный отступ для читаемости */
   line-height: 0.9 !important;
 }
 
@@ -769,6 +773,15 @@ onBeforeUnmount(() => {
   .t13-table td {
     padding: 0 !important;     /* Без отступов при печати */
     line-height: 0.9 !important;
+  }
+
+  /* ФИО — адаптивная ширина и одна строка при печати */
+  .col-fio {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    white-space: nowrap !important;
+    padding: 0 2px !important;
   }
 
   /* Сохранить фоновые цвета ячеек при печати */
