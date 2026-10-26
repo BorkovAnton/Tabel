@@ -572,7 +572,8 @@ export function getCellHours(val, row, d, timeCodes) {
   const codeObj = codes.find(c => String(c.code || '').toLowerCase() === s.toLowerCase())
   if (codeObj) {
     const eff = codeHoursForDay(codeObj, row, d)
-    return eff.total > 0 ? fmtNum(eff.total) : ''
+    // Если есть часы — возвращаем число («8.25»), иначе — сам код («К», «В», «О»)
+    return eff.total > 0 ? fmtNum(eff.total) : s
   }
   // Числовое значение
   return s
