@@ -574,21 +574,21 @@ onBeforeUnmount(() => {
 
 .col-fio {
   /* Автоподстройка ширины по содержимому (table-layout: auto):
-     колонка растягивается ровно под самое длинное ФИО («Щербицкий Д.Г.»),
-     но не уже 80px и не шире 180px. Перенос строк запрещён, слишком
-     длинный текст — многоточие (для аномально длинных имён). */
+     колонка растягивается ровно под самое длинное ФИО («Щербицкий Д.Г.»)
+     без ограничения max-width. Перенос строк и обрезка запрещены —
+     все ФИО видны целиком. Выравнивание — по левому краю. */
   width: auto !important;
   min-width: 80px !important;
-  max-width: 180px !important;
+  max-width: none !important;      /* Пусть растёт под самое длинное ФИО */
   white-space: nowrap !important;  /* ФИО всегда в одну строку */
   overflow-wrap: normal;           /* Никаких разрывов длинных слов */
   word-break: normal;
-  overflow: hidden;
-  text-overflow: ellipsis;         /* Если не влезло в максимум — «…» */
-  text-align: left;
+  overflow: visible;               /* Не обрезать */
+  text-overflow: clip;             /* Без многоточия */
+  text-align: left !important;     /* Выравнивание по левому краю */
   font-size: 13px !important;      /* Единый размер шрифта 13px */
   font-weight: 500;
-  padding: 0 3px !important;       /* Небольшие боковые отступы */
+  padding: 0 4px 0 6px !important; /* Отступ слева 6px, справа 4px */
   line-height: 0.9 !important;
 }
 
@@ -784,17 +784,19 @@ onBeforeUnmount(() => {
     line-height: 0.9 !important;
   }
 
-  /* ФИО — автоподстройка по содержимому при печати (как на экране) */
+  /* ФИО — автоподстройка по самому длинному ФИО при печати (как на экране):
+     выравнивание по левому краю, без переноса, обрезки и ограничения ширины */
   .col-fio {
     width: auto !important;
     min-width: 80px !important;
-    max-width: 180px !important;
+    max-width: none !important;
     white-space: nowrap !important;
     overflow-wrap: normal !important;
     word-break: normal !important;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    padding: 0 3px !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    text-align: left !important;
+    padding: 0 4px 0 6px !important;
   }
 
   /* Сохранить фоновые цвета ячеек при печати */
