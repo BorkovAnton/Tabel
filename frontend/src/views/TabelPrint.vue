@@ -535,12 +535,12 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;         /* Уменьшили с 15px */
 }
 
-/* ===== Таблица (максимально компактная: без отступов, минимальная высота строк) ===== */
+/* ===== Таблица (единый шрифт 13px, максимально компактная: без отступов) ===== */
 .t13-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 9px !important;   /* Уменьшили базовый шрифт с 10px до 9px */
+  font-size: 13px !important;  /* ЕДИНЫЙ РАЗМЕР ШРИФТА для всей таблицы */
   line-height: 0.9 !important; /* Минимальная высота строки */
 }
 
@@ -559,7 +559,7 @@ onBeforeUnmount(() => {
   width: 20px !important;      /* Сузили с 25px */
   min-width: 20px !important;
   max-width: 20px !important;
-  font-size: 9px !important;   /* Уменьшили с 10px */
+  font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: bold;
   padding: 0 !important;
   line-height: 0.9 !important;
@@ -569,7 +569,7 @@ onBeforeUnmount(() => {
   width: 90px !important;      /* Сузили с 100px */
   min-width: 90px !important;
   text-align: left;
-  font-size: 9px !important;   /* Уменьшили с 10px */
+  font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: 500;
   padding: 0 !important;
   line-height: 0.9 !important;
@@ -578,21 +578,21 @@ onBeforeUnmount(() => {
 .col-tabno {
   width: 35px !important;      /* Сузили с 40px */
   min-width: 35px !important;
-  font-size: 8px !important;   /* Уменьшили с 9px */
+  font-size: 13px !important;  /* Единый размер шрифта 13px */
   padding: 0 !important;
   line-height: 0.9 !important;
 }
 
 .col-days-header {
   font-weight: bold;
-  font-size: 9px;
+  font-size: 13px;             /* Единый размер шрифта 13px */
 }
 
 .col-day-header {
   width: 26px !important;      /* Сузили с 28px */
   min-width: 26px !important;
   max-width: 26px !important;
-  font-size: 8px !important;   /* Уменьшили с 9px */
+  font-size: 13px !important;  /* Единый размер шрифта 13px */
   line-height: 0.9 !important; /* Минимальная высота */
   padding: 0 !important;       /* Убрали padding */
   height: auto !important;     /* Убрали фиксированную высоту */
@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
 }
 
 .day-name {
-  font-size: 7px !important;   /* Уменьшили с 8px */
+  font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: 600;
   color: #666;
   line-height: 0.9 !important;
@@ -609,7 +609,7 @@ onBeforeUnmount(() => {
 }
 
 .day-number {
-  font-size: 9px !important;   /* Уменьшили с 10px */
+  font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: bold;
   line-height: 0.9 !important;
   padding: 0 !important;
@@ -655,12 +655,12 @@ onBeforeUnmount(() => {
   font-weight: bold;
 }
 
-/* Итоговые колонки: ВСЕ вертикальные, компактные */
+/* Итоговые колонки: ВСЕ вертикальные, единый шрифт 13px */
 .col-summary-header {
   width: 30px !important;      /* Сузили с 40px */
   min-width: 30px !important;
   max-width: 30px !important;
-  font-size: 7px !important;   /* Уменьшили с 8px */
+  font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: bold;
   line-height: 0.9 !important;
   writing-mode: vertical-rl;
@@ -675,7 +675,7 @@ onBeforeUnmount(() => {
    .overtime-total / .overtime-hours-only больше не нужны */
 
 .col-summary-cell {
-  font-size: 8px !important;   /* Уменьшили с 10px */
+  font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: 500;
   width: 30px !important;      /* Сузили с 40px */
   min-width: 30px !important;
@@ -693,7 +693,7 @@ onBeforeUnmount(() => {
 .col-total-label {
   text-align: right;
   padding-right: 6px !important;
-  font-size: 8px;
+  font-size: 13px;             /* Единый размер шрифта 13px */
   letter-spacing: 2px;
 }
 
@@ -745,7 +745,7 @@ onBeforeUnmount(() => {
   body {
     margin: 0;
     padding: 0;
-    font-size: 9px;            /* Компактный базовый шрифт */
+    font-size: 13px;           /* Единый размер шрифта 13px */
     line-height: 0.9;
   }
 
@@ -759,7 +759,7 @@ onBeforeUnmount(() => {
   }
 
   .t13-table {
-    font-size: 9px !important;
+    font-size: 13px !important;  /* ЕДИНЫЙ РАЗМЕР при печати */
     line-height: 0.9 !important;
   }
 
