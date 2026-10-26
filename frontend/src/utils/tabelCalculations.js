@@ -168,26 +168,27 @@ export function effectiveDests(codeObj) {
 
 // Итоговые колонки — ТОЧНО КАК В TABELFILL.VUE
 // Колонка «Итого часов» перемещена в конец — она крайняя справа и шире
-// остальных в 1.5 раза (width: 45px против 30px).
+// остальных (45px против 30px). Ширины задаются ЧЕРЕЗ CSS-классы
+// (.col-summary-header / .col-summary-cell / .col-total-hours), а не здесь.
 // Сверхурочные разделены на две независимые колонки:
 // overtime_total  — «итого» (сверхурочные часы + сверхурочные дни × норма дня);
 // overtime_hours  — только сверхурочные часы без учёта дней.
 export const summaryColumns = [
-  { key: 'fact_days', label: 'фактической работы', unit: 'days', width: 30 },
-  { key: 'vacation', label: 'трудовой отпуск', unit: 'days', width: 30 },
-  { key: 'sick', label: 'болезнь', unit: 'days', width: 30 },
-  { key: 'admin_leave', label: 'с разрешения администрации', unit: 'days', width: 30 },
-  { key: 'weekend_holiday', label: 'выходные и праздн.', unit: 'days', width: 30 },
-  { key: 'other_absence', label: 'Другие неявки', unit: 'days', width: 30 },
-  { key: 'overtime_days', label: 'сверхурочные дни', unit: 'days', width: 30 },
-  { key: 'overtime_total', label: 'Сверхурочные часы итого', unit: 'hours', width: 30 },
-  { key: 'overtime_hours', label: 'Сверхурочные часы без дней', unit: 'hours', width: 30 },
-  { key: 'night_hours', label: 'ночные часы', unit: 'hours', width: 30 },
-  { key: 'kdu_work_days', label: 'КДУ', unit: 'manual', width: 30 },
-  { key: 'kdu_weekend_days', label: 'КДУ вых. дня', unit: 'manual', width: 30 },
-  { key: 'tariff_hours', label: 'Часы по тарифу', unit: 'hours', width: 30 },
-  // «Итого часов» — крайняя справа, ширина в 1.5 раза больше остальных
-  { key: 'total_hours', label: 'Итого часов', unit: 'hours', width: 45 }
+  { key: 'fact_days', label: 'фактической работы', unit: 'days' },
+  { key: 'vacation', label: 'трудовой отпуск', unit: 'days' },
+  { key: 'sick', label: 'болезнь', unit: 'days' },
+  { key: 'admin_leave', label: 'с разрешения администрации', unit: 'days' },
+  { key: 'weekend_holiday', label: 'выходные и праздн.', unit: 'days' },
+  { key: 'other_absence', label: 'Другие неявки', unit: 'days' },
+  { key: 'overtime_days', label: 'сверхурочные дни', unit: 'days' },
+  { key: 'overtime_total', label: 'Сверхурочные часы итого', unit: 'hours' },
+  { key: 'overtime_hours', label: 'Сверхурочные часы без дней', unit: 'hours' },
+  { key: 'night_hours', label: 'ночные часы', unit: 'hours' },
+  { key: 'kdu_work_days', label: 'КДУ', unit: 'manual' },
+  { key: 'kdu_weekend_days', label: 'КДУ вых. дня', unit: 'manual' },
+  { key: 'tariff_hours', label: 'Часы по тарифу', unit: 'hours' },
+  // «Итого часов» — крайняя справа, ширина в 1.5 раза больше остальных (CSS)
+  { key: 'total_hours', label: 'Итого часов', unit: 'hours' }
 ]
 
 // Форматирование ФИО: "Борков Антон Петрович" → "Борков А.П."

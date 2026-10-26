@@ -27,7 +27,7 @@
           <th rowspan="2" class="col-tabno">Таб. №</th>
           <th :colspan="tabel.days_in_month" class="col-days-header">Числа месяца</th>
           <th v-for="col in printColumns" :key="col.key" rowspan="2" class="col-summary-header"
-              :style="{ width: (col.width || 30) + 'px', minWidth: (col.width || 30) + 'px', maxWidth: (col.width || 30) + 'px' }">
+              :class="{ 'col-total-hours': col.key === 'total_hours' }">
             {{ col.label }}
           </th>
         </tr>
@@ -55,7 +55,7 @@
           <!-- Итоговые колонки — ТОЧНО КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (общий модуль tabelCalculations).
                Сверхурочные — две независимые колонки: overtime_total и overtime_hours -->
           <td v-for="col in printColumns" :key="col.key" class="col-summary-cell"
-              :style="{ width: (col.width || 30) + 'px', minWidth: (col.width || 30) + 'px', maxWidth: (col.width || 30) + 'px' }">
+              :class="{ 'col-total-hours': col.key === 'total_hours' }">
             {{ summaryCellText(col, row) }}
           </td>
         </tr>
@@ -63,7 +63,7 @@
         <tr v-if="tabel.entries.length" class="t13-total-row">
           <td :colspan="3 + tabel.days_in_month" class="col-total-label">ИТОГО</td>
           <td v-for="col in printColumns" :key="'tot-' + col.key" class="col-summary-cell"
-              :style="{ width: (col.width || 30) + 'px', minWidth: (col.width || 30) + 'px', maxWidth: (col.width || 30) + 'px' }">
+              :class="{ 'col-total-hours': col.key === 'total_hours' }">
             {{ totalsCellText(col) }}
           </td>
         </tr>
@@ -539,15 +539,14 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;         /* Уменьшили с 15px */
 }
 
-/* ===== Таблица (единый шрифт 13px, максимально компактная: без отступов) ===== */
+/* ===== Таблица (единый шрифт 13px, ВСЕ ширины ФИКСИРОВАННЫЕ) ===== */
 .t13-table {
   width: 100%;
   border-collapse: collapse;
-  /* auto вместо fixed: колонка ФИО («процентная» колонка) автоматически
-     растягивается под самое длинное содержимое — ФИО всегда в одну строку.
-     Колонки дней и итоговые имеют фиксированные ширины (см. CSS/:style),
-     поэтому раскладка остаётся стабильной и компактной. */
-  table-layout: auto;
+  /* fixed: каждая колонка имеет явную фиксированную ширину в CSS —
+     раскладка полностью предсказуема, ни одна колонка не забирает
+     свободное место таблицы (проблема прошлых версий с width: auto). */
+  table-layout: fixed !important;
   font-size: 13px !important;  /* ЕДИНЫЙ РАЗМЕР ШРИФТА для всей таблицы */
   line-height: 0.9 !important; /* Минимальная высота строки */
 }
@@ -555,50 +554,49 @@ onBeforeUnmount(() => {
 .t13-table th,
 .t13-table td {
   border: 1px solid #000;
-  padding: 0 !important;       /* Убрали padding полностью */
+  padding: 0 2px !important;
   margin: 0 !important;
   text-align: center;
   vertical-align: middle;
   line-height: 0.9 !important; /* Минимальная высота строки */
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .col-num {
-  width: 20px !important;      /* Сузили с 25px */
-  min-width: 20px !important;
-  max-width: 20px !important;
+  width: 25px !important;      /* ФИКСИРОВАННАЯ ширина */
+  min-width: 25px !important;
+  max-width: 25px !important;
   font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: bold;
-  padding: 0 !important;
   line-height: 0.9 !important;
 }
 
 .col-fio {
-  /* ФИО — единственная auto-колонка: забирает оставшееся пространство,
-     но ограничена max-width 200px, чтобы таблица не разъезжалась. */
-  width: auto !important;
-  min-width: 100px !important;     /* Увеличили минимум */
-  max-width: 200px !important;     /* Ограничили максимум */
+  /* ФИО — ФИКСИРОВАННАЯ ширина 140px (формат «Фамилия И.О.»),
+     длинное ФИО обрезается многоточием — таблица не разъезжается. */
+  width: 140px !important;
+  min-width: 140px !important;
+  max-width: 140px !important;
   white-space: nowrap !important;  /* ФИО всегда в одну строку */
   overflow-wrap: normal;           /* Никаких разрывов длинных слов */
   word-break: normal;
-  overflow: hidden;                /* Обрезка сверх max-width */
+  overflow: hidden;                /* Обрезка сверх фиксированной ширины */
   text-overflow: ellipsis;         /* Многоточие при переполнении */
   text-align: left !important;     /* Выравнивание по левому краю */
   font-size: 13px !important;      /* Единый размер шрифта 13px */
   font-weight: 500;
-  padding: 0 4px 0 6px !important; /* Отступ слева 6px, справа 4px */
   line-height: 0.9 !important;
 }
 
-/* Колонка «Таб. №»: ФИКСИРОВАННАЯ ширина 60px (не auto!) — иначе при
-   table-layout: auto она забирала всё свободное место таблицы.
-   60px достаточно для заголовка «Таб. №» и 4-значного номера в одну строку. */
+/* Колонка «Таб. №»: ФИКСИРОВАННАЯ ширина 55px (не auto!) — иначе при
+   автоподстройке она забирала всё свободное место таблицы.
+   55px достаточно для заголовка «Таб. №» и 4-значного номера в одну строку. */
 .col-tabno {
-  width: 60px !important;         /* ФИКСИРОВАННАЯ ширина */
-  min-width: 60px !important;
-  max-width: 60px !important;
+  width: 55px !important;         /* ФИКСИРОВАННАЯ ширина */
+  min-width: 55px !important;
+  max-width: 55px !important;
   font-size: 13px !important;     /* Единый размер шрифта 13px */
-  padding: 0 4px !important;      /* Небольшие отступы по бокам */
   white-space: nowrap !important; /* Не переносить заголовок и значения на две строки */
   text-align: center !important;  /* Выравнивание по центру */
   line-height: 0.9 !important;
@@ -610,18 +608,18 @@ onBeforeUnmount(() => {
 }
 
 .col-day-header {
-  width: 26px !important;      /* Сузили с 28px */
+  width: 26px !important;      /* ФИКСИРОВАННАЯ ширина */
   min-width: 26px !important;
   max-width: 26px !important;
   font-size: 13px !important;  /* Единый размер шрифта 13px */
   line-height: 0.9 !important; /* Минимальная высота */
-  padding: 0 !important;       /* Убрали padding */
+  padding: 0 !important;       /* Без отступов — компактно */
   height: auto !important;     /* Убрали фиксированную высоту */
   margin: 0 !important;
 }
 
 .day-name {
-  font-size: 13px !important;  /* Единый размер шрифта 13px */
+  font-size: 11px !important;  /* Сокращённый день недели — чуть меньше */
   font-weight: 600;
   color: #666;
   line-height: 0.9 !important;
@@ -637,15 +635,17 @@ onBeforeUnmount(() => {
   margin: 0 !important;
 }
 
-/* Ячейка дня: ЧАСЫ (8.25) если есть, иначе код (К, В, О) — компактно, текст плотно к границам */
+/* Ячейка дня: ЧАСЫ (8.25) если есть, иначе код (К, В, О) — фиксированная ширина */
 .col-day-cell {
-  width: 26px !important;      /* Сузили с 28px */
+  width: 26px !important;      /* ФИКСИРОВАННАЯ ширина */
   min-width: 26px !important;
   max-width: 26px !important;
-  padding: 0 !important;       /* Убрали padding полностью */
+  padding: 0 !important;       /* Без отступов */
   margin: 0 !important;
   height: auto !important;     /* Убрали фиксированную высоту */
   line-height: 0.9 !important; /* Минимальная высота строки */
+  font-size: 13px !important;
+  font-weight: bold;
 }
 
 .day-hours-only {
@@ -676,19 +676,20 @@ onBeforeUnmount(() => {
   font-weight: bold;
 }
 
-/* Итоговые колонки: ВСЕ вертикальные, единый шрифт 13px.
-   Ширина задаётся через inline :style из col.width («Итого часов» — 45px,
-   остальные — 30px), здесь только fallback min-width */
+/* Итоговые колонки: ВСЕ вертикальные, ФИКСИРОВАННАЯ ширина 30px прямо в CSS
+   (inline :style с col.width из шаблона убраны). */
 .col-summary-header {
-  min-width: 28px !important;
-  font-size: 13px !important;  /* Единый размер шрифта 13px */
+  width: 30px !important;
+  min-width: 30px !important;
+  max-width: 30px !important;
+  font-size: 11px !important;  /* Чуть меньше для длинных заголовков */
   font-weight: bold;
   line-height: 0.9 !important;
   writing-mode: vertical-rl;
   text-orientation: mixed;
   transform: rotate(180deg);
   white-space: nowrap;
-  padding: 0 !important;       /* Убрали padding */
+  padding: 2px 1px !important;
 }
 
 /* Сверхурочные разделены на две обычные независимые итоговые колонки
@@ -696,11 +697,22 @@ onBeforeUnmount(() => {
    .overtime-total / .overtime-hours-only больше не нужны */
 
 .col-summary-cell {
+  width: 30px !important;
+  min-width: 30px !important;
+  max-width: 30px !important;
   font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: 500;
-  min-width: 28px !important;  /* Ширина — через inline :style из col.width */
-  padding: 0 !important;       /* Убрали padding */
+  padding: 0 !important;       /* Без отступов */
   line-height: 0.9 !important;
+}
+
+/* Колонка «Итого часов» — шире остальных (45px), всегда в конце */
+.col-total-hours {
+  width: 45px !important;
+  min-width: 45px !important;
+  max-width: 45px !important;
+  font-size: 13px !important;
+  font-weight: bold;
 }
 
 /* Строка ИТОГО */
@@ -780,37 +792,73 @@ onBeforeUnmount(() => {
   .t13-table {
     font-size: 13px !important;  /* ЕДИНЫЙ РАЗМЕР при печати */
     line-height: 0.9 !important;
+    table-layout: fixed !important;  /* Все ширины фиксированы — предсказуемо */
   }
 
   .t13-table th,
   .t13-table td {
-    padding: 0 !important;     /* Без отступов при печати */
+    padding: 0 2px !important;
     line-height: 0.9 !important;
+    overflow: hidden;
+    white-space: nowrap;
   }
 
-  /* ФИО — автоподстройка по самому длинному ФИО при печати (как на экране):
-     выравнивание по левому краю, без переноса, обрезки и ограничения ширины */
+  /* ФИО — ФИКСИРОВАННАЯ ширина 140px при печати (как на экране),
+     выравнивание по левому краю, длинное ФИО — многоточие */
   .col-fio {
-    width: auto !important;
-    min-width: 100px !important;
-    max-width: 200px !important;
+    width: 140px !important;
+    min-width: 140px !important;
+    max-width: 140px !important;
     white-space: nowrap !important;
     overflow-wrap: normal !important;
     word-break: normal !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     text-align: left !important;
-    padding: 0 4px 0 6px !important;
   }
 
-  /* Таб. № — заголовок и номера всегда в одну строку и при печати */
+  /* Таб. № — ФИКСИРОВАННАЯ ширина 55px: заголовок и номера всегда
+     в одну строку и не занимают лишнее место таблицы */
   .col-tabno {
-    width: 60px !important;
-    min-width: 60px !important;
-    max-width: 60px !important;
+    width: 55px !important;
+    min-width: 55px !important;
+    max-width: 55px !important;
     white-space: nowrap !important;
     text-align: center !important;
-    padding: 0 4px !important;
+  }
+
+  .col-num {
+    width: 25px !important;
+    min-width: 25px !important;
+    max-width: 25px !important;
+  }
+
+  .col-day-header,
+  .col-day-cell {
+    width: 26px !important;
+    min-width: 26px !important;
+    max-width: 26px !important;
+    padding: 0 !important;
+  }
+
+  .col-summary-header {
+    width: 30px !important;
+    min-width: 30px !important;
+    max-width: 30px !important;
+    padding: 2px 1px !important;
+  }
+
+  .col-summary-cell {
+    width: 30px !important;
+    min-width: 30px !important;
+    max-width: 30px !important;
+    padding: 0 !important;
+  }
+
+  .col-total-hours {
+    width: 45px !important;
+    min-width: 45px !important;
+    max-width: 45px !important;
   }
 
   /* Сохранить фоновые цвета ячеек при печати */
