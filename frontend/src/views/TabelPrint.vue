@@ -592,11 +592,16 @@ onBeforeUnmount(() => {
   line-height: 0.9 !important;
 }
 
+/* Колонка «Таб. №»: заголовок и табельные номера (3-4 цифры)
+   должны помещаться в одну строку — автоширина, минимум 50px, без переноса. */
 .col-tabno {
-  width: 35px !important;      /* Сузили с 40px */
-  min-width: 35px !important;
-  font-size: 13px !important;  /* Единый размер шрифта 13px */
-  padding: 0 !important;
+  width: auto !important;         /* Автоширина — колонка может расти под содержимое */
+  min-width: 50px !important;     /* Минимум 50px — хватает на «Таб. №» и 4-значный номер */
+  max-width: none !important;
+  font-size: 13px !important;     /* Единый размер шрифта 13px */
+  padding: 0 4px !important;      /* Небольшие отступы по бокам */
+  white-space: nowrap !important; /* Не переносить заголовок и значения на две строки */
+  text-align: center !important;  /* Выравнивание по центру */
   line-height: 0.9 !important;
 }
 
@@ -797,6 +802,16 @@ onBeforeUnmount(() => {
     text-overflow: clip !important;
     text-align: left !important;
     padding: 0 4px 0 6px !important;
+  }
+
+  /* Таб. № — заголовок и номера всегда в одну строку и при печати */
+  .col-tabno {
+    width: auto !important;
+    min-width: 50px !important;
+    max-width: none !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+    padding: 0 4px !important;
   }
 
   /* Сохранить фоновые цвета ячеек при печати */
