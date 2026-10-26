@@ -26,14 +26,8 @@
           <th rowspan="2" class="col-fio">ФИО</th>
           <th rowspan="2" class="col-tabno">Таб. №</th>
           <th :colspan="tabel.days_in_month" class="col-days-header">Числа месяца</th>
-          <th v-for="col in printColumns" :key="col.key" rowspan="2"
-              class="col-summary-header" :class="{ 'col-overtime': col.key === 'overtime_hours' }">
-            <!-- Заголовок колонки сверхурочных в две строки -->
-            <template v-if="col.key === 'overtime_hours'">
-              <span class="ot-main">Сверхурочные часы итого</span>
-              <span class="ot-sub">(Сверхурочные часы без дней)</span>
-            </template>
-            <template v-else>{{ col.label }}</template>
+          <th v-for="col in printColumns" :key="col.key" rowspan="2" class="col-summary-header">
+            {{ col.label }}
           </th>
         </tr>
         <tr>
@@ -57,32 +51,17 @@
             <div class="day-hours-only">{{ getCellHours(row.days[d], row, d, timeCodes) }}</div>
           </td>
 
-          <!-- Итоговые колонки — ТОЧНО КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (общий модуль tabelCalculations) -->
-          <td v-for="col in printColumns" :key="col.key" class="col-summary-cell"
-              :class="{ 'col-overtime-cell': col.key === 'overtime_hours' }">
-            <!-- Сверхурочные: итого (красным) и в скобках только часы без дней -->
-            <template v-if="col.key === 'overtime_hours'">
-              <div class="overtime-total">{{ overtimeTotalText(summaryOf(row)) }}</div>
-              <div class="overtime-hours-only">({{ overtimeHoursOnlyText(summaryOf(row)) }})</div>
-            </template>
-            <!-- Остальные итоги: дни — число, часы — «NчMм», КДУ — ручное значение -->
-            <template v-else>
-              {{ summaryCellText(col, row) }}
-            </template>
+          <!-- Итоговые колонки — ТОЧНО КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (общий модуль tabelCalculations).
+               Сверхурочные — две независимые колонки: overtime_total и overtime_hours -->
+          <td v-for="col in printColumns" :key="col.key" class="col-summary-cell">
+            {{ summaryCellText(col, row) }}
           </td>
         </tr>
         <!-- Строка «ИТОГО» по отделу — суммирует все строки, как принято в Т-13 -->
         <tr v-if="tabel.entries.length" class="t13-total-row">
           <td :colspan="3 + tabel.days_in_month" class="col-total-label">ИТОГО</td>
-          <td v-for="col in printColumns" :key="'tot-' + col.key" class="col-summary-cell"
-              :class="{ 'col-overtime-cell': col.key === 'overtime_hours' }">
-            <template v-if="col.key === 'overtime_hours'">
-              <div class="overtime-total">{{ overtimeTotalText(totals) }}</div>
-              <div class="overtime-hours-only">({{ overtimeHoursOnlyText(totals) }})</div>
-            </template>
-            <template v-else>
-              {{ totalsCellText(col) }}
-            </template>
+          <td v-for="col in printColumns" :key="'tot-' + col.key" class="col-summary-cell">
+            {{ totalsCellText(col) }}
           </td>
         </tr>
       </tbody>
@@ -239,21 +218,11 @@ function hoursText(v) {
   return formatHours(v)
 }
 
-// Колонка «Сверхурочные часы итого»: итого (дни+часы и часы без дней уже
-// сложены в overtime_total); в скобках — только сверхурочные часы без дней.
-function overtimeTotalText(s) {
-  return hoursText(Number(s.overtime_total) || 0)
-}
-
-// Значение в скобках: только сверхурочные часы БЕЗ дней.
-function overtimeHoursOnlyText(s) {
-  return hoursText(Number(s.overtime_hours) || 0)
-}
-
 // Универсальный вывод ячейки итоговой колонки (строка сотрудника).
+// Сверхурочные — две обычные независимые колонки (overtime_total / overtime_hours),
+// специального рендера больше нет.
 function summaryCellText(col, row) {
   const s = summaryOf(row)
-  if (col.key === 'overtime_hours') return overtimeTotalText(s)
   if (col.unit === 'manual') return fmtNum(row[col.key] ?? 0)
   if (col.unit === 'hours') return hoursText(s[col.key])
   // days — просто число, как в табеле заполнения
@@ -263,7 +232,6 @@ function summaryCellText(col, row) {
 // Универсальный вывод ячейки строки «ИТОГО».
 function totalsCellText(col) {
   const t = totals.value
-  if (col.key === 'overtime_hours') return overtimeTotalText(t)
   if (col.unit === 'hours') return hoursText(t[col.key])
   return fmtNum(t[col.key])
 }
@@ -693,31 +661,9 @@ onBeforeUnmount(() => {
   padding: 2px 1px !important;
 }
 
-/* Сверхурочные — вертикальная, как все остальные итоговые колонки */
-.col-overtime {
-  width: 40px !important;
-  min-width: 40px !important;
-  max-width: 40px !important;
-  writing-mode: vertical-rl !important;
-  text-orientation: mixed;
-  transform: rotate(180deg) !important;
-  white-space: nowrap !important;
-  font-size: 8px !important;   /* Увеличили с 6px */
-  line-height: 1.1 !important;
-  padding: 2px 1px !important;
-}
-
-.col-overtime .ot-main {
-  display: inline;
-  font-weight: bold;
-}
-
-.col-overtime .ot-sub {
-  display: inline;
-  font-size: 8px !important;   /* Увеличили с 6px */
-  color: #666;
-  font-weight: normal;
-}
+/* Сверхурочные разделены на две обычные независимые итоговые колонки
+   (overtime_total и overtime_hours) — специальные стили .col-overtime /
+   .overtime-total / .overtime-hours-only больше не нужны */
 
 .col-summary-cell {
   font-size: 10px !important;  /* Увеличили с 7px */
@@ -726,27 +672,6 @@ onBeforeUnmount(() => {
   min-width: 40px !important;
   max-width: 40px !important;
   padding: 2px !important;
-}
-
-/* Ячейки тела таблицы для сверхурочных */
-.col-overtime-cell {
-  width: 40px !important;
-  min-width: 40px !important;
-  max-width: 40px !important;
-  font-size: 10px !important;
-}
-
-.overtime-total {
-  font-weight: bold;
-  color: #d32f2f;
-  font-size: 11px !important;  /* Увеличили с 9px */
-  line-height: 1.2;
-}
-
-.overtime-hours-only {
-  font-size: 9px !important;   /* Увеличили с 7px */
-  color: #666;
-  line-height: 1.2;
 }
 
 /* Строка ИТОГО */

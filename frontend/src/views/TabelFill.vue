@@ -62,15 +62,7 @@
             <th class="col-fio sticky-top sticky-left-2" rowspan="2">Ф.И.О.</th>
             <th class="col-days-header sticky-top" :colspan="tabel.days_in_month">Дни недели</th>
             <th v-for="col in summaryColumns" :key="col.key" class="col-summary-header sticky-top" rowspan="2"
-                :class="{ 'overtime-header': col.key === 'overtime_hours' }" :title="col.label">
-              <!-- ИЗМЕНЕНО: заголовок колонки сверхурочных в две строки:
-                   основная надпись + пояснение меньшим шрифтом -->
-              <template v-if="col.key === 'overtime_hours'">
-                <span class="ot-header-main">Сверхурочные часы итого</span>
-                <span class="ot-header-sub">(Сверхурочные часы без дней)</span>
-              </template>
-              <template v-else>{{ col.label }}</template>
-            </th>
+                :title="col.label">{{ col.label }}</th>
             <th class="col-del sticky-top sticky-right" rowspan="2"></th>
           </tr>
           <!-- ВТОРОЙ УРОВЕНЬ ШАПКИ: дни недели + числа (тоже закреплён) -->
@@ -186,7 +178,7 @@
               </div>
             </td>
             <!-- ЗНАЧЕНИЯ ИТОГОВЫХ КОЛОНОК -->
-            <td v-for="col in summaryColumns" :key="col.key" class="col-summary-cell text-center" :class="{ 'overtime-cell': col.key === 'overtime_hours' }">
+            <td v-for="col in summaryColumns" :key="col.key" class="col-summary-cell text-center">
               <!-- Ручные колонки КДУ: редактируемый input (0..5, шаг 0.01) -->
               <input
                 v-if="col.unit === 'manual'"
@@ -199,14 +191,9 @@
                 @keyup.enter="onKduBlur(row, col.key); $event.target.blur()"
                 @click.stop
               />
-              <!-- ИЗМЕНЕНО: ячейка сверхурочных: «итого (только часы)», напр. «21ч (5ч)»:
-                   итого = overtime_hours + overtime_days × норма дня; в скобках — часы без дней -->
-              <template v-else-if="col.key === 'overtime_hours'">
-                <div class="overtime-cell-inner">
-                  <span class="overtime-total">{{ formatHours(calculateSummary(row).overtime_total) }}</span>
-                  <span class="overtime-hours-only">({{ formatHours(calculateSummary(row).overtime_hours) }})</span>
-                </div>
-              </template>
+              <!-- Сверхурочные — две обычные независимые колонки:
+                   overtime_total (часы + дни) и overtime_hours (только часы) -->
+              <template v-else-if="col.unit === 'hours'">{{ formatHours(calculateSummary(row)[col.key]) }}</template>
               <template v-else>{{ calculateSummary(row)[col.key] || 0 }}</template>
             </td>
             <td class="col-del sticky-right">
@@ -2165,30 +2152,8 @@ td.col-fio.sticky-left-2 > .sticky-fill { justify-content: flex-start; }
   background-color: white !important; border-left: 1px solid #000 !important;
 }
 
-/* ИСПРАВЛЕНО: колонка «Сверхурочные часы итого» уменьшена —
-   такая же ширина, как у соседних итоговых колонок (28px),
-   заголовок вертикальный, как у остальных */
-.overtime-header { 
-  width: 28px !important; 
-  min-width: 28px !important; 
-  max-width: 28px !important; 
-}
-.overtime-header .ot-header-main { display: inline; font-weight: bold; }
-.overtime-header .ot-header-sub { display: none; } /* пояснение скрыто — колонка узкая */
-
-.overtime-cell-inner { display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
-.overtime-total { font-weight: bold; color: #d32f2f; font-size: 10px; }
-.overtime-hours-only { font-size: 8px; color: #666; margin-top: 1px; }
-
-/* Ячейки колонки сверхурочных — той же ширины, что и остальные итоговые ячейки (28px) */
-.overtime-cell {
-  width: 28px !important;
-  min-width: 28px !important;
-  max-width: 28px !important;
-  padding: 2px 1px !important;
-  font-size: 10px; font-weight: normal; text-align: center;
-  background-color: white !important; border-left: 1px solid #000 !important;
-}
+/* Сверхурочные разделены на две обычные независимые итоговые колонки
+   (overtime_total и overtime_hours) — специальные стили больше не нужны */
 
 /* Остальные итоговые колонки остаются узкими (28px) */
 .col-summary-cell {

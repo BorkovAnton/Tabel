@@ -169,8 +169,9 @@ export function effectiveDests(codeObj) {
 // Итоговые колонки — ТОЧНО КАК В TABELFILL.VUE
 // Колонка «Итого часов» намеренно НЕ последняя: после неё идут остальные
 // итоговые колонки, а самой правой является «Часы по тарифу».
-// Колонка overtime_hours показывает два значения — «итого» (сверхурочные часы
-// + сверхурочные дни × норма дня) и в скобках только часы без учёта дней.
+// Сверхурочные разделены на две независимые колонки:
+// overtime_total  — «итого» (сверхурочные часы + сверхурочные дни × норма дня);
+// overtime_hours  — только сверхурочные часы без учёта дней.
 export const summaryColumns = [
   { key: 'fact_days', label: 'фактической работы', unit: 'days' },
   { key: 'total_hours', label: 'Итого часов', unit: 'hours' },
@@ -180,7 +181,8 @@ export const summaryColumns = [
   { key: 'weekend_holiday', label: 'выходные и праздн.', unit: 'days' },
   { key: 'other_absence', label: 'Другие неявки', unit: 'days' },
   { key: 'overtime_days', label: 'сверхурочные дни', unit: 'days' },
-  { key: 'overtime_hours', label: 'Сверхурочные часы итого (Сверхурочные часы без дней)', unit: 'hours' },
+  { key: 'overtime_total', label: 'Сверхурочные часы итого', unit: 'hours' },
+  { key: 'overtime_hours', label: 'Сверхурочные часы без дней', unit: 'hours' },
   { key: 'night_hours', label: 'ночные часы', unit: 'hours' },
   { key: 'kdu_work_days', label: 'КДУ', unit: 'manual' },
   { key: 'kdu_weekend_days', label: 'КДУ вых. дня', unit: 'manual' },

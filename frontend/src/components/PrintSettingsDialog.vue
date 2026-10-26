@@ -69,14 +69,15 @@ const allColumns = [
   { key: 'weekend_holiday', label: 'выходные и праздн.' },
   { key: 'other_absence', label: 'Другие неявки' },
   { key: 'overtime_days', label: 'сверхурочные дни' },
-  { key: 'overtime_hours', label: 'Сверхурочные часы итого (Сверхурочные часы без дней)' },
+  { key: 'overtime_total', label: 'Сверхурочные часы итого (часы + дни)' },
+  { key: 'overtime_hours', label: 'Сверхурочные часы без дней (только часы)' },
   { key: 'night_hours', label: 'ночные часы' },
   { key: 'kdu_work_days', label: 'КДУ' },
   { key: 'kdu_weekend_days', label: 'КДУ вых. дня' },
   { key: 'tariff_hours', label: 'Часы по тарифу' }
 ]
 
-const defaultColumns = ['fact_days', 'total_hours', 'vacation', 'sick', 'overtime_hours', 'tariff_hours']
+const defaultColumns = ['fact_days', 'total_hours', 'vacation', 'sick', 'overtime_total', 'overtime_hours', 'tariff_hours']
 
 watch(() => props.modelValue, (val) => {
   show.value = val

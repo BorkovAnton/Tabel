@@ -17,7 +17,8 @@ router = APIRouter(prefix="/api/user-print-settings", tags=["UserPrintSettings"]
 # во фронтенде — frontend/src/utils/tabelCalculations.js)
 ALL_COLUMNS = [
     'fact_days', 'total_hours', 'vacation', 'sick', 'admin_leave',
-    'weekend_holiday', 'other_absence', 'overtime_days', 'overtime_hours',
+    'weekend_holiday', 'other_absence', 'overtime_days', 'overtime_total',
+    'overtime_hours',
     'night_hours', 'kdu_work_days', 'kdu_weekend_days', 'tariff_hours'
 ]
 
