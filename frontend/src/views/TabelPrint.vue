@@ -51,10 +51,10 @@
           <td class="col-fio">{{ row.full_name }}</td>
           <td class="col-tabno">{{ row.tab_number || '—' }}</td>
 
-          <!-- Дни месяца: ТОЛЬКО время в формате 8.25 (коды убраны для читаемости) -->
+          <!-- Дни месяца: ТОЛЬКО коды («Я», «В», «О», «Б», «8ч15м» и т.п.) — часы не выводим -->
           <td v-for="d in tabel.days_in_month" :key="d" class="col-day-cell"
               :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
-            <div class="day-hours-only">{{ getCellHours(row.days[d], row, d, timeCodes) }}</div>
+            <div class="day-code-only">{{ getCellCode(row.days[d]) }}</div>
           </td>
 
           <!-- Итоговые колонки — ТОЧНО КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (общий модуль tabelCalculations) -->
@@ -135,7 +135,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 import {
-  summaryColumns, calculateSummary, formatHours, fmtNum, getCellHours,
+  summaryColumns, calculateSummary, formatHours, fmtNum, getCellCode,
   dayOfWeekNames, MONTH_NAMES_RU, rawToHours, normalizeListResponse
 } from '../utils/tabelCalculations'
 
@@ -611,39 +611,40 @@ onBeforeUnmount(() => {
 }
 
 .col-day-header {
-  width: 22px !important;      /* Сузили до 22px */
-  min-width: 22px !important;
-  max-width: 22px !important;
-  font-size: 7px !important;   /* Увеличили с 5px */
-  line-height: 1.1;
-  padding: 1px !important;
+  width: 11px !important;      /* Сузили в 2 раза: было 22px, стало 11px */
+  min-width: 11px !important;
+  max-width: 11px !important;
+  font-size: 5px !important;   /* Уменьшен под ширину колонки */
+  line-height: 1.05;
+  padding: 0 !important;
 }
 
 .day-name {
-  font-size: 6px !important;   /* Увеличили с 4px */
+  font-size: 4px !important;
   font-weight: 600;
   color: #666;
 }
 
 .day-number {
-  font-size: 8px !important;   /* Увеличили с 5px до 8px */
+  font-size: 6px !important;
   font-weight: bold;
 }
 
-/* Ячейка дня: ОДНА строка — только время в формате 8.25 (коды убраны) */
+/* Ячейка дня: ОДНА строка — только код (Я, В, О, Б, 8ч15м и т.п.) */
 .col-day-cell {
-  width: 22px !important;      /* Сузили до 22px */
-  min-width: 22px !important;
-  max-width: 22px !important;
-  padding: 1px !important;
+  width: 11px !important;      /* Сузили в 2 раза: было 22px, стало 11px */
+  min-width: 11px !important;
+  max-width: 11px !important;
+  padding: 0 !important;
 }
 
-.day-hours-only {
-  font-size: 8px !important;   /* Увеличили с 5px до 8px */
-  font-weight: 500;
+.day-code-only {
+  font-size: 5px !important;
+  font-weight: 700;
   line-height: 1;
   color: #000;
   text-align: center;
+  word-break: break-all;       /* Длинные коды («8ч15м») переносятся по символам */
 }
 
 /* Подсветка: выходные — серый, праздники — жёлтый */
