@@ -573,18 +573,16 @@ onBeforeUnmount(() => {
 }
 
 .col-fio {
-  /* Автоподстройка ширины по содержимому (table-layout: auto):
-     колонка растягивается ровно под самое длинное ФИО («Щербицкий Д.Г.»)
-     без ограничения max-width. Перенос строк и обрезка запрещены —
-     все ФИО видны целиком. Выравнивание — по левому краю. */
+  /* ФИО — единственная auto-колонка: забирает оставшееся пространство,
+     но ограничена max-width 200px, чтобы таблица не разъезжалась. */
   width: auto !important;
-  min-width: 80px !important;
-  max-width: none !important;      /* Пусть растёт под самое длинное ФИО */
+  min-width: 100px !important;     /* Увеличили минимум */
+  max-width: 200px !important;     /* Ограничили максимум */
   white-space: nowrap !important;  /* ФИО всегда в одну строку */
   overflow-wrap: normal;           /* Никаких разрывов длинных слов */
   word-break: normal;
-  overflow: visible;               /* Не обрезать */
-  text-overflow: clip;             /* Без многоточия */
+  overflow: hidden;                /* Обрезка сверх max-width */
+  text-overflow: ellipsis;         /* Многоточие при переполнении */
   text-align: left !important;     /* Выравнивание по левому краю */
   font-size: 13px !important;      /* Единый размер шрифта 13px */
   font-weight: 500;
@@ -592,12 +590,13 @@ onBeforeUnmount(() => {
   line-height: 0.9 !important;
 }
 
-/* Колонка «Таб. №»: заголовок и табельные номера (3-4 цифры)
-   должны помещаться в одну строку — автоширина, минимум 50px, без переноса. */
+/* Колонка «Таб. №»: ФИКСИРОВАННАЯ ширина 60px (не auto!) — иначе при
+   table-layout: auto она забирала всё свободное место таблицы.
+   60px достаточно для заголовка «Таб. №» и 4-значного номера в одну строку. */
 .col-tabno {
-  width: auto !important;         /* Автоширина — колонка может расти под содержимое */
-  min-width: 50px !important;     /* Минимум 50px — хватает на «Таб. №» и 4-значный номер */
-  max-width: none !important;
+  width: 60px !important;         /* ФИКСИРОВАННАЯ ширина */
+  min-width: 60px !important;
+  max-width: 60px !important;
   font-size: 13px !important;     /* Единый размер шрифта 13px */
   padding: 0 4px !important;      /* Небольшие отступы по бокам */
   white-space: nowrap !important; /* Не переносить заголовок и значения на две строки */
@@ -793,22 +792,22 @@ onBeforeUnmount(() => {
      выравнивание по левому краю, без переноса, обрезки и ограничения ширины */
   .col-fio {
     width: auto !important;
-    min-width: 80px !important;
-    max-width: none !important;
+    min-width: 100px !important;
+    max-width: 200px !important;
     white-space: nowrap !important;
     overflow-wrap: normal !important;
     word-break: normal !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
     text-align: left !important;
     padding: 0 4px 0 6px !important;
   }
 
   /* Таб. № — заголовок и номера всегда в одну строку и при печати */
   .col-tabno {
-    width: auto !important;
-    min-width: 50px !important;
-    max-width: none !important;
+    width: 60px !important;
+    min-width: 60px !important;
+    max-width: 60px !important;
     white-space: nowrap !important;
     text-align: center !important;
     padding: 0 4px !important;
