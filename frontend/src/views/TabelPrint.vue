@@ -517,116 +517,125 @@ onBeforeUnmount(() => {
   font-size: 10px;
 }
 
-/* ===== Заголовок ===== */
+/* ===== Заголовок (компактный) ===== */
 .t13-header {
   text-align: center;
-  margin-bottom: 15px;
+  margin-bottom: 10px;         /* Уменьшили с 15px */
 }
 
 .t13-title {
   font-size: 14px;
   font-weight: bold;
-  margin-bottom: 8px;
+  margin-bottom: 5px;          /* Уменьшили с 8px */
 }
 
 .t13-subtitle {
   font-size: 12px;
   font-weight: normal;
-  margin-bottom: 15px;
+  margin-bottom: 10px;         /* Уменьшили с 15px */
 }
 
-/* ===== Таблица (крупный читаемый шрифт, минимальные отступы) ===== */
+/* ===== Таблица (максимально компактная: без отступов, минимальная высота строк) ===== */
 .t13-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 10px !important;  /* Увеличили базовый шрифт с 7px до 10px */
+  font-size: 9px !important;   /* Уменьшили базовый шрифт с 10px до 9px */
+  line-height: 0.9 !important; /* Минимальная высота строки */
 }
 
 .t13-table th,
 .t13-table td {
   border: 1px solid #000;
-  padding: 1px !important;     /* Минимальный padding */
+  padding: 0 !important;       /* Убрали padding полностью */
+  margin: 0 !important;
   text-align: center;
   vertical-align: middle;
-  margin: 0 !important;
+  line-height: 0.9 !important; /* Минимальная высота строки */
   overflow: hidden;
 }
 
 .col-num {
-  width: 25px !important;      /* Увеличили для крупного шрифта */
-  min-width: 25px !important;
-  max-width: 25px !important;
-  font-size: 10px !important;  /* Увеличили с 7px */
+  width: 20px !important;      /* Сузили с 25px */
+  min-width: 20px !important;
+  max-width: 20px !important;
+  font-size: 9px !important;   /* Уменьшили с 10px */
   font-weight: bold;
-  padding: 2px !important;
+  padding: 0 !important;
+  line-height: 0.9 !important;
 }
 
 .col-fio {
-  width: 100px !important;     /* Увеличили для крупного шрифта */
-  min-width: 100px !important;
+  width: 90px !important;      /* Сузили с 100px */
+  min-width: 90px !important;
   text-align: left;
-  font-size: 10px !important;  /* Увеличили с 7px */
+  font-size: 9px !important;   /* Уменьшили с 10px */
   font-weight: 500;
-  padding: 2px !important;
+  padding: 0 !important;
+  line-height: 0.9 !important;
 }
 
 .col-tabno {
-  width: 40px !important;
-  min-width: 40px !important;
-  font-size: 9px !important;   /* Увеличили с 6px */
-  padding: 2px !important;
+  width: 35px !important;      /* Сузили с 40px */
+  min-width: 35px !important;
+  font-size: 8px !important;   /* Уменьшили с 9px */
+  padding: 0 !important;
+  line-height: 0.9 !important;
 }
 
 .col-days-header {
   font-weight: bold;
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .col-day-header {
-  width: 28px !important;      /* Увеличили под размер ячеек */
-  min-width: 28px !important;
-  max-width: 28px !important;
-  font-size: 9px !important;   /* Увеличили */
-  line-height: 1.1;
-  padding: 1px !important;
-  height: 32px !important;     /* Фиксированная высота для двух строк */
+  width: 26px !important;      /* Сузили с 28px */
+  min-width: 26px !important;
+  max-width: 26px !important;
+  font-size: 8px !important;   /* Уменьшили с 9px */
+  line-height: 0.9 !important; /* Минимальная высота */
+  padding: 0 !important;       /* Убрали padding */
+  height: auto !important;     /* Убрали фиксированную высоту */
+  margin: 0 !important;
 }
 
 .day-name {
-  font-size: 8px !important;   /* Увеличили с 4px */
+  font-size: 7px !important;   /* Уменьшили с 8px */
   font-weight: 600;
   color: #666;
-  line-height: 1;
+  line-height: 0.9 !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 .day-number {
-  font-size: 10px !important;  /* Увеличили с 6px */
+  font-size: 9px !important;   /* Уменьшили с 10px */
   font-weight: bold;
-  line-height: 1;
+  line-height: 0.9 !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
-/* Ячейка дня: ЧАСЫ (8.25) если есть, иначе код (К, В, О) — КРУПНЫМ шрифтом */
+/* Ячейка дня: ЧАСЫ (8.25) если есть, иначе код (К, В, О) — компактно, текст плотно к границам */
 .col-day-cell {
-  width: 28px !important;      /* Чуть увеличили для крупного шрифта */
-  min-width: 28px !important;
-  max-width: 28px !important;
+  width: 26px !important;      /* Сузили с 28px */
+  min-width: 26px !important;
+  max-width: 26px !important;
   padding: 0 !important;       /* Убрали padding полностью */
   margin: 0 !important;
-  height: 28px !important;     /* Фиксированная высота */
+  height: auto !important;     /* Убрали фиксированную высоту */
+  line-height: 0.9 !important; /* Минимальная высота строки */
 }
 
 .day-hours-only {
-  font-size: 14px !important;  /* УВЕЛИЧИЛИ до 14px */
+  font-size: 13px !important;  /* Уменьшили с 14px */
   font-weight: bold;
-  line-height: 1;
+  line-height: 0.9 !important; /* Минимальная высота строки */
   color: #000;
   text-align: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  width: 100%;
+  padding: 0 !important;       /* Убрали padding */
+  margin: 0 !important;        /* Убрали margin */
+  display: block;
   word-break: break-all;       /* Длинные значения переносятся внутри ячейки */
 }
 
@@ -639,26 +648,26 @@ onBeforeUnmount(() => {
   background-color: #fff3cd;
 }
 
-/* Выходные и праздники — тоже крупный шрифт */
+/* Выходные и праздники — такой же компактный крупный шрифт */
 .cell-weekend .day-hours-only,
 .cell-holiday .day-hours-only {
-  font-size: 14px !important;
+  font-size: 13px !important;
   font-weight: bold;
 }
 
-/* Итоговые колонки: ВСЕ вертикальные, включая сверхурочные */
+/* Итоговые колонки: ВСЕ вертикальные, компактные */
 .col-summary-header {
-  width: 40px !important;      /* Увеличили с 32px */
-  min-width: 40px !important;
-  max-width: 40px !important;
-  font-size: 8px !important;   /* Увеличили с 6px */
+  width: 30px !important;      /* Сузили с 40px */
+  min-width: 30px !important;
+  max-width: 30px !important;
+  font-size: 7px !important;   /* Уменьшили с 8px */
   font-weight: bold;
-  line-height: 1.1;
+  line-height: 0.9 !important;
   writing-mode: vertical-rl;
   text-orientation: mixed;
   transform: rotate(180deg);
   white-space: nowrap;
-  padding: 2px 1px !important;
+  padding: 0 !important;       /* Убрали padding */
 }
 
 /* Сверхурочные разделены на две обычные независимые итоговые колонки
@@ -666,12 +675,13 @@ onBeforeUnmount(() => {
    .overtime-total / .overtime-hours-only больше не нужны */
 
 .col-summary-cell {
-  font-size: 10px !important;  /* Увеличили с 7px */
+  font-size: 8px !important;   /* Уменьшили с 10px */
   font-weight: 500;
-  width: 40px !important;
-  min-width: 40px !important;
-  max-width: 40px !important;
-  padding: 2px !important;
+  width: 30px !important;      /* Сузили с 40px */
+  min-width: 30px !important;
+  max-width: 30px !important;
+  padding: 0 !important;       /* Убрали padding */
+  line-height: 0.9 !important;
 }
 
 /* Строка ИТОГО */
@@ -698,12 +708,12 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-/* ===== Подписи ===== */
+/* ===== Подписи (компактные) ===== */
 .t13-signatures {
-  margin-top: 30px;
+  margin-top: 15px;            /* Уменьшили с 30px */
   display: flex;
   justify-content: space-between;
-  gap: 20px;
+  gap: 10px;                   /* Уменьшили с 20px */
 }
 
 .signature-block {
@@ -713,7 +723,7 @@ onBeforeUnmount(() => {
 .signature-label {
   font-size: 10px;
   font-weight: bold;
-  margin-bottom: 20px;
+  margin-bottom: 10px;         /* Уменьшили с 20px */
 }
 
 .signature-line {
@@ -726,16 +736,17 @@ onBeforeUnmount(() => {
 
 /* ===== Печать ===== */
 @media print {
-  /* A3 landscape — шире, вмещает все колонки при крупном шрифте */
+  /* A3 landscape — шире, вмещает все колонки; минимальные поля для компактности */
   @page {
     size: A3 landscape;
-    margin: 3mm;               /* Минимальные поля */
+    margin: 2mm;               /* Уменьшили с 3mm до 2mm */
   }
 
   body {
     margin: 0;
     padding: 0;
-    font-size: 10px;           /* Увеличили базовый шрифт */
+    font-size: 9px;            /* Компактный базовый шрифт */
+    line-height: 0.9;
   }
 
   .no-print {
@@ -748,12 +759,14 @@ onBeforeUnmount(() => {
   }
 
   .t13-table {
-    font-size: 10px !important;
+    font-size: 9px !important;
+    line-height: 0.9 !important;
   }
 
   .t13-table th,
   .t13-table td {
-    padding: 1px;
+    padding: 0 !important;     /* Без отступов при печати */
+    line-height: 0.9 !important;
   }
 
   /* Сохранить фоновые цвета ячеек при печати */
