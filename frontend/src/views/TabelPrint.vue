@@ -51,11 +51,10 @@
           <td class="col-fio">{{ row.full_name }}</td>
           <td class="col-tabno">{{ row.tab_number || '—' }}</td>
 
-          <!-- Дни месяца: ДВЕ строки (код сверху, часы снизу) -->
+          <!-- Дни месяца: ТОЛЬКО время в формате 8.25 (коды убраны для читаемости) -->
           <td v-for="d in tabel.days_in_month" :key="d" class="col-day-cell"
               :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
-            <div class="day-code">{{ getCellCode(row.days[d]) }}</div>
-            <div class="day-hours">{{ getCellHours(row.days[d], row, d, timeCodes) }}</div>
+            <div class="day-hours-only">{{ getCellHours(row.days[d], row, d, timeCodes) }}</div>
           </td>
 
           <!-- Итоговые колонки — ТОЧНО КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (общий модуль tabelCalculations) -->
@@ -136,7 +135,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 import {
-  summaryColumns, calculateSummary, formatHours, fmtNum, getCellHours, getCellCode,
+  summaryColumns, calculateSummary, formatHours, fmtNum, getCellHours,
   dayOfWeekNames, MONTH_NAMES_RU, rawToHours, normalizeListResponse
 } from '../utils/tabelCalculations'
 
@@ -568,81 +567,83 @@ onBeforeUnmount(() => {
   margin-bottom: 15px;
 }
 
-/* ===== Таблица (сжатая, чтобы влезла по ширине) ===== */
+/* ===== Таблица (узкие колонки дней + увеличенный шрифт для читаемости) ===== */
 .t13-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 6px;
+  font-size: 7px !important;   /* Увеличили с 6px до 7px */
 }
 
 .t13-table th,
 .t13-table td {
   border: 1px solid #000;
-  padding: 0.5px;
+  padding: 1px !important;     /* Увеличили с 0.5px до 1px */
   text-align: center;
   vertical-align: middle;
   overflow: hidden;
 }
 
 .col-num {
-  width: 15px;
-  min-width: 15px;
-  max-width: 15px;
-  font-size: 6px;
+  width: 18px !important;      /* Было 15px */
+  min-width: 18px !important;
+  max-width: 18px !important;
+  font-size: 7px !important;   /* Увеличили с 6px */
 }
 
 .col-fio {
-  width: 70px;
-  min-width: 70px;
+  width: 80px !important;      /* Было 70px — чуть шире для читаемого ФИО */
+  min-width: 80px !important;
   text-align: left;
   padding-left: 2px;
-  font-size: 6px;
+  font-size: 7px !important;   /* Увеличили с 6px */
 }
 
 .col-tabno {
   width: 28px;
   min-width: 28px;
-  font-size: 5px;
+  font-size: 6px !important;   /* Увеличили с 5px */
 }
 
 .col-days-header {
   font-weight: bold;
-  font-size: 7px;
+  font-size: 8px;
 }
 
 .col-day-header {
-  font-size: 5px;
+  width: 22px !important;      /* Сузили до 22px */
+  min-width: 22px !important;
+  max-width: 22px !important;
+  font-size: 7px !important;   /* Увеличили с 5px */
   line-height: 1.1;
-  padding: 0.5px 0 !important;
+  padding: 1px !important;
 }
 
 .day-name {
-  font-size: 4px;
-  font-weight: normal;
+  font-size: 6px !important;   /* Увеличили с 4px */
+  font-weight: 600;
   color: #666;
 }
 
 .day-number {
-  font-size: 5px;
+  font-size: 8px !important;   /* Увеличили с 5px до 8px */
   font-weight: bold;
 }
 
-/* Ячейка дня: ДВЕ строки — код сверху, часы снизу */
+/* Ячейка дня: ОДНА строка — только время в формате 8.25 (коды убраны) */
 .col-day-cell {
-  padding: 0 !important;
+  width: 22px !important;      /* Сузили до 22px */
+  min-width: 22px !important;
+  max-width: 22px !important;
+  padding: 1px !important;
 }
 
-.day-code {
-  font-size: 6px;
-  font-weight: bold;
-  line-height: 1.1;
-}
-
-.day-hours {
-  font-size: 5px;
-  line-height: 1.1;
-  color: #333;
+.day-hours-only {
+  font-size: 8px !important;   /* Увеличили с 5px до 8px */
+  font-weight: 500;
+  line-height: 1;
+  color: #000;
+  text-align: center;
 }
 
 /* Подсветка: выходные — серый, праздники — жёлтый */
@@ -656,10 +657,10 @@ onBeforeUnmount(() => {
 
 /* Итоговые колонки: ВСЕ вертикальные, включая сверхурочные */
 .col-summary-header {
-  width: 28px;
-  min-width: 28px;
-  max-width: 28px;
-  font-size: 5px;
+  width: 32px !important;      /* Было 28px — чуть шире для читаемости */
+  min-width: 32px !important;
+  max-width: 32px !important;
+  font-size: 6px !important;   /* Увеличили с 5px */
   font-weight: bold;
   line-height: 1.1;
   writing-mode: vertical-rl;
@@ -678,7 +679,7 @@ onBeforeUnmount(() => {
   text-orientation: mixed;
   transform: rotate(180deg) !important;
   white-space: nowrap !important;
-  font-size: 5px !important;
+  font-size: 6px !important;   /* Увеличили с 5px */
   line-height: 1.1 !important;
   padding: 2px 1px !important;
 }
@@ -690,17 +691,17 @@ onBeforeUnmount(() => {
 
 .col-overtime .ot-sub {
   display: inline;
-  font-size: 5px !important;
+  font-size: 6px !important;   /* Увеличили с 5px */
   color: #666;
   font-weight: normal;
 }
 
 .col-summary-cell {
-  font-size: 6px;
+  font-size: 7px !important;   /* Увеличили с 6px */
   font-weight: normal;
-  width: 28px;
-  min-width: 28px;
-  max-width: 28px;
+  width: 32px !important;
+  min-width: 32px !important;
+  max-width: 32px !important;
 }
 
 /* Ячейки тела таблицы для сверхурочных — тоже узкие */
@@ -708,18 +709,18 @@ onBeforeUnmount(() => {
   width: 34px !important;
   min-width: 34px !important;
   max-width: 34px !important;
-  font-size: 6px !important;
+  font-size: 7px !important;
 }
 
 .overtime-total {
   font-weight: bold;
   color: #d32f2f;
-  font-size: 7px;
+  font-size: 9px !important;   /* Увеличили с 7px */
   line-height: 1.2;
 }
 
 .overtime-hours-only {
-  font-size: 5px;
+  font-size: 7px !important;   /* Увеличили с 5px */
   color: #666;
   line-height: 1.2;
 }
@@ -776,7 +777,7 @@ onBeforeUnmount(() => {
 
 /* ===== Печать ===== */
 @media print {
-  /* A3 landscape — шире, вмещает все колонки */
+  /* A3 landscape — шире, вмещает все колонки при увеличенном шрифте */
   @page {
     size: A3 landscape;
     margin: 5mm;
@@ -785,7 +786,7 @@ onBeforeUnmount(() => {
   body {
     margin: 0;
     padding: 0;
-    font-size: 6px;
+    font-size: 7px;            /* Увеличили базовый шрифт с 6px */
   }
 
   .no-print {
@@ -798,12 +799,12 @@ onBeforeUnmount(() => {
   }
 
   .t13-table {
-    font-size: 6px !important;
+    font-size: 7px !important;
   }
 
   .t13-table th,
   .t13-table td {
-    padding: 0.5px;
+    padding: 1px;
   }
 
   /* Сохранить фоновые цвета ячеек при печати */
