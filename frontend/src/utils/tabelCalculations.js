@@ -167,28 +167,45 @@ export function effectiveDests(codeObj) {
 }
 
 // Итоговые колонки — ТОЧНО КАК В TABELFILL.VUE
-// Колонка «Итого часов» намеренно НЕ последняя: после неё идут остальные
-// итоговые колонки, а самой правой является «Часы по тарифу».
+// Колонка «Итого часов» перемещена в конец — она крайняя справа и шире
+// остальных в 1.5 раза (width: 45px против 30px).
 // Сверхурочные разделены на две независимые колонки:
 // overtime_total  — «итого» (сверхурочные часы + сверхурочные дни × норма дня);
 // overtime_hours  — только сверхурочные часы без учёта дней.
 export const summaryColumns = [
-  { key: 'fact_days', label: 'фактической работы', unit: 'days' },
-  { key: 'total_hours', label: 'Итого часов', unit: 'hours' },
-  { key: 'vacation', label: 'трудовой отпуск', unit: 'days' },
-  { key: 'sick', label: 'болезнь', unit: 'days' },
-  { key: 'admin_leave', label: 'с разрешения администрации', unit: 'days' },
-  { key: 'weekend_holiday', label: 'выходные и праздн.', unit: 'days' },
-  { key: 'other_absence', label: 'Другие неявки', unit: 'days' },
-  { key: 'overtime_days', label: 'сверхурочные дни', unit: 'days' },
-  { key: 'overtime_total', label: 'Сверхурочные часы итого', unit: 'hours' },
-  { key: 'overtime_hours', label: 'Сверхурочные часы без дней', unit: 'hours' },
-  { key: 'night_hours', label: 'ночные часы', unit: 'hours' },
-  { key: 'kdu_work_days', label: 'КДУ', unit: 'manual' },
-  { key: 'kdu_weekend_days', label: 'КДУ вых. дня', unit: 'manual' },
-  // Итоговая колонка «по тарифу» — крайняя справа
-  { key: 'tariff_hours', label: 'Часы по тарифу', unit: 'hours' }
+  { key: 'fact_days', label: 'фактической работы', unit: 'days', width: 30 },
+  { key: 'vacation', label: 'трудовой отпуск', unit: 'days', width: 30 },
+  { key: 'sick', label: 'болезнь', unit: 'days', width: 30 },
+  { key: 'admin_leave', label: 'с разрешения администрации', unit: 'days', width: 30 },
+  { key: 'weekend_holiday', label: 'выходные и праздн.', unit: 'days', width: 30 },
+  { key: 'other_absence', label: 'Другие неявки', unit: 'days', width: 30 },
+  { key: 'overtime_days', label: 'сверхурочные дни', unit: 'days', width: 30 },
+  { key: 'overtime_total', label: 'Сверхурочные часы итого', unit: 'hours', width: 30 },
+  { key: 'overtime_hours', label: 'Сверхурочные часы без дней', unit: 'hours', width: 30 },
+  { key: 'night_hours', label: 'ночные часы', unit: 'hours', width: 30 },
+  { key: 'kdu_work_days', label: 'КДУ', unit: 'manual', width: 30 },
+  { key: 'kdu_weekend_days', label: 'КДУ вых. дня', unit: 'manual', width: 30 },
+  { key: 'tariff_hours', label: 'Часы по тарифу', unit: 'hours', width: 30 },
+  // «Итого часов» — крайняя справа, ширина в 1.5 раза больше остальных
+  { key: 'total_hours', label: 'Итого часов', unit: 'hours', width: 45 }
 ]
+
+// Форматирование ФИО: "Борков Антон Петрович" → "Борков А.П."
+export function formatShortName(fullName) {
+  if (!fullName) return ''
+  const parts = String(fullName).trim().split(/\s+/)
+
+  if (parts.length >= 3) {
+    // Фамилия Имя Отчество → Фамилия И.О.
+    return `${parts[0]} ${parts[1][0].toUpperCase()}.${parts[2][0].toUpperCase()}.`
+  } else if (parts.length === 2) {
+    // Фамилия Имя → Фамилия И.
+    return `${parts[0]} ${parts[1][0].toUpperCase()}.`
+  } else {
+    // Только фамилия
+    return parts[0]
+  }
+}
 
 // Форматирование часов: 8.5 → «8ч30м», 21 → «21ч», 0 → «0ч»
 export function formatHours(hours) {

@@ -62,7 +62,6 @@ const error = ref('')
 // и с ALL_COLUMNS на бэкенде — app/api/user_print_settings.py)
 const allColumns = [
   { key: 'fact_days', label: 'фактической работы (дни)' },
-  { key: 'total_hours', label: 'Итого часов' },
   { key: 'vacation', label: 'трудовой отпуск' },
   { key: 'sick', label: 'болезнь' },
   { key: 'admin_leave', label: 'с разрешения администрации' },
@@ -74,7 +73,9 @@ const allColumns = [
   { key: 'night_hours', label: 'ночные часы' },
   { key: 'kdu_work_days', label: 'КДУ' },
   { key: 'kdu_weekend_days', label: 'КДУ вых. дня' },
-  { key: 'tariff_hours', label: 'Часы по тарифу' }
+  { key: 'tariff_hours', label: 'Часы по тарифу' },
+  // «Итого часов» — в конце (в печатной форме крайняя справа, шире в 1.5 раза)
+  { key: 'total_hours', label: 'Итого часов' }
 ]
 
 const defaultColumns = ['fact_days', 'total_hours', 'vacation', 'sick', 'overtime_total', 'overtime_hours', 'tariff_hours']

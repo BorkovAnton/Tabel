@@ -26,7 +26,8 @@
           <th rowspan="2" class="col-fio">ФИО</th>
           <th rowspan="2" class="col-tabno">Таб. №</th>
           <th :colspan="tabel.days_in_month" class="col-days-header">Числа месяца</th>
-          <th v-for="col in printColumns" :key="col.key" rowspan="2" class="col-summary-header">
+          <th v-for="col in printColumns" :key="col.key" rowspan="2" class="col-summary-header"
+              :style="{ width: (col.width || 30) + 'px', minWidth: (col.width || 30) + 'px', maxWidth: (col.width || 30) + 'px' }">
             {{ col.label }}
           </th>
         </tr>
@@ -42,7 +43,7 @@
       <tbody>
         <tr v-for="(row, idx) in tabel.entries" :key="row.employee_id">
           <td class="col-num">{{ idx + 1 }}</td>
-          <td class="col-fio">{{ row.full_name }}</td>
+          <td class="col-fio">{{ formatShortName(row.full_name) }}</td>
           <td class="col-tabno">{{ row.tab_number || '—' }}</td>
 
           <!-- Дни месяца: ЧАСЫ (8.25) если определены, иначе код (К, В, О) -->
@@ -53,14 +54,16 @@
 
           <!-- Итоговые колонки — ТОЧНО КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (общий модуль tabelCalculations).
                Сверхурочные — две независимые колонки: overtime_total и overtime_hours -->
-          <td v-for="col in printColumns" :key="col.key" class="col-summary-cell">
+          <td v-for="col in printColumns" :key="col.key" class="col-summary-cell"
+              :style="{ width: (col.width || 30) + 'px', minWidth: (col.width || 30) + 'px', maxWidth: (col.width || 30) + 'px' }">
             {{ summaryCellText(col, row) }}
           </td>
         </tr>
         <!-- Строка «ИТОГО» по отделу — суммирует все строки, как принято в Т-13 -->
         <tr v-if="tabel.entries.length" class="t13-total-row">
           <td :colspan="3 + tabel.days_in_month" class="col-total-label">ИТОГО</td>
-          <td v-for="col in printColumns" :key="'tot-' + col.key" class="col-summary-cell">
+          <td v-for="col in printColumns" :key="'tot-' + col.key" class="col-summary-cell"
+              :style="{ width: (col.width || 30) + 'px', minWidth: (col.width || 30) + 'px', maxWidth: (col.width || 30) + 'px' }">
             {{ totalsCellText(col) }}
           </td>
         </tr>
@@ -115,7 +118,8 @@ import { useRoute } from 'vue-router'
 import api from '../api'
 import {
   summaryColumns, calculateSummary, formatHours, fmtNum, getCellHours,
-  dayOfWeekNames, MONTH_NAMES_RU, rawToHours, normalizeListResponse
+  dayOfWeekNames, MONTH_NAMES_RU, rawToHours, normalizeListResponse,
+  formatShortName
 } from '../utils/tabelCalculations'
 
 const route = useRoute()
@@ -655,11 +659,11 @@ onBeforeUnmount(() => {
   font-weight: bold;
 }
 
-/* Итоговые колонки: ВСЕ вертикальные, единый шрифт 13px */
+/* Итоговые колонки: ВСЕ вертикальные, единый шрифт 13px.
+   Ширина задаётся через inline :style из col.width («Итого часов» — 45px,
+   остальные — 30px), здесь только fallback min-width */
 .col-summary-header {
-  width: 30px !important;      /* Сузили с 40px */
-  min-width: 30px !important;
-  max-width: 30px !important;
+  min-width: 28px !important;
   font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: bold;
   line-height: 0.9 !important;
@@ -677,9 +681,7 @@ onBeforeUnmount(() => {
 .col-summary-cell {
   font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: 500;
-  width: 30px !important;      /* Сузили с 40px */
-  min-width: 30px !important;
-  max-width: 30px !important;
+  min-width: 28px !important;  /* Ширина — через inline :style из col.width */
   padding: 0 !important;       /* Убрали padding */
   line-height: 0.9 !important;
 }
