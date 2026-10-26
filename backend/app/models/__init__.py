@@ -11,6 +11,7 @@ from .tabel import Tabel, TabelEntry
 from .company_setting import CompanySetting
 from .document import Document
 from .dismissal_note import DismissalNote, DismissalEntry, DismissalDayRecord
+from .user_print_settings import UserPrintSettings
 
 __all__ = [
     "Department",
@@ -29,4 +30,5 @@ __all__ = [
     "DismissalNote",
     "DismissalEntry",
     "DismissalDayRecord",
+    "UserPrintSettings",
 ]

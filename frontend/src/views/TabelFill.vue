@@ -30,6 +30,9 @@
       <v-btn variant="outlined" prepend-icon="mdi-printer" :to="`/tabels/${route.params.id}/print`" class="ml-2">
         Печать Т-13
       </v-btn>
+      <v-btn variant="outlined" prepend-icon="mdi-cog" @click="showPrintSettings = true" class="ml-2">
+        Настройки печати
+      </v-btn>
     </div>
 
     <v-alert v-if="!canEdit" type="warning" density="compact" class="mb-3">
@@ -825,6 +828,12 @@
     </v-card>
   </div>
   <v-progress-circular v-else indeterminate color="#2d5a3d" />
+
+  <!-- Диалог персональных настроек печати (выбор итоговых колонок Т-13) -->
+  <PrintSettingsDialog
+    v-model="showPrintSettings"
+    @saved="onPrintSettingsSaved"
+  />
 </template>
 
 <script setup>
@@ -833,6 +842,7 @@ import { useRoute } from 'vue-router'
 import api from '../api'
 import CustomEditButton from '../components/CustomEditButton.vue'
 import CustomDeleteButton from '../components/CustomDeleteButton.vue'
+import PrintSettingsDialog from '../components/PrintSettingsDialog.vue'
 import { auth } from '../auth'
 import {
   summaryColumns, calculateSummary as calcSummaryShared, formatHours, fmtNum,
@@ -969,6 +979,14 @@ const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, use_sche
 const codeError = ref('')
 const isEditing = ref(false)
 const editingCode = ref(null)
+
+// ─── Персональные настройки печати Т-13 (выбор итоговых колонок) ──────────
+const showPrintSettings = ref(false)
+
+function onPrintSettingsSaved(columns) {
+  message.value = `Настройки печати сохранены: выбрано колонок — ${columns.length}.`
+  messageType.value = 'success'
+}
 
 // ─── «Заполнить по графику» ────────────────────────────────────────────────
 // Диалог автораспределения кодов по рабочим дням месяца ПО ИНДИВИДУАЛЬНОМУ

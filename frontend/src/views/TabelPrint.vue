@@ -26,7 +26,7 @@
           <th rowspan="2" class="col-fio">ФИО</th>
           <th rowspan="2" class="col-tabno">Таб. №</th>
           <th :colspan="tabel.days_in_month" class="col-days-header">Числа месяца</th>
-          <th v-for="col in summaryColumns" :key="col.key" rowspan="2"
+          <th v-for="col in printColumns" :key="col.key" rowspan="2"
               class="col-summary-header" :class="{ 'col-overtime': col.key === 'overtime_hours' }">
             <!-- Заголовок колонки сверхурочных в две строки -->
             <template v-if="col.key === 'overtime_hours'">
@@ -59,7 +59,7 @@
           </td>
 
           <!-- Итоговые колонки — ТОЧНО КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (общий модуль tabelCalculations) -->
-          <td v-for="col in summaryColumns" :key="col.key" class="col-summary-cell"
+          <td v-for="col in printColumns" :key="col.key" class="col-summary-cell"
               :class="{ 'col-overtime-cell': col.key === 'overtime_hours' }">
             <!-- Сверхурочные: итого (красным) и в скобках только часы без дней -->
             <template v-if="col.key === 'overtime_hours'">
@@ -75,7 +75,7 @@
         <!-- Строка «ИТОГО» по отделу — суммирует все строки, как принято в Т-13 -->
         <tr v-if="tabel.entries.length" class="t13-total-row">
           <td :colspan="3 + tabel.days_in_month" class="col-total-label">ИТОГО</td>
-          <td v-for="col in summaryColumns" :key="'tot-' + col.key" class="col-summary-cell"
+          <td v-for="col in printColumns" :key="'tot-' + col.key" class="col-summary-cell"
               :class="{ 'col-overtime-cell': col.key === 'overtime_hours' }">
             <template v-if="col.key === 'overtime_hours'">
               <div class="overtime-total">{{ overtimeTotalText(totals) }}</div>
@@ -145,6 +145,18 @@ const tabel = ref(null)
 const timeCodes = ref([])
 const codesLoadError = ref(false)
 const loadError = ref('')
+
+// ===== ПЕРСОНАЛЬНЫЕ НАСТРОЙКИ ПЕЧАТИ =====
+// Выбранные пользователем итоговые колонки (GET /api/user-print-settings/).
+// Пустой список (настройки не загружены/ошибка) — показываются ВСЕ колонки.
+const userPrintColumns = ref([])
+
+const printColumns = computed(() => {
+  if (!userPrintColumns.value.length) return summaryColumns
+  const filtered = summaryColumns.filter(col => userPrintColumns.value.includes(col.key))
+  // Защита: если сохранённые настройки не дали ни одной колонки — показать все
+  return filtered.length ? filtered : summaryColumns
+})
 
 const monthName = computed(() => {
   if (!tabel.value) return ''
@@ -343,6 +355,18 @@ async function loadTabel() {
     // timeCodes оставался пустым → ВСЕ итоговые колонки на печати были пусты.
     const codesRaw = codesRes && codesRes.data !== undefined ? codesRes.data : codesRes
     timeCodes.value = normalizeListResponse(codesRaw).filter(c => c && c.code)
+
+    // ✅ Персональные настройки печати пользователя (какие итоговые колонки
+    // показывать). Ошибка/пусто → userPrintColumns остаётся пустым →
+    // printColumns покажет ВСЕ колонки (обратная совместимость).
+    try {
+      const settingsRes = await api.get('/api/user-print-settings/')
+      const s = settingsRes && settingsRes.data !== undefined ? settingsRes.data : settingsRes
+      userPrintColumns.value = Array.isArray(s.selected_columns) ? s.selected_columns : []
+    } catch (e) {
+      console.error('Ошибка загрузки настроек печати:', e)
+      userPrintColumns.value = []  // Показать все колонки
+    }
   } catch (e) {
     loadError.value = e && e.response && e.response.status === 403
       ? 'У вас нет доступа к этому табелю.'
