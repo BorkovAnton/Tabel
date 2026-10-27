@@ -469,14 +469,14 @@ async function openPrintWindow() {
   @media print {
     @page {
       size: A3 landscape;
-      margin-top: 6mm !important;
-      margin-right: 6mm !important;
-      margin-bottom: 6mm !important;
-      margin-left: 6mm !important;
+      margin-top: 8mm !important;
+      margin-right: 8mm !important;
+      margin-bottom: 8mm !important;
+      margin-left: 8mm !important;
     }
     html, body {
       margin: 0 !important;
-      padding: 6mm !important;   /* запасной вариант, если браузер переопределил @page */
+      padding: 8mm !important;   /* запасной вариант, если браузер переопределил @page */
       box-sizing: border-box;
     }
     .t13-page {
@@ -860,21 +860,21 @@ onBeforeUnmount(() => {
 
 /* ===== Печать ===== */
 @media print {
-  /* A3 landscape — шире, вмещает все колонки; поля 6мм.
+  /* A3 landscape — шире, вмещает все колонки; поля 8мм.
      Каждую сторону задаём отдельно и с !important — Chrome иначе
      подставляет свои поля по умолчанию (~1.5мм). */
   @page {
     size: A3 landscape;
-    margin-top: 6mm !important;
-    margin-right: 6mm !important;
-    margin-bottom: 6mm !important;
-    margin-left: 6mm !important;
+    margin-top: 8mm !important;
+    margin-right: 8mm !important;
+    margin-bottom: 8mm !important;
+    margin-left: 8mm !important;
   }
 
   html,
   body {
     margin: 0 !important;
-    padding: 6mm !important;   /* Запасной вариант: поля через padding,
+    padding: 8mm !important;   /* Запасной вариант: поля через padding,
                                   если браузер переопределил @page margin */
     box-sizing: border-box;
     font-size: 13px;           /* Единый размер шрифта 13px */
@@ -1001,20 +1001,20 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  /* Принудительные поля 6мм. Каждую сторону задаём отдельно и с
+  /* Принудительные поля 8мм. Каждую сторону задаём отдельно и с
      !important — Chrome иначе подставляет свои поля из диалога печати. */
   @page {
     size: A3 landscape;
-    margin-top: 6mm !important;
-    margin-right: 6mm !important;
-    margin-bottom: 6mm !important;
-    margin-left: 6mm !important;
+    margin-top: 8mm !important;
+    margin-right: 8mm !important;
+    margin-bottom: 8mm !important;
+    margin-left: 8mm !important;
   }
 
   html,
   body {
     margin: 0 !important;
-    padding: 6mm !important;   /* Запасной вариант: поля через padding,
+    padding: 8mm !important;   /* Запасной вариант: поля через padding,
                                   если браузер переопределил @page margin */
     box-sizing: border-box;
   }
