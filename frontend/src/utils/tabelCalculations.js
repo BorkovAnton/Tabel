@@ -583,8 +583,30 @@ export function getCellCode(val) {
   return val || ''
 }
 
-// Нижняя строка ячейка дня: часы. Для кода справочника — эффективные часы
-// (по графику/фиксированные), для числового ввода — само значение.
+// Отображаемое значение ячейки для печатной формы Т-13.
+// - Код из справочника (К, О, В, Он, Б и т.д.) → вернуть код КАК ЕСТЬ
+//   (часы НЕ вычисляем — в печати должны быть исходные коды)
+// - Числовое значение («8», «8.25», «8ч15м», «8:15») → нормализовать («8.25»)
+// - Пусто → ''
+export function getCellDisplayValue(val, timeCodes) {
+  if (!val) return ''
+  const s = String(val).trim()
+  if (!s) return ''
+  const codes = Array.isArray(timeCodes) ? timeCodes : []
+  const codeObj = codes.find(c => String(c.code || '').toLowerCase() === s.toLowerCase())
+  if (codeObj) {
+    // Это код — возвращаем его как есть («К», «О», «В», «Он», «Б» …)
+    return s
+  }
+  // Не код — пробуем разобрать как числовое значение часов
+  const hours = rawToHours(s)
+  if (hours !== null) return fmtNum(hours)
+  // Не распознано — возвращаем как есть
+  return s
+}
+
+// Устарело: вычисление часов для ячейки (используется в расчётах, но НЕ
+// для отображения в печатной форме — там применяется getCellDisplayValue).
 export function getCellHours(val, row, d, timeCodes) {
   if (!val) return ''
   const s = String(val).trim()
@@ -592,9 +614,7 @@ export function getCellHours(val, row, d, timeCodes) {
   const codeObj = codes.find(c => String(c.code || '').toLowerCase() === s.toLowerCase())
   if (codeObj) {
     const eff = codeHoursForDay(codeObj, row, d)
-    // Если есть часы — возвращаем число («8.25»), иначе — сам код («К», «В», «О»)
     return eff.total > 0 ? fmtNum(eff.total) : s
   }
-  // Числовое значение
   return s
 }

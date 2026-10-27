@@ -51,7 +51,7 @@
           <td v-for="d in tabel.days_in_month" :key="d" class="col-day-cell"
               :style="dayColStyle"
               :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
-            <div class="day-hours-only">{{ getCellHours(row.days[d], row, d, timeCodes) }}</div>
+            <div class="day-hours-only">{{ getCellDisplayValue(row.days[d], timeCodes) }}</div>
           </td>
 
           <!-- Итоговые колонки — ТОЧНО КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (общий модуль tabelCalculations).
@@ -119,7 +119,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 import {
-  summaryColumns, calculateSummary, formatHours, fmtNum, getCellHours,
+  summaryColumns, calculateSummary, formatHours, fmtNum, getCellDisplayValue,
   dayOfWeekNames, MONTH_NAMES_RU, rawToHours, normalizeListResponse,
   formatShortName
 } from '../utils/tabelCalculations'
