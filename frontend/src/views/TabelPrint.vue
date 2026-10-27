@@ -26,13 +26,15 @@
           <th rowspan="2" class="col-fio">ФИО</th>
           <th rowspan="2" class="col-tabno">Таб. №</th>
           <th :colspan="tabel.days_in_month" class="col-days-header">Числа месяца</th>
-          <th v-for="col in printColumns" :key="col.key" rowspan="2" class="col-summary-header">
+          <th v-for="col in printColumns" :key="col.key" rowspan="2" class="col-summary-header"
+              :class="{ 'col-total-hours-header': col.key === 'total_hours' }">
             {{ col.label }}
           </th>
         </tr>
         <tr>
           <!-- Дни месяца -->
           <th v-for="d in tabel.days_in_month" :key="d" class="col-day-header"
+              :style="dayColStyle"
               :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
             <div class="day-name">{{ getDayOfWeekShort(d) }}</div>
             <div class="day-number">{{ d }}</div>
@@ -47,20 +49,23 @@
 
           <!-- Дни месяца: ЧАСЫ (8.25) если определены, иначе код (К, В, О) -->
           <td v-for="d in tabel.days_in_month" :key="d" class="col-day-cell"
+              :style="dayColStyle"
               :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
             <div class="day-hours-only">{{ getCellHours(row.days[d], row, d, timeCodes) }}</div>
           </td>
 
           <!-- Итоговые колонки — ТОЧНО КАК В ТАБЕЛЕ ЗАПОЛНЕНИЯ (общий модуль tabelCalculations).
                Сверхурочные — две независимые колонки: overtime_total и overtime_hours -->
-          <td v-for="col in printColumns" :key="col.key" class="col-summary-cell">
+          <td v-for="col in printColumns" :key="col.key" class="col-summary-cell"
+              :class="{ 'col-total-hours': col.key === 'total_hours' }">
             {{ summaryCellText(col, row) }}
           </td>
         </tr>
         <!-- Строка «ИТОГО» по отделу — суммирует все строки, как принято в Т-13 -->
         <tr v-if="tabel.entries.length" class="t13-total-row">
           <td :colspan="3 + tabel.days_in_month" class="col-total-label">ИТОГО</td>
-          <td v-for="col in printColumns" :key="'tot-' + col.key" class="col-summary-cell">
+          <td v-for="col in printColumns" :key="'tot-' + col.key" class="col-summary-cell"
+              :class="{ 'col-total-hours': col.key === 'total_hours' }">
             {{ totalsCellText(col) }}
           </td>
         </tr>
@@ -136,6 +141,48 @@ const printColumns = computed(() => {
   // Защита: если сохранённые настройки не дали ни одной колонки — показать все
   return filtered.length ? filtered : summaryColumns
 })
+
+// ===== ШИРИНА КОЛОНОК ДНЕЙ МЕСЯЦА (вычисляется в JS) =====
+// Итоговые колонки имеют фиксированные ширины (30px, «Итого часов» — 45px),
+// № — 25px, Таб. № — 55px, ФИО — автоширина (min 100 / max 200).
+// Колонки дней равномерно делят ВСЁ ОСТАВШЕЕСЯ пространство таблицы.
+const dayColumnWidth = computed(() => {
+  if (!tabel.value) return 30
+
+  // Измеряем реальную ширину таблицы на экране/при печати
+  let tableWidth = 0
+  try {
+    const el = document.querySelector('.t13-table')
+    if (el && el.clientWidth > 0) tableWidth = el.clientWidth
+  } catch (e) { /* DOM ещё не готов — используем fallback */ }
+
+  // Fallback: ширина области печати A3 landscape (~420mm при 96dpi ≈ 1587px)
+  if (!tableWidth) tableWidth = Math.round((window.innerWidth || 1587) * 0.98)
+
+  // Фиксированные ширины колонок (должны совпадать с CSS)
+  const numWidth = 25        // №
+  const tabNumWidth = 55     // Таб. №
+  const fioWidth = 150       // ФИО: среднее между min(100) и max(200)
+
+  // Итоговые колонки: 30px каждая, «Итого часов» — 45px
+  const summaryWidth = printColumns.value.reduce((sum, col) => {
+    return sum + (col.key === 'total_hours' ? 45 : 30)
+  }, 0)
+
+  // Оставшееся место делим поровну между колонками дней
+  const remainingWidth = tableWidth - numWidth - fioWidth - tabNumWidth - summaryWidth
+  const daysCount = tabel.value.days_in_month || 30
+  const widthPerDay = Math.max(25, Math.floor(remainingWidth / daysCount))
+
+  return widthPerDay
+})
+
+// Inline-стиль для колонок дней (заголовки и ячейки) — одинаковая ширина
+const dayColStyle = computed(() => ({
+  width: dayColumnWidth.value + 'px',
+  minWidth: dayColumnWidth.value + 'px',
+  maxWidth: dayColumnWidth.value + 'px',
+}))
 
 const monthName = computed(() => {
   if (!tabel.value) return ''
@@ -544,6 +591,11 @@ onBeforeUnmount(() => {
      длинному ФИО, max 200px) и Таб. № (55px). Остальные колонки
      (дни месяца + итоговые) не имеют width и делят оставшееся
      пространство ПОРОВНУ — таблица всегда заполняет ширину страницы. */
+  /* auto: ширина задаётся колонкам № (25px), ФИО (по самому длинному
+     ФИО, min 100 / max 200) и Таб. № (55px). Итоговые колонки —
+     фиксированные 30px (45px для «Итого часов»). Колонки дней получают
+     вычисленную в JS одинаковую ширину через inline-styles и равномерно
+     заполняют оставшееся пространство. */
   table-layout: auto !important;
   font-size: 13px !important;  /* ЕДИНЫЙ РАЗМЕР ШРИФТА для всей таблицы */
   line-height: 0.9 !important; /* Минимальная высота строки */
@@ -607,11 +659,12 @@ onBeforeUnmount(() => {
   font-size: 13px;             /* Единый размер шрифта 13px */
 }
 
-/* Колонки дней и итоговые: width НЕ ЗАДАН — при table-layout: auto они
-   делят всё оставшееся после №/ФИО/Таб.№ пространство ПОРОВНУ.
-   Одинаковая минимальная ширина 20px защищает от чрезмерного сжатия. */
+/* Колонки дней: ширина задаётся ЧЕРЕЗ INLINE-STYLES из JavaScript
+   (computed dayColumnWidth) — все колонки дней получают ОДИНАКОВУЮ
+   ширину, равномерно заполняющую оставшееся после №/ФИО/Таб.№/итогов
+   пространство таблицы. Здесь только минимум и компактные отступы. */
 .col-day-header {
-  min-width: 20px !important;
+  min-width: 25px !important;  /* Минимум (фактическая ширина — inline) */
   font-size: 13px !important;  /* Единый размер шрифта 13px */
   line-height: 0.9 !important; /* Минимальная высота */
   padding: 0 !important;       /* Без отступов — компактно */
@@ -636,9 +689,10 @@ onBeforeUnmount(() => {
   margin: 0 !important;
 }
 
-/* Ячейка дня: ЧАСЫ (8.25) если есть, иначе код (К, В, О) — без width */
+/* Ячейка дня: ЧАСЫ (8.25) если есть, иначе код (К, В, О) —
+   ширина задаётся inline-стилем из JS (та же, что у заголовков дней) */
 .col-day-cell {
-  min-width: 20px !important;
+  min-width: 25px !important;  /* Минимум (фактическая ширина — inline) */
   padding: 0 !important;       /* Без отступов */
   margin: 0 !important;
   height: auto !important;
@@ -676,41 +730,51 @@ onBeforeUnmount(() => {
   font-weight: bold;
 }
 
-/* Итоговые колонки: width НЕ ЗАДАН — вместе с колонками дней делят
-   оставшееся пространство ПОРОВНУ. Заголовки ГОРИЗОНТАЛЬНЫЕ с переносом
-   текста (шрифт 8px), ячейки — 13px в одну строку. */
+/* ИТОГОВЫЕ КОЛОНКИ — ВЕРТИКАЛЬНЫЕ заголовки (как в оригинальной форме Т-13),
+   ФИКСИРОВАННАЯ ширина 30px («Итого часов» — 45px). Колонки дней получают
+   всё оставшееся пространство (ширина считается в JS, inline-styles). */
 .col-summary-header {
-  min-width: 20px !important;
-  font-size: 8px !important;      /* Мелкий шрифт — чтобы заголовок перенёсся на строки */
+  width: 30px !important;
+  min-width: 30px !important;
+  max-width: 30px !important;
+  font-size: 9px !important;
   font-weight: bold;
-  line-height: 1.1 !important;
-  writing-mode: horizontal-tb !important;  /* Горизонтальный текст */
-  text-orientation: initial;
-  transform: none !important;
-  white-space: normal !important; /* Разрешить перенос заголовка */
-  overflow-wrap: break-word;
-  word-break: break-word;
-  text-align: center !important;
-  min-height: 40px !important;    /* Место под многострочный заголовок */
+  writing-mode: vertical-rl !important;  /* ✅ ВЕРТИКАЛЬНЫЙ текст */
+  text-orientation: mixed !important;
+  transform: rotate(180deg) !important;  /* Читаем снизу вверх */
+  white-space: nowrap !important;        /* Без переноса — текст по высоте ячейки */
+  text-align: center;
   padding: 2px 1px !important;
+  height: 120px !important;              /* Фиксированная высота под вертикальный текст */
 }
 
-/* Сверхурочные разделены на две обычные независимые итоговые колонки
-   (overtime_total и overtime_hours) — специальные стили .col-overtime /
-   .overtime-total / .overtime-hours-only больше не нужны */
-
+/* Итоговые ЯЧЕЙКИ — фиксированная ширина 30px (как заголовки), значения
+   (часы/дни) всегда в одну строку, 13px по центру */
 .col-summary-cell {
-  min-width: 20px !important;
+  width: 30px !important;
+  min-width: 30px !important;
+  max-width: 30px !important;
   font-size: 13px !important;  /* Единый размер шрифта 13px */
   font-weight: 500;
   padding: 0 !important;       /* Без отступов */
   line-height: 0.9 !important;
+  text-align: center;
   white-space: nowrap !important; /* Значение всегда в одну строку */
 }
 
-/* Колонка «Итого часов» — без отдельной ширины: как и все колонки без
-   width делит оставшееся место поровну (значения до 4 символов — 13px
-   nowrap, min-width 20px достаточно) */
+/* Колонка «Итого часов» — шире остальных итоговых колонок */
+.col-total-hours-header {
+  width: 45px !important;
+  min-width: 45px !important;
+  max-width: 45px !important;
+  height: 120px !important;
+}
+
+.col-total-hours {
+  width: 45px !important;
+  min-width: 45px !important;
+  max-width: 45px !important;
+}
 
 /* Строка ИТОГО */
 .t13-total-row td {
@@ -830,20 +894,45 @@ onBeforeUnmount(() => {
     max-width: 25px !important;
   }
 
-  /* Дни и итоговые колонки — width НЕ ЗАДАН: делят оставшееся место
-     страницы A3 landscape поровну между собой */
+  /* Дни — ширина задаётся inline из JS (dayColumnWidth): равномерно
+     заполняют остаток после №/ФИО/Таб.№/итогов на A3 landscape */
   .col-day-header,
-  .col-day-cell,
-  .col-summary-header,
-  .col-summary-cell {
-    min-width: 20px !important;
+  .col-day-cell {
+    min-width: 25px !important;
   }
 
+  /* Итоговые колонки при печати — ВЕРТИКАЛЬНЫЕ заголовки, фиксированные ширины */
   .col-summary-header {
-    writing-mode: horizontal-tb !important;
-    transform: none !important;
-    white-space: normal !important;
-    font-size: 8px !important;
+    width: 30px !important;
+    min-width: 30px !important;
+    max-width: 30px !important;
+    writing-mode: vertical-rl !important;
+    text-orientation: mixed !important;
+    transform: rotate(180deg) !important;
+    white-space: nowrap !important;
+    font-size: 9px !important;
+    height: 120px !important;
+  }
+
+  .col-summary-cell {
+    width: 30px !important;
+    min-width: 30px !important;
+    max-width: 30px !important;
+    font-size: 13px !important;
+    white-space: nowrap !important;
+  }
+
+  .col-total-hours-header {
+    width: 45px !important;
+    min-width: 45px !important;
+    max-width: 45px !important;
+    height: 120px !important;
+  }
+
+  .col-total-hours {
+    width: 45px !important;
+    min-width: 45px !important;
+    max-width: 45px !important;
   }
 
   /* Сохранить фоновые цвета ячеек при печати */
