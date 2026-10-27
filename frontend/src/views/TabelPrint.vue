@@ -828,10 +828,10 @@ onBeforeUnmount(() => {
 
 /* ===== Печать ===== */
 @media print {
-  /* A3 landscape — шире, вмещает все колонки; минимальные поля для компактности */
+  /* A3 landscape — шире, вмещает все колонки; поля 6мм */
   @page {
     size: A3 landscape;
-    margin: 2mm;               /* Уменьшили с 3mm до 2mm */
+    margin: 6mm;               /* Увеличили поля с 2mm до 6mm */
   }
 
   body {
