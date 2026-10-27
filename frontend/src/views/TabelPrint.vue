@@ -461,13 +461,45 @@ async function openPrintWindow() {
   printWin = win
   const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
     .map(n => n.outerHTML).join('\n')
+  // Принудительные поля печати: в новом окне scoped-стили компонента могут
+  // не дойти до @page, поэтому добавляем отдельный (последний) <style> —
+  // он имеет приоритет над скопированными.
+  const printStyles = `
+<style>
+  @media print {
+    @page {
+      size: A3 landscape;
+      margin-top: 6mm !important;
+      margin-right: 6mm !important;
+      margin-bottom: 6mm !important;
+      margin-left: 6mm !important;
+    }
+    html, body {
+      margin: 0 !important;
+      padding: 6mm !important;   /* запасной вариант, если браузер переопределил @page */
+      box-sizing: border-box;
+    }
+    .t13-page {
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .t13-table {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box;
+    }
+  }
+</style>`
   const html = node.cloneNode(true)
   const noPrintEls = html.querySelectorAll('.no-print')
   for (const el of noPrintEls) el.parentNode.removeChild(el)
   win.document.open()
   win.document.write(
     '<!doctype html><html lang="ru"><head><meta charset="utf-8">' +
-    '<title>Табель Т-13 — печать</title>' + styles + '</head><body>' +
+    '<title>Табель Т-13 — печать</title>' + styles + printStyles + '</head><body>' +
     html.outerHTML + '</body></html>'
   )
   win.document.close()
@@ -828,15 +860,23 @@ onBeforeUnmount(() => {
 
 /* ===== Печать ===== */
 @media print {
-  /* A3 landscape — шире, вмещает все колонки; поля 6мм */
+  /* A3 landscape — шире, вмещает все колонки; поля 6мм.
+     Каждую сторону задаём отдельно и с !important — Chrome иначе
+     подставляет свои поля по умолчанию (~1.5мм). */
   @page {
     size: A3 landscape;
-    margin: 6mm;               /* Увеличили поля с 2mm до 6mm */
+    margin-top: 6mm !important;
+    margin-right: 6mm !important;
+    margin-bottom: 6mm !important;
+    margin-left: 6mm !important;
   }
 
+  html,
   body {
-    margin: 0;
-    padding: 0;
+    margin: 0 !important;
+    padding: 6mm !important;   /* Запасной вариант: поля через padding,
+                                  если браузер переопределил @page margin */
+    box-sizing: border-box;
     font-size: 13px;           /* Единый размер шрифта 13px */
     line-height: 0.9;
   }
@@ -846,8 +886,11 @@ onBeforeUnmount(() => {
   }
 
   .t13-page {
-    padding: 0;
+    padding: 0 !important;       /* Поля даёт только @page / body */
+    margin: 0 !important;
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .t13-table {
@@ -956,6 +999,31 @@ onBeforeUnmount(() => {
     left: 0;
     top: 0;
     width: 100%;
+  }
+
+  /* Принудительные поля 6мм. Каждую сторону задаём отдельно и с
+     !important — Chrome иначе подставляет свои поля из диалога печати. */
+  @page {
+    size: A3 landscape;
+    margin-top: 6mm !important;
+    margin-right: 6mm !important;
+    margin-bottom: 6mm !important;
+    margin-left: 6mm !important;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 6mm !important;   /* Запасной вариант: поля через padding,
+                                  если браузер переопределил @page margin */
+    box-sizing: border-box;
+  }
+
+  .t13-page {
+    padding: 0 !important;     /* Поля даёт только @page / body */
+    margin: 0 !important;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 }
 </style>
