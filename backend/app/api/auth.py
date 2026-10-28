@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -54,6 +54,16 @@ class UserOut(BaseModel):
     id: int
     username: str
     full_name: str
+    # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику)
+    role: str = 'user'
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _role_default(cls, v):
+        # Обратная совместимость: если в БД NULL — считаем 'user'
+        return v if v else "user"
+
+    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: bool
     is_hr: bool
     timesheet_inspector: bool
@@ -77,6 +87,9 @@ class UserCreate(BaseModel):
     username: str
     password: str
     full_name: str = ""
+    # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику)
+    role: str = 'user'
+    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: bool = False
     is_hr: bool = False
     timesheet_inspector: bool = False
@@ -90,6 +103,9 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     password: Optional[str] = None
     full_name: Optional[str] = None
+    # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику)
+    role: Optional[str] = None
+    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: Optional[bool] = None
     is_hr: Optional[bool] = None
     timesheet_inspector: Optional[bool] = None
@@ -132,6 +148,7 @@ def create_user(payload: UserCreate, user: User = Depends(get_current_user), db:
         username=payload.username,
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name,
+        role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
         is_admin=payload.is_admin,
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,

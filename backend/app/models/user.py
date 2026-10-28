@@ -14,6 +14,11 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255), default="")
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль. Пока не влияет на логику —
+    # старые флаги ниже продолжают работать как раньше.
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="user", server_default="user")
+
+    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)          # Администратор
     is_hr: Mapped[bool] = mapped_column(Boolean, default=False)             # Кадровик
     timesheet_inspector: Mapped[bool] = mapped_column(Boolean, default=False)  # Инспектор табелей

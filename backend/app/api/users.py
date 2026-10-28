@@ -45,6 +45,10 @@ def _normalize_permissions(raw) -> Optional[List[str]]:
 
 
 class RoleFlags(BaseModel):
+    # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику).
+    # Optional: None означает «не менять» при обновлении.
+    role: Optional[str] = None
+    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: bool = False            # Администратор
     is_hr: bool = False               # Кадровик
     timesheet_inspector: bool = False # Инспектор табелей
@@ -71,6 +75,15 @@ class UserWithRoles(RoleFlags):
     id: int
     username: str
     full_name: str
+    # ✅ НОВОЕ ПОЛЕ (этап 1): в ответе всегда строка (по умолчанию 'user')
+    role: str = 'user'
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _role_default(cls, v):
+        # Обратная совместимость: если в БД NULL — считаем 'user'
+        return v if v else "user"
+
     allowed_department_names: List[str] = []
     all_departments: bool = False
 
@@ -82,6 +95,8 @@ class UserCreateWithRoles(RoleFlags):
     username: str
     password: str
     full_name: str = ""
+    # ✅ НОВОЕ ПОЛЕ (этап 1): при создании всегда конкретная роль
+    role: str = 'user'
 
     @field_validator("username")
     @classmethod
@@ -134,6 +149,7 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
         username=username,
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name.strip(),
+        role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
         is_admin=payload.is_admin,
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,
@@ -156,6 +172,11 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    # ✅ НОВОЕ ПОЛЕ (этап 1): role — Optional[str]; None означает «не менять»
+    data = payload.model_dump(exclude_unset=True)
+    new_role = data.pop("role", None)
+    if new_role is not None:
+        target.role = new_role
     target.is_admin = payload.is_admin
     target.is_hr = payload.is_hr
     target.timesheet_inspector = payload.timesheet_inspector

@@ -53,6 +53,8 @@ MIGRATIONS = [
     ("users", "permissions", "JSON DEFAULT NULL"),
     # ─── Должность сотрудника (колонка «Должность» при импорте из Excel) ───
     ("employees", "position", "VARCHAR(200) DEFAULT NULL"),
+    # ✅ ЭТАП 1: единая роль пользователя (старые флаги сохранены, логика не меняется)
+    ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'user'"),
 ]
 
 
