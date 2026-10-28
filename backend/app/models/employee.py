@@ -9,6 +9,8 @@ class Employee(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tab_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Должность сотрудника (колонка «Должность» при импорте из Excel).
+    position: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
     department_id: Mapped[int] = mapped_column(Integer, ForeignKey('departments.id'), nullable=True)
     schedule_id: Mapped[int | None] = mapped_column(Integer, ForeignKey('work_schedules.id'), nullable=True)
     # Резервная норма часов в день (fallback, если у сотрудника не назначен график).

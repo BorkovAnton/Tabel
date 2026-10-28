@@ -51,6 +51,8 @@ MIGRATIONS = [
     ("dismissal_day_records", "reason", "VARCHAR(20) DEFAULT NULL"),
     # ✅ Права доступа к вкладкам сайта: JSON-список путей, NULL — все страницы
     ("users", "permissions", "JSON DEFAULT NULL"),
+    # ─── Должность сотрудника (колонка «Должность» при импорте из Excel) ───
+    ("employees", "position", "VARCHAR(200) DEFAULT NULL"),
 ]
 
 

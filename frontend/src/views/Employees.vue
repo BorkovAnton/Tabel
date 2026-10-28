@@ -50,6 +50,7 @@
         <div style="width: 100px; padding: 10px; border-right: 1px solid #e0e0e0;">Таб. номер</div>
         <div style="flex: 1; padding: 10px; border-right: 1px solid #e0e0e0;">Ф.И.О.</div>
         <div style="flex: 1; padding: 10px; border-right: 1px solid #e0e0e0;">Подразделение</div>
+        <div style="flex: 1; padding: 10px; border-right: 1px solid #e0e0e0;">Должность</div>
         <div style="width: 180px; padding: 10px; border-right: 1px solid #e0e0e0;">График</div>
         <div style="width: 100px; padding: 10px; text-align: center;">Действия</div>
       </div>
@@ -66,6 +67,7 @@
         <div style="width: 100px; padding: 10px; border-right: 1px solid #f0f0f0;">{{ emp.tab_number }}</div>
         <div style="flex: 1; padding: 10px; border-right: 1px solid #f0f0f0;">{{ emp.full_name }}</div>
         <div style="flex: 1; padding: 10px; border-right: 1px solid #f0f0f0;">{{ emp.department_name || '-' }}</div>
+        <div style="flex: 1; padding: 10px; border-right: 1px solid #f0f0f0;">{{ emp.position || '—' }}</div>
         <div style="width: 180px; padding: 10px; border-right: 1px solid #f0f0f0;">
           <span v-if="emp.schedule_id" style="background: #e3f2fd; color: #1976d2; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
             {{ getScheduleName(emp.schedule_id) }}

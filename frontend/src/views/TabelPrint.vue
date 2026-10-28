@@ -24,6 +24,7 @@
         <tr>
           <th rowspan="2" class="col-num">№</th>
           <th rowspan="2" class="col-fio">ФИО</th>
+          <th rowspan="2" class="col-position">Должность</th>
           <th rowspan="2" class="col-tabno">Таб. №</th>
           <th :colspan="tabel.days_in_month" class="col-days-header">Числа месяца</th>
           <th v-for="col in printColumns" :key="col.key" rowspan="2" class="col-summary-header"
@@ -45,6 +46,7 @@
         <tr v-for="(row, idx) in tabel.entries" :key="row.employee_id">
           <td class="col-num">{{ idx + 1 }}</td>
           <td class="col-fio">{{ formatShortName(row.full_name) }}</td>
+          <td class="col-position">{{ row.position || '—' }}</td>
           <td class="col-tabno">{{ row.tab_number || '—' }}</td>
 
           <!-- Дни месяца: ЧАСЫ (8.25) если определены, иначе код (К, В, О) -->
@@ -63,7 +65,7 @@
         </tr>
         <!-- Строка «ИТОГО» по отделу — суммирует все строки, как принято в Т-13 -->
         <tr v-if="tabel.entries.length" class="t13-total-row">
-          <td :colspan="3 + tabel.days_in_month" class="col-total-label">ИТОГО</td>
+          <td :colspan="4 + tabel.days_in_month" class="col-total-label">ИТОГО</td>
           <td v-for="col in printColumns" :key="'tot-' + col.key" class="col-summary-cell"
               :class="{ 'col-total-hours': col.key === 'total_hours' }">
             {{ totalsCellText(col) }}
@@ -163,6 +165,7 @@ const dayColumnWidth = computed(() => {
   const numWidth = 25        // №
   const tabNumWidth = 55     // Таб. №
   const fioWidth = 150       // ФИО: среднее между min(100) и max(200)
+  const positionWidth = 120  // Должность: фиксированная ширина из CSS
 
   // Итоговые колонки: 30px каждая, «Итого часов» — 45px
   const summaryWidth = printColumns.value.reduce((sum, col) => {
@@ -170,7 +173,7 @@ const dayColumnWidth = computed(() => {
   }, 0)
 
   // Оставшееся место делим поровну между колонками дней
-  const remainingWidth = tableWidth - numWidth - fioWidth - tabNumWidth - summaryWidth
+  const remainingWidth = tableWidth - numWidth - fioWidth - positionWidth - tabNumWidth - summaryWidth
   const daysCount = tabel.value.days_in_month || 30
   const widthPerDay = Math.max(25, Math.floor(remainingWidth / daysCount))
 
@@ -673,6 +676,21 @@ onBeforeUnmount(() => {
   line-height: 0.9 !important;
 }
 
+/* Колонка «Должность»: фиксированная ширина 120px — иначе при
+   table-layout: auto она (как и Таб. № раньше) забирала всё свободное
+   место таблицы. Длинные должности обрезаются с многоточием. */
+.col-position {
+  width: 120px !important;
+  min-width: 120px !important;
+  max-width: 120px !important;
+  font-size: 13px !important;     /* Единый размер шрифта 13px */
+  white-space: nowrap !important; /* Заголовок и значения в одну строку */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left !important;
+  line-height: 0.9 !important;
+}
+
 /* Колонка «Таб. №»: ФИКСИРОВАННАЯ ширина 55px (не auto!) — иначе при
    автоподстройке она забирала всё свободное место таблицы.
    55px достаточно для заголовка «Таб. №» и 4-значного номера в одну строку. */
@@ -916,6 +934,17 @@ onBeforeUnmount(() => {
     white-space: nowrap !important;
     overflow-wrap: normal !important;
     word-break: normal !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    text-align: left !important;
+  }
+
+  /* Должность — ФИКСИРОВАННАЯ ширина 120px (как на экране) */
+  .col-position {
+    width: 120px !important;
+    min-width: 120px !important;
+    max-width: 120px !important;
+    white-space: nowrap !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     text-align: left !important;

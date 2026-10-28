@@ -69,6 +69,8 @@ def _ensure_columns() -> None:
         ("tabel_entries", "position", "INTEGER DEFAULT 0"),
         ("users", "is_user", "BOOLEAN DEFAULT 1"),
         ("users", "allowed_departments", "TEXT DEFAULT ''"),
+        # Должность сотрудника (колонка «Должность» при импорте из Excel)
+        ("employees", "position", "VARCHAR(200) DEFAULT NULL"),
     ]
     with engine.begin() as conn:
         for table, column, coltype in migrations:

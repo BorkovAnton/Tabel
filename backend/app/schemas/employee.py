@@ -6,6 +6,7 @@ from datetime import datetime
 class EmployeeCreate(BaseModel):
     tab_number: str
     full_name: str
+    position: Optional[str] = None
     department_id: Optional[int] = None
     schedule_id: Optional[int] = None
     # Резервная норма часов (fallback без графика). По умолчанию NULL — норма берётся из графика.
@@ -15,6 +16,7 @@ class EmployeeCreate(BaseModel):
 class EmployeeUpdate(BaseModel):
     tab_number: Optional[str] = None
     full_name: Optional[str] = None
+    position: Optional[str] = None
     department_id: Optional[int] = None
     schedule_id: Optional[int] = None
     norm_hours: Optional[float] = None
@@ -37,6 +39,7 @@ class EmployeeResponse(BaseModel):
     tab_number: str
     full_name: str
     short_name: Optional[str] = None  # "Фамилия И.О."
+    position: Optional[str] = None  # Должность
     department_id: Optional[int]
     department_name: Optional[str] = None
     schedule_id: Optional[int]

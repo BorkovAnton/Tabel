@@ -59,6 +59,7 @@ def get_employees(
             "id": emp.id,
             "tab_number": emp.tab_number,
             "full_name": emp.full_name,
+            "position": emp.position,
             "department_id": emp.department_id,
             "schedule_id": emp.schedule_id,
             "norm_hours": float(emp.norm_hours) if emp.norm_hours is not None else None,
@@ -94,6 +95,7 @@ def create_employee(
     new_employee = Employee(
         tab_number=employee.tab_number,
         full_name=employee.full_name,
+        position=employee.position,
         department_id=employee.department_id,
         schedule_id=employee.schedule_id,
         norm_hours=employee.norm_hours
@@ -146,6 +148,7 @@ def update_employee(
         "id": emp.id,
         "tab_number": emp.tab_number,
         "full_name": emp.full_name,
+        "position": emp.position,
         "department_id": emp.department_id,
         "schedule_id": emp.schedule_id,
         "norm_hours": float(emp.norm_hours) if emp.norm_hours is not None else None,
@@ -222,6 +225,10 @@ async def import_employees_from_excel(
             # Извлекаем данные (как в вашем Excel)
             tab_number = str(row['Таб. номер']).strip() if pd.notna(row.get('Таб. номер')) else ""
             full_name = str(row['ФИО']).strip() if pd.notna(row.get('ФИО')) else ""
+            # Колонка D «Должность» — необязательная: если её нет в файле, position = None
+            position = str(row['Должность']).strip() if 'Должность' in df.columns and pd.notna(row.get('Должность')) else None
+            if position in ("", "nan"):
+                position = None
             
             # Пропускаем пустые строки
             if not tab_number or not full_name or tab_number == "nan":
@@ -258,6 +265,7 @@ async def import_employees_from_excel(
             new_employee = Employee(
                 tab_number=tab_number,
                 full_name=full_name,
+                position=position,
                 department_id=department_id,
                 schedule_id=default_schedule_id  # ← Привязываем к графику по умолчанию
             )

@@ -134,6 +134,8 @@ class EntryRow(BaseModel):
     kdu_weekend_days: Optional[float] = None
     # Резервная норма часов в день из сотрудника (fallback, если график не назначен); NULL => 8
     norm_hours: Optional[float] = None
+    # Должность сотрудника (из модели Employee; колонка «Должность» при импорте Excel)
+    position: Optional[str] = None
     # График работы сотрудника (для норм по дням недели)
     schedule_id: Optional[int] = None
     # Норма часов для каждого дня месяца {1: 8.25, ...}; пустой dict => нет графика (используйте fallback)
@@ -492,6 +494,7 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             employee_id=e.employee_id,
             full_name=emp.full_name if emp else "",
             tab_number=emp.tab_number if emp else "",
+            position=(emp.position or None) if emp else None,
             days=entry_days(e, dim),
             kdu_work_days=float(e.kdu_work_days) if e.kdu_work_days is not None else None,
             kdu_weekend_days=float(e.kdu_weekend_days) if e.kdu_weekend_days is not None else None,
