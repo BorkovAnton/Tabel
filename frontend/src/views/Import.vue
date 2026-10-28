@@ -54,6 +54,14 @@
             >
               Загрузить сотрудников
             </v-btn>
+            <v-btn
+              color="orange"
+              prepend-icon="mdi-account-edit"
+              class="ml-2"
+              @click="showUpdatePositionsDialog = true"
+            >
+              Обновить должности
+            </v-btn>
           </v-card-actions>
         </v-card>
       </v-col>
@@ -287,6 +295,63 @@
         </v-card>
       </v-col>
     </v-row>
+
+    <!-- Диалог обновления должностей -->
+    <v-dialog v-model="showUpdatePositionsDialog" max-width="600">
+      <v-card>
+        <v-card-title>Обновить должности сотрудников</v-card-title>
+        <v-card-text>
+          <v-alert type="info" variant="tonal" density="compact" class="mb-3">
+            Загрузите Excel файл с колонками: ФИО, Таб.номер, Подразделение, Должность.
+            Система найдёт существующих сотрудников и обновит их должности.
+            Новые сотрудники НЕ будут созданы.
+          </v-alert>
+
+          <v-file-input
+            v-model="positionsFile"
+            label="Excel файл"
+            accept=".xlsx,.xls"
+            prepend-icon="mdi-file-excel"
+            show-size
+            clearable
+          ></v-file-input>
+
+          <v-alert
+            v-if="positionsResult"
+            :type="positionsResult.not_found > 0 ? 'warning' : 'success'"
+            class="mt-3"
+          >
+            <div>✅ Обновлено должностей: <b>{{ positionsResult.updated }}</b></div>
+            <div v-if="positionsResult.not_found > 0">
+              ⚠️ Не найдено: <b>{{ positionsResult.not_found }}</b>
+            </div>
+            <div v-if="positionsResult.not_found_list && positionsResult.not_found_list.length" class="mt-2">
+              <b>Не найденные сотрудники:</b>
+              <ul class="mb-0">
+                <li v-for="(item, idx) in positionsResult.not_found_list" :key="idx">{{ item }}</li>
+              </ul>
+            </div>
+          </v-alert>
+
+          <v-alert v-if="positionsError" type="error" class="mt-3">
+            {{ positionsError }}
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="closePositionsDialog">Закрыть</v-btn>
+          <v-btn
+            color="orange"
+            prepend-icon="mdi-upload"
+            :loading="positionsLoading"
+            :disabled="!positionsFile"
+            @click="uploadPositions"
+          >
+            Обновить
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>
 
@@ -448,5 +513,43 @@ async function loadUnrecognizedNames() {
   } catch (error) {
     console.error('Ошибка загрузки нераспознанных:', error)
   }
+}
+
+// Обновление должностей существующих сотрудников из Excel
+const showUpdatePositionsDialog = ref(false)
+const positionsFile = ref(null)
+const positionsLoading = ref(false)
+const positionsResult = ref(null)
+const positionsError = ref('')
+
+async function uploadPositions() {
+  const file = extractFile(positionsFile.value)
+  if (!file) return
+
+  positionsLoading.value = true
+  positionsResult.value = null
+  positionsError.value = ''
+
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const { data } = await api.post('/import/update-positions', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+
+    positionsResult.value = data
+  } catch (e) {
+    positionsError.value = e.response?.data?.detail || 'Ошибка обновления должностей'
+  } finally {
+    positionsLoading.value = false
+  }
+}
+
+function closePositionsDialog() {
+  showUpdatePositionsDialog.value = false
+  positionsFile.value = null
+  positionsResult.value = null
+  positionsError.value = ''
 }
 </script>

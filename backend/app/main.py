@@ -15,6 +15,7 @@ from app.api.company_settings import router as company_settings_router
 from app.api.documents import router as documents_router
 from app.api.dismissal_notes import router as dismissal_notes_router
 from app.api.user_print_settings import router as user_print_settings_router
+from app.api.import_positions import router as import_positions_router
 from app.init_data import seed
 from app.init_db import ensure_columns
 
@@ -62,6 +63,7 @@ app.include_router(company_settings_router)
 app.include_router(documents_router)
 app.include_router(dismissal_notes_router)
 app.include_router(user_print_settings_router)
+app.include_router(import_positions_router)
 
 @app.get("/health")
 async def health_check():
