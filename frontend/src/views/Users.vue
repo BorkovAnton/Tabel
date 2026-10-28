@@ -46,9 +46,44 @@
                           :disabled="!!editing" placeholder="napr. ivanov" />
           </div>
           <div class="form-field mb-3">
-            <div class="field-label">ФИО</div>
-            <v-text-field v-model="form.full_name" variant="solo" density="compact" flat hide-details
-                          placeholder="Иванов Иван Иванович" />
+            <div class="field-label">Сотрудник (ФИО)</div>
+            <v-autocomplete
+              v-model="selectedEmployeeId"
+              :items="allEmployees"
+              item-title="full_name"
+              item-value="id"
+              variant="solo"
+              density="compact"
+              flat
+              hide-details="auto"
+              clearable
+              :filter="employeeFilter"
+              :loading="employeesLoading"
+              placeholder="Начните вводить ФИО для поиска..."
+              prepend-inner-icon="mdi-magnify"
+              @update:model-value="onEmployeeSelected"
+              @update:search="onEmployeeSearch"
+            >
+              <template #item="{ props, item }">
+                <v-list-item v-bind="props">
+                  <template #prepend>
+                    <span style="font-weight: 500;">{{ item.raw.full_name }}</span>
+                  </template>
+                  <template #append>
+                    <span v-if="item.raw.tab_number" style="font-size: 0.8rem; color: #666;">
+                      Таб. {{ item.raw.tab_number }}
+                    </span>
+                  </template>
+                </v-list-item>
+              </template>
+              <template #no-data>
+                <v-list-item title="Сотрудник не найден. Введите ФИО вручную." />
+              </template>
+            </v-autocomplete>
+            <!-- Если сотрудника нет в списке — можно ввести ФИО вручную -->
+            <v-text-field v-if="!selectedEmployeeId" v-model="form.full_name" variant="solo"
+                          density="compact" flat hide-details class="mt-2"
+                          placeholder="Или введите ФИО вручную" />
           </div>
           <div class="form-field mb-3">
             <div class="field-label">{{ editing ? 'Новый пароль (оставьте пустым, чтобы не менять)' : 'Пароль' }}</div>
@@ -152,6 +187,85 @@ const tabOptions = [
 const emptyForm = () => ({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false, deptIds: [], allTabs: true, permissions: [] })
 const form = ref(emptyForm())
 
+// ✅ Выбор сотрудника из справочника вместо ручного ввода ФИО
+const allEmployees = ref([])
+const employeesLoaded = ref(false)
+const employeesLoading = ref(false)
+const selectedEmployeeId = ref(null)
+let employeeSearchTimer = null
+
+// Нормализация для поиска (нижний регистр + Ё->Е)
+const normSearch = s => String(s ?? '').toLowerCase().replace(/ё/g, 'е')
+
+async function loadEmployees() {
+  if (employeesLoaded.value) return
+  employeesLoading.value = true
+  try {
+    const { data } = await api.get('/employees/', { params: { limit: 3000 } })
+    allEmployees.value = Array.isArray(data) ? data : []
+    employeesLoaded.value = true
+  } catch (e) {
+    console.error('Ошибка загрузки сотрудников:', e)
+    allEmployees.value = []
+  } finally {
+    employeesLoading.value = false
+  }
+}
+
+// Поиск по подстроке (ФИО / табельный номер / подразделение) с нормализацией Ё->Е, максимум 50 совпадений
+const employeeFilter = (items, query) => {
+  if (!query || !query.trim()) return items.slice(0, 50)
+  const q = normSearch(query)
+  return items.filter(e =>
+    normSearch(e.full_name).includes(q) ||
+    normSearch(String(e.tab_number ?? '')).includes(q) ||
+    normSearch(e.department_name || '').includes(q)
+  ).slice(0, 50)
+}
+
+// Обработчик поиска: при необходимости дозагружает справочник сотрудников (сам поиск — локальный, debounce в v-autocomplete встроен)
+function onEmployeeSearch(query) {
+  clearTimeout(employeeSearchTimer)
+  if (!query || query.trim().length < 2) return
+  employeeSearchTimer = setTimeout(() => {
+    if (!employeesLoaded.value) loadEmployees()
+  }, 300)
+}
+
+// При выборе сотрудника автоматически заполняем поля формы
+function onEmployeeSelected(employeeId) {
+  if (!employeeId) {
+    // Сброс выбора — можно ввести ФИО вручную
+    form.value.full_name = ''
+    form.value.tab_number = ''
+    form.value.position = ''
+    form.value.department_id = null
+    return
+  }
+  const emp = allEmployees.value.find(e => e.id === employeeId)
+  if (emp) {
+    form.value.full_name = emp.full_name
+    form.value.tab_number = emp.tab_number || ''
+    form.value.position = emp.position || ''
+    form.value.department_id = emp.department_id || null
+  }
+}
+
+// Попытаться найти пользователя среди сотрудников (по ФИО или таб. номеру) и выбрать его заранее
+function preselectEmployee(fullName) {
+  selectedEmployeeId.value = null
+  if (!fullName) return
+  const norm = normSearch(fullName)
+  const emp = allEmployees.value.find(e => normSearch(e.full_name) === norm)
+  if (emp) {
+    selectedEmployeeId.value = emp.id
+    form.value.full_name = emp.full_name
+    form.value.tab_number = emp.tab_number || ''
+    form.value.position = emp.position || ''
+    form.value.department_id = emp.department_id || null
+  }
+}
+
 async function loadDepartments() {
   try {
     // полный список доступен только администратору (этот экран и так только для него)
@@ -190,7 +304,9 @@ function openCreate() {
   dialogError.value = ''
   allDepartments.value = false
   form.value = emptyForm()
+  selectedEmployeeId.value = null
   loadDepartments()
+  loadEmployees()
   dialog.value = true
 }
 
@@ -216,6 +332,8 @@ function openEdit(item) {
   allDepartments.value = !!item.all_departments
   loadDepartments()
   dialog.value = true
+  // ✅ Загружаем сотрудников и пытаемся найти соответствие (по ФИО) для предварительного выбора
+  loadEmployees().then(() => preselectEmployee(item.full_name))
 }
 
 async function saveUser() {
@@ -233,11 +351,17 @@ async function saveUser() {
       payload.username = undefined
       delete payload.deptIds
       delete payload.allTabs
+      delete payload.tab_number
+      delete payload.position
+      delete payload.department_id
       await api.put(`/users/with-roles/${editing.value.id}`, payload)
     } else {
       const payload = { ...form.value, allowed_departments: allowed, permissions }
       delete payload.deptIds
       delete payload.allTabs
+      delete payload.tab_number
+      delete payload.position
+      delete payload.department_id
       await api.post('/users/with-roles', payload)
     }
     dialog.value = false
