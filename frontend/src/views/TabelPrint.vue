@@ -919,8 +919,8 @@ onBeforeUnmount(() => {
 .creator-position {
   font-size: 11px;
   font-weight: normal;
-  margin-bottom: 30px;  /* Место для росписи */
-  min-height: 30px;
+  margin-bottom: 2px;  /* Без лишнего пробела между должностью и строкой росписи */
+  line-height: 1.2;
 }
 
 .creator-sign-line {
