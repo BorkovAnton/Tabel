@@ -69,3 +69,39 @@ def ensure_columns() -> None:
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"))
                 print(f"[migrate] {table}.{column} added")
+
+        # ─── ЭТАП 2: миграция данных — заполняем role по старым булевым флагам ───
+        # Идемпотентна: можно запускать многократно, старые поля не изменяются.
+        _sync_user_roles(conn, engine)
+
+
+ROLE_SYNC_SQL = """
+    UPDATE users SET role = CASE
+        WHEN is_admin = TRUE THEN 'admin'
+        WHEN is_hr = TRUE THEN 'hr'
+        WHEN is_inspector = TRUE THEN 'inspector'
+        ELSE 'user'
+    END
+"""
+
+
+def _sync_user_roles(conn, engine) -> None:
+    """Заполняет users.role на основе старых флагов (ЭТАП 2).
+
+    Выполняется только если в таблице users есть колонки role и все три
+    старых флага. Идемпотентна: повторный запуск лишь переписывает те же
+    значения. Булевы поля не читаются для записи и не изменяются.
+    Приоритет ролей: admin > hr > inspector > user.
+    """
+    insp = inspect(engine)
+    if not insp.has_table("users"):
+        return
+    user_cols = {c["name"] for c in insp.get_columns("users")}
+    required = {"role", "is_admin", "is_hr", "is_inspector"}
+    if not required.issubset(user_cols):
+        return
+
+    print("[migrate] Этап 2: Обновление поля role на основе старых флагов...")
+    result = conn.execute(text(ROLE_SYNC_SQL))
+    print(f"[migrate] Этап 2: Поле role успешно обновлено "
+          f"для существующих пользователей (rows={result.rowcount})")
