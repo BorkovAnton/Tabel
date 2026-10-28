@@ -79,7 +79,7 @@ ROLE_SYNC_SQL = """
     UPDATE users SET role = CASE
         WHEN is_admin = TRUE THEN 'admin'
         WHEN is_hr = TRUE THEN 'hr'
-        WHEN is_inspector = TRUE THEN 'inspector'
+        WHEN timesheet_inspector = TRUE THEN 'inspector'
         ELSE 'user'
     END
 """
@@ -97,7 +97,7 @@ def _sync_user_roles(conn, engine) -> None:
     if not insp.has_table("users"):
         return
     user_cols = {c["name"] for c in insp.get_columns("users")}
-    required = {"role", "is_admin", "is_hr", "is_inspector"}
+    required = {"role", "is_admin", "is_hr", "timesheet_inspector"}
     if not required.issubset(user_cols):
         return
 
