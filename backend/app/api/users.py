@@ -48,6 +48,10 @@ class RoleFlags(BaseModel):
     # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику).
     # Optional: None означает «не менять» при обновлении.
     role: Optional[str] = None
+    # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных (пока не влияет на логику).
+    # Optional: None означает «не менять» при обновлении.
+    data_scope: Optional[str] = None
+    allowed_department_ids_json: Optional[List[int]] = None
     # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: bool = False            # Администратор
     is_hr: bool = False               # Кадровик
@@ -84,6 +88,15 @@ class UserWithRoles(RoleFlags):
         # Обратная совместимость: если в БД NULL — считаем 'user'
         return v if v else "user"
 
+    # ✅ НОВОЕ ПОЛЕ (этап 3): в ответе всегда строка (по умолчанию 'own')
+    data_scope: str = 'own'
+
+    @field_validator("data_scope", mode="before")
+    @classmethod
+    def _data_scope_default(cls, v):
+        # Обратная совместимость: если в БД NULL — считаем 'own'
+        return v if v else "own"
+
     allowed_department_names: List[str] = []
     all_departments: bool = False
 
@@ -97,6 +110,8 @@ class UserCreateWithRoles(RoleFlags):
     full_name: str = ""
     # ✅ НОВОЕ ПОЛЕ (этап 1): при создании всегда конкретная роль
     role: str = 'user'
+    # ✅ НОВОЕ ПОЛЕ (этап 3): при создании всегда конкретная область данных
+    data_scope: str = 'own'
 
     @field_validator("username")
     @classmethod
@@ -150,6 +165,8 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name.strip(),
         role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
+        data_scope=payload.data_scope,  # ✅ НОВОЕ ПОЛЕ (этап 3)
+        allowed_department_ids_json=payload.allowed_department_ids_json,  # ✅ НОВОЕ ПОЛЕ (этап 3)
         is_admin=payload.is_admin,
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,
@@ -177,6 +194,12 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
     new_role = data.pop("role", None)
     if new_role is not None:
         target.role = new_role
+    # ✅ НОВЫЕ ПОЛЯ (этап 3): data_scope / allowed_department_ids_json — None = «не менять»
+    new_data_scope = data.pop("data_scope", None)
+    if new_data_scope is not None:
+        target.data_scope = new_data_scope
+    if "allowed_department_ids_json" in data:
+        target.allowed_department_ids_json = data.pop("allowed_department_ids_json")
     target.is_admin = payload.is_admin
     target.is_hr = payload.is_hr
     target.timesheet_inspector = payload.timesheet_inspector

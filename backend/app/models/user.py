@@ -18,6 +18,13 @@ class User(Base):
     # старые флаги ниже продолжают работать как раньше.
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="user", server_default="user")
 
+    # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных. Пока не влияет на логику.
+    # 'own' — только свои табели, 'department' — своё подразделение,
+    # 'custom' — выбранные подразделения (id в allowed_department_ids_json),
+    # 'all' — все табели.
+    data_scope: Mapped[str] = mapped_column(String(20), nullable=False, default="own", server_default="own")
+    allowed_department_ids_json: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+
     # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)          # Администратор
     is_hr: Mapped[bool] = mapped_column(Boolean, default=False)             # Кадровик

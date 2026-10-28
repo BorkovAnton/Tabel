@@ -55,6 +55,12 @@ MIGRATIONS = [
     ("employees", "position", "VARCHAR(200) DEFAULT NULL"),
     # ✅ ЭТАП 1: единая роль пользователя (старые флаги сохранены, логика не меняется)
     ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'user'"),
+    # ─── ЭТАП 3: область видимости данных (логика пока не меняется) ───
+    # 'own' — только свои табели, 'department' — своё подразделение,
+    # 'custom' — выбранные подразделения, 'all' — все табели.
+    ("users", "data_scope", "VARCHAR(20) NOT NULL DEFAULT 'own'"),
+    # Список ID разрешённых подразделений (JSON); старое allowed_departments сохранено.
+    ("users", "allowed_department_ids_json", "JSON DEFAULT NULL"),
 ]
 
 

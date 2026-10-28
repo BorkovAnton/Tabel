@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -63,6 +63,33 @@ class UserOut(BaseModel):
         # Обратная совместимость: если в БД NULL — считаем 'user'
         return v if v else "user"
 
+    # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных (пока не влияет на логику)
+    data_scope: str = 'own'
+
+    @field_validator("data_scope", mode="before")
+    @classmethod
+    def _data_scope_default(cls, v):
+        # Обратная совместимость: если в БД NULL — считаем 'own'
+        return v if v else "own"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_adid_json_from_orm(cls, values):
+        # В модели SQLAlchemy новое поле этапа 3 называется allowed_department_ids_json.
+        # Pydantic с from_attributes читает атрибуты по именам полей схемы; имя
+        # allowed_department_ids в ORM занято property (старые права из колонки
+        # allowed_departments). Поэтому при чтении из ORM явно берём колонку
+        # allowed_department_ids_json и кладём её в dict для валидации.
+        if isinstance(values, dict):
+            return values
+        data = {}
+        for k in ("id", "username", "full_name", "role", "data_scope",
+                  "is_admin", "is_hr", "timesheet_inspector", "is_user", "is_report",
+                  "is_documents_manager", "permissions", "allowed_departments"):
+            data[k] = getattr(values, k)
+        data["allowed_department_ids_json"] = getattr(values, "allowed_department_ids_json", None)
+        return data
+
     # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: bool
     is_hr: bool
@@ -72,6 +99,7 @@ class UserOut(BaseModel):
     is_documents_manager: bool = False  # Документы и приказы
     permissions: Optional[List[str]] = None  # ✅ Права доступа к вкладкам (null — все страницы)
     allowed_departments: str = ""   # JSON-список id подразделений или "*" — все
+    allowed_department_ids_json: Optional[List[int]] = None  # ✅ НОВОЕ ПОЛЕ (этап 3)
 
     class Config:
         from_attributes = True
@@ -89,6 +117,9 @@ class UserCreate(BaseModel):
     full_name: str = ""
     # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику)
     role: str = 'user'
+    # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных (пока не влияет на логику)
+    data_scope: str = 'own'
+    allowed_department_ids: Optional[List[int]] = None
     # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: bool = False
     is_hr: bool = False
@@ -105,6 +136,9 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику)
     role: Optional[str] = None
+    # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных (пока не влияет на логику)
+    data_scope: Optional[str] = None
+    allowed_department_ids: Optional[List[int]] = None
     # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: Optional[bool] = None
     is_hr: Optional[bool] = None
@@ -149,6 +183,8 @@ def create_user(payload: UserCreate, user: User = Depends(get_current_user), db:
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name,
         role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
+        data_scope=payload.data_scope,  # ✅ НОВОЕ ПОЛЕ (этап 3)
+        allowed_department_ids_json=payload.allowed_department_ids,  # ✅ НОВОЕ ПОЛЕ (этап 3)
         is_admin=payload.is_admin,
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,
@@ -174,6 +210,9 @@ def update_user(user_id: int, payload: UserUpdate, user: User = Depends(get_curr
         target.hashed_password = hash_password(data.pop("password"))
     else:
         data.pop("password", None)
+    # ✅ ЭТАП 3: allowed_department_ids (из схемы) сохраняем в колонку allowed_department_ids_json
+    if "allowed_department_ids" in data:
+        data["allowed_department_ids_json"] = data.pop("allowed_department_ids")
     if "allowed_departments" in data:
         data["allowed_departments"] = _normalize_allowed_departments(data["allowed_departments"], db)
     if "permissions" in data and data["permissions"] is not None and not isinstance(data["permissions"], list):
