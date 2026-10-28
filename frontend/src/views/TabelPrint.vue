@@ -86,7 +86,7 @@
       <div class="signature-block signature-creator">
         <div class="creator-position">{{ createdPosition }}</div>
         <div class="creator-sign-line">
-          <span class="sign-blank">_________________</span>
+          <span class="sign-blank"></span>
           <span class="sign-name">{{ createdNameShort }}</span>
         </div>
       </div>
@@ -926,14 +926,16 @@ onBeforeUnmount(() => {
 .creator-sign-line {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 5px;  /* Минимальный отступ между линией и ФИО */
   font-size: 11px;
 }
 
 .sign-blank {
-  font-size: 11px;
-  color: #000;
-  white-space: nowrap;
+  display: inline-block;
+  width: 80px;              /* Короткая фиксированная линия для росписи */
+  height: 14px;
+  border-bottom: 1px solid #000;  /* Линия рисуется через CSS вместо подчёркиваний */
+  vertical-align: bottom;
 }
 
 .sign-name {
