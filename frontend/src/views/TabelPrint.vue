@@ -82,11 +82,13 @@
 
     <!-- Подписи внизу -->
     <div class="t13-signatures">
-      <!-- СЛЕВА: составивший табель (должность и ФИО создателя табеля) -->
-      <div class="signature-block">
-        <div class="signature-label">Составил:</div>
-        <div class="signature-position">{{ createdPosition }}</div>
-        <div class="signature-line">_____________ {{ createdNameShort }}</div>
+      <!-- СЛЕВА: составивший табель (должность, место для росписи, ФИО инициалами) -->
+      <div class="signature-block signature-creator">
+        <div class="creator-position">{{ createdPosition }}</div>
+        <div class="creator-sign-line">
+          <span class="sign-blank">_________________</span>
+          <span class="sign-name">{{ createdNameShort }}</span>
+        </div>
       </div>
 
       <!-- ЦЕНТР: начальник отдела кадров (из настроек предприятия) -->
@@ -907,6 +909,37 @@ onBeforeUnmount(() => {
 
 .signature-name {
   font-size: 10px;
+}
+
+/* Блок составившего табель — слева внизу */
+.signature-creator {
+  text-align: left;
+}
+
+.creator-position {
+  font-size: 11px;
+  font-weight: normal;
+  margin-bottom: 30px;  /* Место для росписи */
+  min-height: 30px;
+}
+
+.creator-sign-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.sign-blank {
+  font-size: 11px;
+  color: #000;
+  white-space: nowrap;
+}
+
+.sign-name {
+  font-size: 11px;
+  font-weight: normal;
+  white-space: nowrap;
 }
 
 /* ===== Печать ===== */

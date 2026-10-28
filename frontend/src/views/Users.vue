@@ -77,13 +77,9 @@
                 </v-list-item>
               </template>
               <template #no-data>
-                <v-list-item title="Сотрудник не найден. Введите ФИО вручную." />
+                <v-list-item title="Сотрудник не найден. Добавьте сотрудника в справочник." />
               </template>
             </v-autocomplete>
-            <!-- Если сотрудника нет в списке — можно ввести ФИО вручную -->
-            <v-text-field v-if="!selectedEmployeeId" v-model="form.full_name" variant="solo"
-                          density="compact" flat hide-details class="mt-2"
-                          placeholder="Или введите ФИО вручную" />
           </div>
           <div class="form-field mb-3">
             <div class="field-label">{{ editing ? 'Новый пароль (оставьте пустым, чтобы не менять)' : 'Пароль' }}</div>
@@ -235,7 +231,7 @@ function onEmployeeSearch(query) {
 // При выборе сотрудника автоматически заполняем поля формы
 function onEmployeeSelected(employeeId) {
   if (!employeeId) {
-    // Сброс выбора — можно ввести ФИО вручную
+    // Сброс выбора — ФИО очищается, сохранить форму без выбранного сотрудника нельзя
     form.value.full_name = ''
     form.value.tab_number = ''
     form.value.position = ''
@@ -337,6 +333,11 @@ function openEdit(item) {
 }
 
 async function saveUser() {
+  // Валидация: ФИО должно быть выбрано из списка сотрудников (ручной ввод убран)
+  if (!form.value.full_name || !form.value.full_name.trim()) {
+    dialogError.value = 'Выберите сотрудника из списка'
+    return
+  }
   saving.value = true
   dialogError.value = ''
   try {
