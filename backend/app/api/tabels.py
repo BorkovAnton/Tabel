@@ -88,6 +88,26 @@ def _user_display(u: Optional[User]) -> Optional[str]:
     return u.full_name or u.username
 
 
+def _user_position(db: Session, user_id: Optional[int]) -> Optional[str]:
+    """Должность пользователя: ищем запись сотрудника (employees) с таким же
+    ФИО — должность хранится именно там (в модели User поля position нет)."""
+    if not user_id:
+        return None
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return None
+    name = (user.full_name or "").strip()
+    if name:
+        # Нормализация ФИО на стороне Python (lower + collapse пробелов) —
+        # надёжнее SQL func.lower/func.trim.
+        norm = " ".join(name.lower().split())
+        for emp in db.query(Employee).filter(Employee.full_name.isnot(None)).all():
+            if " ".join((emp.full_name or "").lower().split()) == norm:
+                if (emp.position or "").strip():
+                    return emp.position.strip()
+    return None
+
+
 def approval_fields(tabel: Tabel) -> dict:
     """Общие поля согласования для TabelOut/TabelDetailOut."""
     return {
@@ -173,6 +193,7 @@ class TabelDetailOut(BaseModel):
     # ─── Согласование табеля ───
     created_by: Optional[int] = None
     created_by_name: Optional[str] = None
+    created_by_position: Optional[str] = None  # должность составившего табель (для печати Т-13)
     created_at: Optional[str] = None
     hr_approved: bool = False
     hr_approved_by: Optional[int] = None
@@ -530,6 +551,9 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
         entries=entries,
         documents=documents_brief,
         created_at=tabel.created_at.isoformat() if tabel.created_at else None,
+        # Должность составившего табель (для подписи в печатной форме Т-13):
+        # создатель, либо ответственный, если created_by не задан.
+        created_by_position=_user_position(db, tabel.author_id),
         can_edit=can_edit,
         edit_reason=edit_reason,
         **approval_fields(tabel),

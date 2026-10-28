@@ -82,22 +82,23 @@
 
     <!-- Подписи внизу -->
     <div class="t13-signatures">
+      <!-- СЛЕВА: составивший табель (должность и ФИО создателя табеля) -->
       <div class="signature-block">
-        <div class="signature-label">Начальник участка заготовок и комплектации изделий</div>
-        <div class="signature-line">_____________</div>
-        <div class="signature-name">В.Г. Шпакова</div>
+        <div class="signature-label">Составил:</div>
+        <div class="signature-position">{{ createdPosition }}</div>
+        <div class="signature-line">_____________ {{ createdNameShort }}</div>
       </div>
 
+      <!-- ЦЕНТР: начальник отдела кадров (из настроек предприятия) -->
       <div class="signature-block">
         <div class="signature-label">Начальник отдела кадров</div>
-        <div class="signature-line">_____________</div>
-        <div class="signature-name">Н.Д. Бубнова</div>
+        <div class="signature-line">_____________ {{ hrManagerName || '_________________' }}</div>
       </div>
 
+      <!-- СПРАВА: специалист службы безопасности (из настроек предприятия) -->
       <div class="signature-block">
         <div class="signature-label">Специалист по безопасности</div>
-        <div class="signature-line">_____________</div>
-        <div class="signature-name">Д.И. Скриган</div>
+        <div class="signature-line">_____________ {{ securitySpecialistName || '_________________' }}</div>
       </div>
     </div>
 
@@ -198,6 +199,30 @@ const settings = ref({})
 const companyName = computed(() => settings.value.company_name || 'ООО "ПОЛСПО"')
 const directorName = computed(() => settings.value.director_name || 'Д.Г. Щербицкий')
 const directorPosition = computed(() => settings.value.director_position || 'Генеральный директор')
+
+// ===== ПОДПИСИ ВНИЗУ Т-13 =====
+// Слева — составивший табель: должность и ФИО создателя (из ответа GET /tabels/{id}:
+// created_by_name / created_by_position). Если должность не указана — «Должность не
+// указана», если создатель не найден — прочерк.
+const createdPosition = computed(() => {
+  const p = (tabel.value?.created_by_position || '').trim()
+  return p || 'Должность не указана'
+})
+const createdNameShort = computed(() => {
+  const short = formatShortName(tabel.value?.created_by_name)
+  return short || '_________________'
+})
+// Начальник отдела кадров и специалист СБ — из настроек предприятия
+// (GET /company-settings/: hr_manager_name / security_specialist_name),
+// иначе нейтральные значения по умолчанию.
+const hrManagerName = computed(() => {
+  const s = settings.value
+  return s.hr_manager_name || s.hr_manager_full_name || 'Н.Д. Бубнова'
+})
+const securitySpecialistName = computed(() => {
+  const s = settings.value
+  return s.security_specialist_name || s.security_specialist_full_name || 'Д.И. Скриган'
+})
 
 const weekendSet = computed(() => new Set(tabel.value?.weekend_days || []))
 const holidaySet = computed(() => new Set(tabel.value?.holiday_days || []))
@@ -870,6 +895,14 @@ onBeforeUnmount(() => {
 
 .signature-line {
   font-size: 10px;
+}
+
+/* Должность составившего табель (подпись слева внизу) */
+.signature-position {
+  font-size: 10px;
+  font-style: italic;
+  color: #333;
+  margin-bottom: 3px;
 }
 
 .signature-name {
