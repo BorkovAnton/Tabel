@@ -106,9 +106,17 @@ router.beforeEach((to) => {
     const pagePath = to.path === '/tabels' || to.path.startsWith('/tabels/') ? '/tabels' : to.path
     const isPublicPage = to.name === 'Login' || to.name === 'Home'
     if (!isPublicPage && !auth.hasPermission(pagePath)) {
-      const firstAvailable = auth.user.permissions.find(p => p !== '/') || '/tabels'
-      if (firstAvailable === to.path) return true
-      return firstAvailable
+      // ✅ УМНЫЙ РЕДИРЕКТ: на первую доступную страницу из прав (иначе на '/' или '/tabels').
+      // Защита от «пинг-понга»: если целевая страница тоже недоступна — оставляем на месте,
+      // чтобы переход не зациклился и спиннер не завис.
+      const candidates = [
+        ...auth.user.permissions.filter(p => typeof p === 'string' && p !== '/login'),
+        '/',
+        '/tabels'
+      ]
+      const target = candidates.find(p => auth.hasPermission(p))
+      if (!target || target === to.path) return true
+      return target
     }
   }
   if (to.name === 'Home' && !token) {

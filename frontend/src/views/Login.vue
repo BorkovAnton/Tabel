@@ -63,16 +63,31 @@ async function doLogin() {
   loading.value = true
   try {
     await auth.login(username.value.trim(), password.value)
-    // УМНЫЙ РЕДИРЕКТ: возвращаемся туда, откуда пришёл пользователь (?redirect=...),
-    // иначе — на список табелей.
-    let redirectPath = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-    if (!redirectPath || redirectPath.startsWith('/login')) redirectPath = '/tabels'
-    router.push(redirectPath)
+
+    // ✅ УМНЫЙ РЕДИРЕКТ: проверяем права ДО перехода, чтобы не зависнуть
+    // на заблокированной роутером странице.
+    // 1) Если пользователь пришёл сюда по редиректу с конкретной страницы
+    //    (?redirect=...) и имеет на неё права — возвращаем его обратно.
+    const requested = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    if (requested && !requested.startsWith('/login') && auth.hasPermission(requested)) {
+      return router.push(requested)
+    }
+    // 2) Иначе — на первую доступную страницу из прав пользователя
+    //    (учитывая админа и пользователей без permissions).
+    const target = auth.firstAvailablePage()
+    if (target) {
+      return router.push(target)
+    }
+    // 3) Прав нет вообще — понятное сообщение вместо бесконечной загрузки.
+    error.value = 'У вашей учетной записи нет доступа ни к одному разделу. Обратитесь к администратору.'
+    auth.logout() // Сбрасываем сессию, чтобы не застрять на экране загрузки
   } catch (e) {
+    console.error(e)
     error.value = e.response?.status === 401
       ? 'Неверный логин или пароль'
       : 'Ошибка сервера. Попробуйте ещё раз.'
   } finally {
+    // ✅ ГАРАНТИРОВАННО останавливаем спиннер в любом случае
     loading.value = false
   }
 }

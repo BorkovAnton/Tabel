@@ -67,17 +67,33 @@ export const auth = reactive({
   },
 
   async login(username, password) {
-    const form = new URLSearchParams()
-    form.append('username', username)
-    form.append('password', password)
-    const { data } = await api.post('/auth/login', form, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    })
-    this.token = data.access_token
-    this.user = data.user
-    localStorage.setItem('token', data.access_token)
-    localStorage.setItem('user', JSON.stringify(data.user))
-    return data.user
+    try {
+      const form = new URLSearchParams()
+      form.append('username', username)
+      form.append('password', password)
+      const { data } = await api.post('/auth/login', form, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      })
+      this.token = data.access_token
+      this.user = data.user
+      localStorage.setItem('token', data.access_token)
+      localStorage.setItem('user', JSON.stringify(data.user))
+      return data.user
+    } catch (error) {
+      console.error('Ошибка входа:', error)
+      // Пробрасываем ошибку, чтобы компонент Login мог её обработать и остановить спиннер
+      throw error
+    }
+  },
+
+  // ✅ Первая доступная пользователю страница (для умного редиректа после входа).
+  // Правила совпадают с hasPermission: админ — любая, пустые permissions — '/tabels'.
+  firstAvailablePage() {
+    if (!this.user) return null
+    if (this.user.is_admin) return '/tabels'
+    const perms = this.user.permissions
+    if (!Array.isArray(perms) || perms.length === 0) return '/tabels'
+    return perms[0] || null
   },
 
   logout() {
