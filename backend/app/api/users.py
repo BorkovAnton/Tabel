@@ -210,6 +210,10 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
         permissions=_normalize_permissions(payload.permissions),  # ✅ НОВОЕ ПОЛЕ
         allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
     )
+    # ✅ ЭТАП 7: безопасный дефолт — если задана роль, но is_user явно не включён,
+    # автоматически ставим is_user = True (старые части кода зависят от этого поля)
+    if obj.role and not obj.is_user:
+        obj.is_user = True
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -248,6 +252,11 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
     target.is_user = payload.is_user
     target.is_report = payload.is_report
     target.is_documents_manager = payload.is_documents_manager
+    # ✅ ЭТАП 7: безопасный дефолт — если роль задана (не 'none'), а is_user не включён,
+    # автоматически ставим is_user = True, чтобы старые части кода не ломались
+    effective_role = new_role if new_role is not None else target.role
+    if effective_role and effective_role != 'none' and not target.is_user:
+        target.is_user = True
     # ✅ НОВОЕ: обновление прав доступа к вкладкам (None — все страницы)
     target.permissions = _normalize_permissions(payload.permissions)
     target.allowed_departments = _normalize_allowed_departments(payload.allowed_departments, db)
