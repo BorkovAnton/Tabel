@@ -1,7 +1,11 @@
 import json
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator, model_validator, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from typing import List, Optional, Union
 
@@ -10,6 +14,8 @@ from app.core.security import hash_password, require_admin
 from app.database import get_db
 from app.models.department import Department
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -20,6 +26,53 @@ ALLOWED_PAGE_KEYS = {
     "/hours-report", "/departments", "/schedules", "/settings", "/dismissal-notes",
     "/documents", "/users", "/time-codes",
 }
+
+# ✅ FIX 422: допустимые ключи ролей и областей видимости данных.
+# Фронтенд должен присылать именно ключ ('admin', 'hr', ...), а не отображаемое имя.
+# Валидаторы ниже также терпимо принимают отображаемые русские имена (обратная совместимость).
+ALLOWED_ROLE_KEYS = {"none", "user", "manager", "hr", "inspector", "accountant", "admin"}
+ROLE_LABEL_TO_KEY = {
+    "пользователь (только свои)": "user",
+    "пользователь": "user",
+    "начальник участка": "manager",
+    "кадровик": "hr",
+    "инспектор табелей": "inspector",
+    "бухгалтер": "accountant",
+    "администратор": "admin",
+}
+ALLOWED_DATA_SCOPE_KEYS = {"own", "department", "custom", "all"}
+DATA_SCOPE_LABEL_TO_KEY = {
+    "только свои табели": "own",
+    "своё подразделение": "department",
+    "выбранные подразделения": "custom",
+    "все подразделения": "all",
+}
+
+
+def _validation_detail(exc: RequestValidationError) -> str:
+    """Человекочитаемое описание ошибок валидации для клиента и логов."""
+    parts = []
+    for err in exc.errors():
+        loc = ".".join(str(x) for x in err.get("loc", ()) if x not in ("body",))
+        parts.append(f"{loc or '<тело>'}: {err.get('msg')}")
+    return "; ".join(parts) or "Ошибка валидации запроса"
+
+
+async def _log_validation_error(request: Request, exc: RequestValidationError):
+    """✅ FIX 422: при ошибке валидации логируем точное тело запроса и причину.
+
+    FastAPI по умолчанию возвращает 422 без попадания в код endpoint'а — этот
+    обработчик router-level позволяет увидеть в логах бэкенда, ЧТО ИМЕННО
+    прислал фронтенд и на каком поле сломалась валидация.
+    """
+    body_raw = await request.body()
+    logger.error(
+        "422 Unprocessable Entity: %s %s | ошибки валидации: %s | тело запроса: %s",
+        request.method, request.url.path, _validation_detail(exc),
+        body_raw.decode("utf-8", errors="replace"),
+    )
+    # Возвращаем стандартный ответ 422 с человекочитаемым описанием в detail.
+    return JSONResponse(status_code=422, content={"detail": _validation_detail(exc)})
 
 
 def _normalize_permissions(raw) -> Optional[List[str]]:
@@ -92,6 +145,64 @@ class RoleFlags(BaseModel):
         if isinstance(v, list):
             return json.dumps([int(x) for x in v])
         return str(v)
+
+    # ✅ FIX 422: терпимая нормализация роли — принимаем ключ ('admin', 'hr', ...),
+    # отображаемое имя ('Администратор', 'Кадровик', ...) или пустое значение.
+    # Неизвестное значение -> 'user' (безопасный дефолт вместо падения с 422).
+    @field_validator("role", mode="before")
+    @classmethod
+    def _normalize_role(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        if not s or s == "none":
+            return "none" if s == "none" else None
+        if s in ALLOWED_ROLE_KEYS:
+            return s
+        mapped = ROLE_LABEL_TO_KEY.get(s)
+        if mapped:
+            logger.warning("role прислана отображаемым именем %r — нормализовано в %r", v, mapped)
+            return mapped
+        logger.warning("Неизвестная роль %r — использован безопасный дефолт 'user'", v)
+        return "user"
+
+    # ✅ FIX 422: аналогично для data_scope; неизвестное значение -> 'own'.
+    @field_validator("data_scope", mode="before")
+    @classmethod
+    def _normalize_data_scope(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip().lower()
+        if not s:
+            return None
+        if s in ALLOWED_DATA_SCOPE_KEYS:
+            return s
+        mapped = DATA_SCOPE_LABEL_TO_KEY.get(s)
+        if mapped:
+            logger.warning("data_scope прислано отображаемым именем %r — нормализовано в %r", v, mapped)
+            return mapped
+        logger.warning("Неизвестный data_scope %r — использован безопасный дефолт 'own'", v)
+        return "own"
+
+    # ✅ FIX 422: если фронтенд прислал id подразделений строками ("1","2"),
+    # конвертируем в int; нечисловые значения отбрасываем, а не роняем запрос с 422.
+    @field_validator("allowed_department_ids", "allowed_department_ids_json", mode="before")
+    @classmethod
+    def _normalize_dept_ids(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, (str, int)):
+            v = [v]
+        if isinstance(v, list):
+            out = []
+            for x in v:
+                try:
+                    out.append(int(x))
+                except (TypeError, ValueError):
+                    logger.warning("Отброшено нечисловое значение id подразделения: %r", x)
+            return out
+        logger.warning("Некорректный формат allowed_department_ids: %r — сброшено в []", v)
+        return []
 
 
 class UserWithRoles(RoleFlags):
@@ -184,40 +295,55 @@ def list_users_with_roles(db: Session = Depends(get_db),
 def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(get_db),
                            user: User = Depends(require_admin)):
     """Добавление пользователя с ролями — только для Администратора."""
-    username = payload.username.strip()
-    if db.query(User).filter(User.username == username).first():
-        raise HTTPException(status_code=400, detail=f"Логин «{username}» уже существует")
-    obj = User(
-        username=username,
-        hashed_password=hash_password(payload.password),
-        full_name=payload.full_name.strip(),
-        role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
-        data_scope=payload.data_scope,  # ✅ НОВОЕ ПОЛЕ (этап 3)
-        allowed_department_ids_json=payload.allowed_department_ids_json,  # ✅ НОВОЕ ПОЛЕ (этап 3)
-        # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (None -> False при создании)
-        can_approve=payload.can_approve or False,
-        can_edit_references=payload.can_edit_references or False,
-        can_view_salary=payload.can_view_salary or False,
-        can_import=payload.can_import or False,
-        can_manage_users=payload.can_manage_users or False,
-        can_view_all_tabels=payload.can_view_all_tabels or False,
-        is_admin=payload.is_admin,
-        is_hr=payload.is_hr,
-        timesheet_inspector=payload.timesheet_inspector,
-        is_user=payload.is_user,
-        is_report=payload.is_report,
-        is_documents_manager=payload.is_documents_manager,
-        permissions=_normalize_permissions(payload.permissions),  # ✅ НОВОЕ ПОЛЕ
-        allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
-    )
-    # ✅ ЭТАП 7: безопасный дефолт — если задана роль, но is_user явно не включён,
-    # автоматически ставим is_user = True (старые части кода зависят от этого поля)
-    if obj.role and not obj.is_user:
-        obj.is_user = True
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-    return _to_with_roles(obj, _dept_names_map(db))
+    logger.info("Создание пользователя: admin_id=%s, данные запроса: %s",
+                user.id, json.dumps(payload.model_dump(), ensure_ascii=False, default=str))
+    try:
+        username = payload.username.strip()
+        if db.query(User).filter(User.username == username).first():
+            raise HTTPException(status_code=400, detail=f"Логин «{username}» уже существует")
+        obj = User(
+            username=username,
+            hashed_password=hash_password(payload.password),
+            full_name=payload.full_name.strip(),
+            role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
+            data_scope=payload.data_scope,  # ✅ НОВОЕ ПОЛЕ (этап 3)
+            allowed_department_ids_json=payload.allowed_department_ids_json,  # ✅ НОВОЕ ПОЛЕ (этап 3)
+            # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (None -> False при создании)
+            can_approve=payload.can_approve or False,
+            can_edit_references=payload.can_edit_references or False,
+            can_view_salary=payload.can_view_salary or False,
+            can_import=payload.can_import or False,
+            can_manage_users=payload.can_manage_users or False,
+            can_view_all_tabels=payload.can_view_all_tabels or False,
+            is_admin=payload.is_admin,
+            is_hr=payload.is_hr,
+            timesheet_inspector=payload.timesheet_inspector,
+            is_user=payload.is_user,
+            is_report=payload.is_report,
+            is_documents_manager=payload.is_documents_manager,
+            permissions=_normalize_permissions(payload.permissions),  # ✅ НОВОЕ ПОЛЕ
+            allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
+        )
+        # ✅ ЭТАП 7: безопасный дефолт — если задана роль, но is_user явно не включён,
+        # автоматически ставим is_user = True (старые части кода зависят от этого поля)
+        if obj.role and not obj.is_user:
+            obj.is_user = True
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+        return _to_with_roles(obj, _dept_names_map(db))
+    except HTTPException:
+        # 400 и т.п. отдаём клиенту как есть, но пишем в лог, что именно прислал фронтенд
+        logger.error("Ошибка при создании пользователя %r: получены данные: %s",
+                     payload.username,
+                     json.dumps(payload.model_dump(), ensure_ascii=False, default=str))
+        raise
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error("Ошибка БД при создании пользователя: %s", e)
+        logger.error("Полученные данные: %s",
+                     json.dumps(payload.model_dump(), ensure_ascii=False, default=str))
+        raise HTTPException(status_code=400, detail=f"Ошибка сохранения пользователя: {e}")
 
 
 @router.put("/with-roles/{user_id}", response_model=UserWithRoles)

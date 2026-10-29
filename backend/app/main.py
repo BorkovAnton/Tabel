@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 import sys as _sys
 import os as _os
@@ -10,6 +11,7 @@ from app.api.schedules import router as schedules_router
 from app.api.auth import router as auth_router
 from app.api.time_codes import router as time_codes_router
 from app.api.users import router as users_router
+from app.api.users import _log_validation_error
 from app.api.tabels import router as tabels_router
 from app.api.holidays import router as holidays_router
 from app.api.reports import router as reports_router
@@ -93,6 +95,10 @@ app.include_router(documents_router)
 app.include_router(dismissal_notes_router)
 app.include_router(user_print_settings_router)
 app.include_router(import_positions_router)
+
+# ✅ FIX 422: логируем тело запроса и причины при ошибках валидации Pydantic,
+# чтобы в логах бэкенда было видно, что именно присылает фронтенд.
+app.add_exception_handler(RequestValidationError, _log_validation_error)
 
 @app.get("/health")
 async def health_check():
