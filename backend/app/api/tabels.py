@@ -11,8 +11,10 @@ from typing import Dict, List, Optional
 from app.core.security import (
     allowed_department_id_set,
     can_manage_tabels,
+    can_see_all_tabels,
     check_department_access,
     get_current_user,
+    is_admin_user,
     require_admin,
     require_timesheet_inspector,
 )
@@ -255,17 +257,21 @@ def _get_tabel_or_404(tabel_id: int, db: Session) -> Tabel:
 
 
 def _can_access(tabel: Tabel, user: User, db: Session = None) -> bool:
-    if (user.is_admin or user.is_hr) and user.timesheet_inspector:
+    # ЭТАП 9: инспектор/владелец табеля определяется новыми полями role/can_*
+    from app.core.security import is_inspector
+
+    if is_inspector(user):
         return True
     # Назначенные роли согласования видят все табели (чтобы проверять и редактировать)
     if db is not None:
         settings = _get_settings(db)
         if settings and user.id in (settings.hr_manager_id, settings.security_specialist_id):
             return True
-    # Роль «Пользователь»: доступ к табелям, где он ответственный
-    if user.is_user and tabel.responsible_user_id == user.id:
+    # Любой пользователь с доступом к управлению табелями: доступ к табелям,
+    # где он ответственный
+    if tabel.responsible_user_id == user.id:
         return True
-    return tabel.responsible_user_id == user.id
+    return False
 
 
 def _get_settings(db: Session) -> CompanySetting:
@@ -295,7 +301,7 @@ def get_tabel_edit_access(tabel: Tabel, user: User, db: Session):
         if is_security:
             return True, ""
         # Администратор может разблокировать табель, сняв проверку СБ
-        if user.is_admin:
+        if is_admin_user(user):
             return True, ""
         return False, ("Табель проверен службой безопасности — "
                        "редактировать может только специалист СБ")
@@ -407,8 +413,9 @@ def list_tabels(
     Администратор/кадровик с ролью «Инспектор табелей» видит все табели.
     """
     q = db.query(Tabel)
-    is_inspector = (user.is_admin or user.is_hr) and user.timesheet_inspector
-    if not is_inspector:
+    # ЭТАП 9: все табели видят роли admin/hr/inspector/accountant, scope 'all'
+    # или флаг can_view_all_tabels; остальные — только свои (ответственный).
+    if not can_see_all_tabels(user):
         q = q.filter(Tabel.responsible_user_id == user.id)
     if year:
         q = q.filter(Tabel.year == year)

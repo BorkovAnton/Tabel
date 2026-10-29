@@ -33,10 +33,14 @@ def seed(db: Session) -> None:
     # Пользователи по умолчанию (создаются только если таблица users пуста)
     if db.query(User).count() == 0:
         for username, password, full_name, is_admin, is_hr, inspector, is_user in DEFAULT_USERS:
+            # ЭТАП 9: новым пользователям сразу назначаем роль (основной признак прав);
+            # старые флаги — как тихий резерв до Этапа 10.
+            role = "admin" if is_admin else ("hr" if is_hr else ("inspector" if inspector else "user"))
             db.add(User(
                 username=username,
                 full_name=full_name,
                 hashed_password=hash_password(password),
+                role=role,
                 is_admin=is_admin,
                 is_hr=is_hr,
                 timesheet_inspector=inspector,
@@ -49,7 +53,11 @@ def seed(db: Session) -> None:
     fix_admin = db.query(User).filter(User.username == "admin").first()
     if fix_admin and not fix_admin.is_admin:
         fix_admin.is_admin = True
-        db.commit()
+    # ЭТАП 9: основной признак — новая роль; чиним её и у существующих админов,
+    # созданных до введения поля role (role мог остаться 'user' при is_admin=True).
+    if fix_admin and fix_admin.role != "admin":
+        fix_admin.role = "admin"
+    db.commit()
 
     # Миграция: добавляем недостающие колонки в существующие таблицы (SQLite / PostgreSQL)
     _ensure_columns()

@@ -291,6 +291,25 @@ def list_users_with_roles(db: Session = Depends(get_db),
             for u in db.query(User).order_by(User.username).all()]
 
 
+def _sync_legacy_flags(obj: User, role: str | None) -> None:
+    """ЭТАП 9: фронтенд больше НЕ отправляет старые булевы поля.
+
+    При сохранении пользователя синхронизируем тихий резерв (старые колонки)
+    с новой ролью, чтобы любые оставшиеся потребители старых флагов
+    (и обратный откат на Этапе 10) работали согласованно.
+    Старые колонки и поля схем не удаляем — удаление на Этапе 10.
+    """
+    if not role or role == "none":
+        return
+    obj.is_admin = role == "admin"
+    obj.is_hr = role == "hr"
+    obj.timesheet_inspector = role == "inspector"
+    obj.is_report = role in ("accountant", "hr", "admin")
+    obj.is_documents_manager = role in ("hr", "admin")
+    # базовый доступ есть у любой назначенной роли
+    obj.is_user = True
+
+
 @router.post("/with-roles", response_model=UserWithRoles)
 def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(get_db),
                            user: User = Depends(require_admin)):
@@ -328,6 +347,8 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
         # автоматически ставим is_user = True (старые части кода зависят от этого поля)
         if obj.role and not obj.is_user:
             obj.is_user = True
+        # ✅ ЭТАП 9: синхронизация старых флагов с новой ролью (тихий резерв)
+        _sync_legacy_flags(obj, obj.role)
         db.add(obj)
         db.commit()
         db.refresh(obj)
@@ -383,6 +404,10 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
     effective_role = new_role if new_role is not None else target.role
     if effective_role and effective_role != 'none' and not target.is_user:
         target.is_user = True
+    # ✅ ЭТАП 9: синхронизация старых флагов с новой ролью (тихий резерв).
+    # Фронтенд больше не отправляет старые чекбоксы — значения из payload
+    # игнорируем, колонки приводим в соответствие с role.
+    _sync_legacy_flags(target, effective_role)
     # ✅ НОВОЕ: обновление прав доступа к вкладкам (None — все страницы)
     target.permissions = _normalize_permissions(payload.permissions)
     target.allowed_departments = _normalize_allowed_departments(payload.allowed_departments, db)

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.security import allowed_department_id_set, get_current_user
+from app.core.security import allowed_department_id_set, get_current_user, has_role
 from app.database import get_db
 from app.models.department import Department
 from app.models.tabel import Tabel, TabelEntry
@@ -26,9 +26,9 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 
 
 def require_report_user(user: User = Depends(get_current_user)) -> User:
-    """Доступ к сводному отчёту: роль «Отчёт», а также администратор/кадровик."""
-    if not (user.is_report or user.is_admin or user.is_hr):
-        raise HTTPException(status_code=403, detail="Требуется роль «Отчёт»")
+    """Доступ к сводному отчёту (ЭТАП 9): роли accountant/hr/admin."""
+    if not has_role(user, "accountant", "hr", "admin"):
+        raise HTTPException(status_code=403, detail="Требуется роль «Бухгалтер», «Кадровик» или «Администратор»")
     return user
 
 

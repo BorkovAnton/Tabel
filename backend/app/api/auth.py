@@ -10,6 +10,7 @@ from app.core.security import (
     hash_password,
     verify_password,
     can_manage_tabels,
+    is_admin_user,
 )
 from app.database import get_db
 from app.models.department import Department
@@ -198,7 +199,7 @@ def list_users(user: User = Depends(get_current_user), db: Session = Depends(get
 
 @router.post("/users", response_model=UserOut)
 def create_user(payload: UserCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not user.is_admin:
+    if not is_admin_user(user):
         raise HTTPException(status_code=403, detail="Только администратор")
     if db.query(User).filter(User.username == payload.username).first():
         raise HTTPException(status_code=400, detail="Логин уже существует")
@@ -231,7 +232,7 @@ def create_user(payload: UserCreate, user: User = Depends(get_current_user), db:
 
 @router.put("/users/{user_id}", response_model=UserOut)
 def update_user(user_id: int, payload: UserUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not user.is_admin:
+    if not is_admin_user(user):
         raise HTTPException(status_code=403, detail="Только администратор")
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
