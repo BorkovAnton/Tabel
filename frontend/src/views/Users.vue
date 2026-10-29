@@ -135,7 +135,14 @@
 
           <div class="d-flex" style="gap: 8px;">
             <v-select :menu-icon="null" v-model="form.role" :items="roleOptions" density="compact" variant="outlined" hide-details
-                      clearable label="Основная роль" item-title="title" item-value="value" class="flex-grow-1 mb-3" />
+                      clearable label="Основная роль" item-title="title" item-value="value" class="flex-grow-1 mb-3">
+              <!-- ✅ ЭТАП 6: кнопка «Применить рекомендуемые права для этой роли» -->
+              <template #append>
+                <v-btn icon="mdi-refresh" size="small" variant="text"
+                       title="Применить рекомендуемые права для этой роли"
+                       @click="applyRolePermissions" />
+              </template>
+            </v-select>
             <v-select :menu-icon="null" v-model="form.data_scope" :items="dataScopeOptions" density="compact" variant="outlined" hide-details
                       clearable label="Область видимости данных" item-title="title" item-value="value" class="flex-grow-1 mb-3" />
           </div>
@@ -143,6 +150,12 @@
           <v-select v-if="form.data_scope === 'custom'" :menu-icon="null" v-model="form.allowed_department_ids" :items="deptItems"
                     multiple chips closable-chips density="compact" variant="outlined" hide-details clearable
                     label="Выберите подразделения (расширенные)" item-title="title" item-value="value" class="mb-3" />
+
+          <!-- ✅ ЭТАП 6: визуальная индикация автозаполнения прав -->
+          <v-alert v-if="showAutoFillAlert" type="success" density="compact" variant="tonal" class="mb-3" closable
+                   @click:close="showAutoFillAlert = false">
+            ✅ Специальные права автоматически настроены для роли "{{ form.role }}"
+          </v-alert>
 
           <div class="field-label mb-1">Специальные возможности:</div>
           <div class="d-flex flex-column" style="gap: 2px;">
@@ -167,7 +180,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch, nextTick } from 'vue'
 import api from '../api'
 import CustomEditButton from '../components/CustomEditButton.vue'
 import CustomDeleteButton from '../components/CustomDeleteButton.vue'
@@ -225,6 +238,60 @@ const dataScopeOptions = [
   { title: 'Выбранные подразделения', value: 'custom' },
   { title: 'Все подразделения', value: 'all' }
 ]
+
+// ✅ ЭТАП 6: Рекомендуемые настройки специальных прав для каждой роли
+const ROLE_PERMISSIONS = {
+  admin: {
+    can_approve: true, can_edit_references: true, can_view_salary: true,
+    can_import: true, can_manage_users: true, can_view_all_tabels: true
+  },
+  hr: {
+    can_approve: true, can_edit_references: true, can_view_salary: true,
+    can_import: true, can_manage_users: false, can_view_all_tabels: true
+  },
+  manager: {
+    can_approve: true, can_edit_references: false, can_view_salary: false,
+    can_import: false, can_manage_users: false, can_view_all_tabels: false
+  },
+  inspector: {
+    can_approve: false, can_edit_references: false, can_view_salary: false,
+    can_import: false, can_manage_users: false, can_view_all_tabels: true // Только просмотр
+  },
+  accountant: {
+    can_approve: false, can_edit_references: false, can_view_salary: true, // Бухгалтеру нужны зарплатные данные
+    can_import: false, can_manage_users: false, can_view_all_tabels: true
+  },
+  user: {
+    can_approve: false, can_edit_references: false, can_view_salary: false,
+    can_import: false, can_manage_users: false, can_view_all_tabels: false
+  }
+}
+
+const CAN_KEYS = ['can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels']
+
+// Служебные флаги: автозаполнение не должно срабатывать при открытии формы на редактирование
+let suppressRoleWatch = false
+let autoFillHideTimer = null
+const showAutoFillAlert = ref(false)
+
+// Применить рекомендуемые права текущей роли к форме (кнопка mdi-refresh)
+function applyRolePermissions() {
+  const perms = ROLE_PERMISSIONS[form.value.role] || ROLE_PERMISSIONS.user
+  for (const key of CAN_KEYS) form.value[key] = !!perms[key]
+  // Визуальная обратная связь — показать alert и скрыть через 5 секунд
+  showAutoFillAlert.value = true
+  clearTimeout(autoFillHideTimer)
+  autoFillHideTimer = setTimeout(() => { showAutoFillAlert.value = false }, 5000)
+}
+
+// Watcher на роль — автоматически проставляет специальные права при ЯВНОМ изменении роли.
+// При загрузке существующего пользователя (openEdit) срабатывание подавляется,
+// чтобы не затирать права, сохранённые ранее; после этого админ может менять галочки вручную.
+watch(() => form.value.role, (newRole, oldRole) => {
+  if (suppressRoleWatch) return
+  if (!newRole || newRole === oldRole) return
+  applyRolePermissions()
+})
 
 // Ключи новых полей (этапы 1, 3, 4) — используются при загрузке/сохранении формы
 const EXT_PERM_KEYS = ['role', 'data_scope', 'allowed_department_ids',
@@ -368,6 +435,8 @@ function openCreate() {
 function openEdit(item) {
   editing.value = item
   dialogError.value = ''
+  // ✅ ЭТАП 6: подавляем watcher на роль, чтобы загрузка сохранённых прав не затиралась автозаполнением
+  suppressRoleWatch = true
   const perms = Array.isArray(item.permissions) ? item.permissions.slice() : null
   form.value = {
     username: item.username,
@@ -399,6 +468,8 @@ function openEdit(item) {
   dialog.value = true
   // ✅ Загружаем сотрудников и пытаемся найти соответствие (по ФИО) для предварительного выбора
   loadEmployees().then(() => preselectEmployee(item.full_name))
+  // Разрешаем watcher'у снова работать после того, как форма заполнена сохранёнными значениями
+  nextTick(() => { suppressRoleWatch = false })
 }
 
 async function saveUser() {
