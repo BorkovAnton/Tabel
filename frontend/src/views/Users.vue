@@ -269,6 +269,22 @@ const ROLE_PERMISSIONS = {
 
 const CAN_KEYS = ['can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels']
 
+// Ключи новых полей (этапы 1, 3, 4) — используются при загрузке/сохранении формы
+const EXT_PERM_KEYS = ['role', 'data_scope', 'allowed_department_ids',
+  'can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels']
+
+const emptyForm = () => ({
+  username: '', full_name: '', password: '',
+  // Старые поля (остаются для совместимости)
+  is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false,
+  deptIds: [], allTabs: true, permissions: [],
+  // ✅ ЭТАП 5: новые поля (этапы 1–4)
+  role: 'user', data_scope: 'own', allowed_department_ids: [],
+  can_approve: false, can_edit_references: false, can_view_salary: false,
+  can_import: false, can_manage_users: false, can_view_all_tabels: false
+})
+const form = ref(emptyForm())
+
 // Служебные флаги: автозаполнение не должно срабатывать при открытии формы на редактирование
 let suppressRoleWatch = false
 let autoFillHideTimer = null
@@ -287,27 +303,12 @@ function applyRolePermissions() {
 // Watcher на роль — автоматически проставляет специальные права при ЯВНОМ изменении роли.
 // При загрузке существующего пользователя (openEdit) срабатывание подавляется,
 // чтобы не затирать права, сохранённые ранее; после этого админ может менять галочки вручную.
+// ВАЖНО: объявлен ПОСЛЕ const form (исправление "Cannot access 'form' before initialization").
 watch(() => form.value.role, (newRole, oldRole) => {
   if (suppressRoleWatch) return
   if (!newRole || newRole === oldRole) return
   applyRolePermissions()
 })
-
-// Ключи новых полей (этапы 1, 3, 4) — используются при загрузке/сохранении формы
-const EXT_PERM_KEYS = ['role', 'data_scope', 'allowed_department_ids',
-  'can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels']
-
-const emptyForm = () => ({
-  username: '', full_name: '', password: '',
-  // Старые поля (остаются для совместимости)
-  is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false,
-  deptIds: [], allTabs: true, permissions: [],
-  // ✅ ЭТАП 5: новые поля (этапы 1–4)
-  role: 'user', data_scope: 'own', allowed_department_ids: [],
-  can_approve: false, can_edit_references: false, can_view_salary: false,
-  can_import: false, can_manage_users: false, can_view_all_tabels: false
-})
-const form = ref(emptyForm())
 
 // ✅ Выбор сотрудника из справочника вместо ручного ввода ФИО
 const allEmployees = ref([])
