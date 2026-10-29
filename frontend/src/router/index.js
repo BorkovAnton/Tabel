@@ -77,36 +77,21 @@ router.beforeEach((to) => {
     // Редирект на логин с сохранением целевого пути для возврата после входа
     return { name: 'Login', query: { redirect: to.fullPath } }
   }
-  if (to.meta.requiresAdmin) {
-    // ✅ ЭТАП 8: только новая система — роль 'admin'
-    if (!auth.isAdmin) {
-      return { name: 'Tabels' }
-    }
-  }
-  if (to.meta.requiresDocuments) {
-    // ✅ ЭТАП 8: доступ по новой роли/правам (см. auth.isDocumentsManager)
-    if (!auth.isDocumentsManager) {
-      return { name: 'Tabels' }
-    }
-  }
-  if (to.meta.requiresReport) {
-    // ✅ ЭТАП 8: доступ по новой роли/правам (см. auth.isReport)
-    if (!auth.isReport) {
-      return { name: 'Tabels' }
-    }
-  }
-  // ✅ Система управления доступом к вкладкам: если у пользователя заданы permissions
-  // и текущая страница в них отсутствует — редирект на первую доступную страницу.
-  // (Администраторы по роли и пользователи без permissions имеют базовый доступ.)
-  if (auth.isAuthenticated && auth.user && Array.isArray(auth.user.permissions) && auth.user.permissions.length > 0 && !auth.isAdmin) {
-    const pagePath = to.path === '/tabels' || to.path.startsWith('/tabels/') ? '/tabels' : to.path
-    const isPublicPage = to.name === 'Login' || to.name === 'Home'
-    if (!isPublicPage && !auth.hasPermission(pagePath)) {
-      // ✅ УМНЫЙ РЕДИРЕКТ: на первую доступную страницу из прав (иначе на '/' или '/tabels').
+  // ✅ ЭТАП 9.5: жёстких проверок ролей (requiresAdmin / requiresReport / requiresDocuments)
+  // больше нет — доступ к страницам определяется ИСКЛЮЧИТЕЛЬНО правами permissions
+  // через auth.hasPermission(). Если у пользователя есть право на путь — он проходит,
+  // если нет — умный редирект на первую доступную страницу.
+  if (auth.isAuthenticated && auth.user && to.name !== 'Login') {
+    // Вложенные маршруты наследуют право родительской вкладки (/tabels/12 -> /tabels)
+    const pagePath = to.path.startsWith('/tabels/') ? '/tabels' : to.path
+    if (!auth.hasPermission(pagePath)) {
+      // ✅ УМНЫЙ РЕДИРЕКТ: на первую доступную страницу из прав.
       // Защита от «пинг-понга»: если целевая страница тоже недоступна — оставляем на месте,
       // чтобы переход не зациклился и спиннер не завис.
       const candidates = [
-        ...auth.user.permissions.filter(p => typeof p === 'string' && p !== '/login'),
+        ...(Array.isArray(auth.user.permissions)
+          ? auth.user.permissions.filter(p => typeof p === 'string' && p !== '/login')
+          : []),
         '/',
         '/tabels'
       ]

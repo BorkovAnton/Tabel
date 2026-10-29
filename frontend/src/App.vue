@@ -68,37 +68,33 @@ import { auth } from './auth'
 
 const router = useRouter()
 
+// ✅ ЭТАП 9.5: меню строится ИСКЛЮЧИТЕЛЬНО на основе auth.hasPermission(path).
+// Единственные дополнительные условия — авторизация (auth: true) и спец-право
+// can_manage_users для пункта «Пользователи» (новая система can_* флагов).
 const allNavItems = [
-  { title: 'Сводка', path: '/', icon: 'mdi-view-dashboard', auth: false, everyone: true },
-  { title: 'Сотрудники', path: '/employees', icon: 'mdi-account-group', auth: false },
-  { title: 'Импорт', path: '/import', icon: 'mdi-file-import', auth: false, admin: true },
-  { title: 'Расчёт событий', path: '/turnstile-fix', icon: 'mdi-calculator', auth: false },
-  { title: 'Табель фактический', path: '/timesheet-report', icon: 'mdi-calendar-month', auth: false, userRole: true },
-  { title: 'Отчёт по часам', path: '/hours-report', icon: 'mdi-chart-box', auth: true, reportRole: true },
-  { title: 'Подразделения', path: '/departments', icon: 'mdi-office-building', auth: false },
-  { title: 'Графики', path: '/schedules', icon: 'mdi-clock-outline', auth: false },
-  { title: 'Настройки', path: '/settings', icon: 'mdi-cog', admin: true },
-  { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true, userRole: true },
-  { title: 'Увольнительные записки', path: '/dismissal-notes', icon: 'mdi-clock-alert-outline', auth: true, userRole: true },
-  { title: 'Документы', path: '/documents', icon: 'mdi-file-document-edit-outline', auth: true, documentsRole: true },
-  { title: 'Пользователи', path: '/users', icon: 'mdi-account-key', admin: true }
+  { title: 'Сводка', path: '/', icon: 'mdi-view-dashboard' },
+  { title: 'Сотрудники', path: '/employees', icon: 'mdi-account-group' },
+  { title: 'Импорт', path: '/import', icon: 'mdi-file-import', auth: true },
+  { title: 'Расчёт событий', path: '/turnstile-fix', icon: 'mdi-calculator' },
+  { title: 'Табель фактический', path: '/timesheet-report', icon: 'mdi-calendar-month' },
+  { title: 'Отчёт по часам', path: '/hours-report', icon: 'mdi-chart-box', auth: true },
+  { title: 'Подразделения', path: '/departments', icon: 'mdi-office-building' },
+  { title: 'Графики', path: '/schedules', icon: 'mdi-clock-outline' },
+  { title: 'Настройки', path: '/settings', icon: 'mdi-cog', auth: true },
+  { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true },
+  { title: 'Увольнительные записки', path: '/dismissal-notes', icon: 'mdi-clock-alert-outline', auth: true },
+  { title: 'Документы', path: '/documents', icon: 'mdi-file-document-edit-outline', auth: true },
+  { title: 'Пользователи', path: '/users', icon: 'mdi-account-key', manageUsers: true }
 ]
 
-const isManager = () => auth.isAdmin || auth.isHR || auth.isTimesheetInspector
-
 const navItems = computed(() => allNavItems.filter(i => {
+  // Пункты, требующие входа в систему
   if (i.auth && !auth.isAuthenticated) return false
-  // ✅ Система управления доступом к вкладкам: показываем только разрешённые страницы
-  // (администраторам — все; пользователя без permissions — тоже все, обратная совместимость)
-  if (!auth.hasPermission(i.path)) return false
-  if (i.admin && !auth.isAdmin) return false
-  if (i.reportRole && !auth.isReport) return false
-  if (i.documentsRole && !auth.isDocumentsManager) return false
-  // Роль «Пользователь»: из рабочих разделов доступны «Табель фактический» и «Табель»
-  if (i.userRole && auth.isUser && !isManager()) return auth.isAuthenticated
-  // Прочие сервисные разделы — только администратору/кадровику/инспектору
-  if (!i.everyone && !isManager()) return false
-  return true
+  // Спец-право новой системы: управление пользователями
+  if (i.manageUsers && !(auth.isAdmin || !!auth.user?.can_manage_users)) return false
+  // ✅ Главное условие: вкладка видна, только если есть право доступа к её пути
+  // (hasPermission: role === 'admin' — всё; иначе список permissions, '/' = все вкладки)
+  return auth.hasPermission(i.path)
 }))
 
 // На узких экранах часть пунктов уходит в меню «Ещё», чтобы ничего не пропало
