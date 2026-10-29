@@ -1,7 +1,7 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator, Field
 from sqlalchemy.orm import Session
 from typing import List, Optional, Union
 
@@ -52,6 +52,16 @@ class RoleFlags(BaseModel):
     # Optional: None означает «не менять» при обновлении.
     data_scope: Optional[str] = None
     allowed_department_ids_json: Optional[List[int]] = None
+    # ✅ ЭТАП 5: фронтенд может прислать allowed_department_ids — принимаем как алиас,
+    # чтобы форма пользователя могла сохранять список подразделений в новой JSON-колонке.
+    allowed_department_ids: Optional[List[int]] = Field(default=None)
+
+    @model_validator(mode="after")
+    def _sync_allowed_dept_alias(self):
+        if self.allowed_department_ids is not None and self.allowed_department_ids_json is None:
+            self.allowed_department_ids_json = self.allowed_department_ids
+        return self
+
     # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (пока не влияют на логику).
     # В RoleFlags — только как Optional (None = «не менять»), чтобы существующие
     # клиенты, не присылающие эти поля, не сбрасывали их в false при обновлении.
@@ -108,6 +118,14 @@ class UserWithRoles(RoleFlags):
 
     allowed_department_names: List[str] = []
     all_departments: bool = False
+
+    @model_validator(mode="after")
+    def _fill_dept_ids_alias(self):
+        # ✅ ЭТАП 5: для ответа API заполняем allowed_department_ids из новой JSON-колонки,
+        # чтобы фронтенд мог редактировать список подразделений новой системы.
+        if self.allowed_department_ids is None:
+            self.allowed_department_ids = list(self.allowed_department_ids_json or [])
+        return self
 
     class Config:
         from_attributes = True
@@ -216,6 +234,8 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
         target.data_scope = new_data_scope
     if "allowed_department_ids_json" in data:
         target.allowed_department_ids_json = data.pop("allowed_department_ids_json")
+    # ✅ ЭТАП 5: алиас из фронтенда не является колонкой модели — убираем, чтобы не попасть в setattr ниже
+    data.pop("allowed_department_ids", None)
     # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права — None = «не менять»,
     # чтобы старые клиенты, не присылающие эти поля, ничего не сбросили.
     for _perm_field in ("can_approve", "can_edit_references", "can_view_salary",

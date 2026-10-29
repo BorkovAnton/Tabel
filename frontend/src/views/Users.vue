@@ -125,6 +125,35 @@
             </template>
           </div>
 
+          <!-- ✅ ЭТАП 5: Расширенные настройки прав (новая система). Старые чекбоксы выше продолжают работать -->
+          <v-divider class="my-4" />
+          <div class="field-label mb-1">🛡️ Расширенные настройки прав (Новая система)</div>
+          <v-alert type="info" variant="tonal" density="compact" class="mb-3">
+            Эти настройки дополняют старые права. Старые галочки выше продолжают работать.
+            Пока новая логика не активирована — поля сохраняются и будут использоваться в следующих этапах.
+          </v-alert>
+
+          <div class="d-flex" style="gap: 8px;">
+            <v-select :menu-icon="null" v-model="form.role" :items="roleOptions" density="compact" variant="outlined" hide-details
+                      clearable label="Основная роль" item-title="title" item-value="value" class="flex-grow-1 mb-3" />
+            <v-select :menu-icon="null" v-model="form.data_scope" :items="dataScopeOptions" density="compact" variant="outlined" hide-details
+                      clearable label="Область видимости данных" item-title="title" item-value="value" class="flex-grow-1 mb-3" />
+          </div>
+
+          <v-select v-if="form.data_scope === 'custom'" :menu-icon="null" v-model="form.allowed_department_ids" :items="deptItems"
+                    multiple chips closable-chips density="compact" variant="outlined" hide-details clearable
+                    label="Выберите подразделения (расширенные)" item-title="title" item-value="value" class="mb-3" />
+
+          <div class="field-label mb-1">Специальные возможности:</div>
+          <div class="d-flex flex-column" style="gap: 2px;">
+            <v-checkbox v-model="form.can_approve" label="Согласовывать табели" density="compact" hide-details color="#2d5a3d" />
+            <v-checkbox v-model="form.can_edit_references" label="Редактировать справочники" density="compact" hide-details color="#2d5a3d" />
+            <v-checkbox v-model="form.can_view_salary" label="Видеть зарплатные данные (часы по тарифу)" density="compact" hide-details color="#2d5a3d" />
+            <v-checkbox v-model="form.can_import" label="Импортировать данные" density="compact" hide-details color="#2d5a3d" />
+            <v-checkbox v-model="form.can_manage_users" label="Управлять пользователями" density="compact" hide-details color="#2d5a3d" />
+            <v-checkbox v-model="form.can_view_all_tabels" label="Просмотр всех табелей (без редактирования)" density="compact" hide-details color="warning" />
+          </div>
+
           <v-alert v-if="dialogError" type="error" density="compact" variant="tonal" class="mt-3">{{ dialogError }}</v-alert>
         </v-card-text>
         <v-card-actions>
@@ -180,7 +209,37 @@ const tabOptions = [
   { title: 'Пользователи', value: '/users' }
 ]
 
-const emptyForm = () => ({ username: '', full_name: '', password: '', is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false, deptIds: [], allTabs: true, permissions: [] })
+// ✅ ЭТАП 5: варианты для новой системы прав (role / data_scope)
+const roleOptions = [
+  { title: 'Пользователь (Только свои)', value: 'user' },
+  { title: 'Начальник участка', value: 'manager' },
+  { title: 'Кадровик', value: 'hr' },
+  { title: 'Инспектор табелей', value: 'inspector' },
+  { title: 'Бухгалтер', value: 'accountant' },
+  { title: 'Администратор', value: 'admin' }
+]
+
+const dataScopeOptions = [
+  { title: 'Только свои табели', value: 'own' },
+  { title: 'Своё подразделение', value: 'department' },
+  { title: 'Выбранные подразделения', value: 'custom' },
+  { title: 'Все подразделения', value: 'all' }
+]
+
+// Ключи новых полей (этапы 1, 3, 4) — используются при загрузке/сохранении формы
+const EXT_PERM_KEYS = ['role', 'data_scope', 'allowed_department_ids',
+  'can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels']
+
+const emptyForm = () => ({
+  username: '', full_name: '', password: '',
+  // Старые поля (остаются для совместимости)
+  is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false,
+  deptIds: [], allTabs: true, permissions: [],
+  // ✅ ЭТАП 5: новые поля (этапы 1–4)
+  role: 'user', data_scope: 'own', allowed_department_ids: [],
+  can_approve: false, can_edit_references: false, can_view_salary: false,
+  can_import: false, can_manage_users: false, can_view_all_tabels: false
+})
 const form = ref(emptyForm())
 
 // ✅ Выбор сотрудника из справочника вместо ручного ввода ФИО
@@ -324,6 +383,16 @@ function openEdit(item) {
     // ✅ null/пусто — все вкладки; список — только выбранные
     allTabs: !perms || perms.length === 0,
     permissions: perms || [],
+    // ✅ ЭТАП 5: новые поля из ответа API (с безопасными значениями по умолчанию)
+    role: item.role || 'user',
+    data_scope: item.data_scope || 'own',
+    allowed_department_ids: Array.isArray(item.allowed_department_ids) ? item.allowed_department_ids.slice() : [],
+    can_approve: !!item.can_approve,
+    can_edit_references: !!item.can_edit_references,
+    can_view_salary: !!item.can_view_salary,
+    can_import: !!item.can_import,
+    can_manage_users: !!item.can_manage_users,
+    can_view_all_tabels: !!item.can_view_all_tabels,
   }
   allDepartments.value = !!item.all_departments
   loadDepartments()
