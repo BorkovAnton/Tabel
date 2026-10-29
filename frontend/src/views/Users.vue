@@ -10,13 +10,9 @@
 
     <v-data-table :headers="headers" :items="users" :loading="loading" hover class="rounded-lg">
       <template #item.roles="{ item }">
-        <v-chip v-if="item.is_admin" size="x-small" color="deep-purple" variant="toned" class="mr-1">Администратор</v-chip>
-        <v-chip v-if="item.is_hr" size="x-small" color="teal" variant="toned" class="mr-1">Кадровик</v-chip>
-        <v-chip v-if="item.timesheet_inspector" size="x-small" color="orange" variant="toned" class="mr-1">Инспектор табелей</v-chip>
-        <v-chip v-if="item.is_user" size="x-small" color="blue" variant="toned" class="mr-1">Пользователь</v-chip>
-        <v-chip v-if="item.is_report" size="x-small" color="indigo" variant="toned">Отчёт</v-chip>
-        <v-chip v-if="item.is_documents_manager" size="x-small" color="brown" variant="toned">Документы</v-chip>
-        <span v-if="!item.is_admin && !item.is_hr && !item.timesheet_inspector && !item.is_user && !item.is_report && !item.is_documents_manager" class="text-grey text-caption">—</span>
+        <!-- ✅ ЭТАП 8: чип роли только по новой системе (role) -->
+        <v-chip v-if="item.role" size="x-small" :color="roleChipColor(item.role)" variant="toned" class="mr-1">{{ roleTitle(item.role) }}</v-chip>
+        <span v-if="!item.role" class="text-grey text-caption">—</span>
       </template>
       <template #item.departments="{ item }">
         <span v-if="item.all_departments" class="text-caption" style="color:#2d5a3d;">Все подразделения</span>
@@ -87,29 +83,22 @@
                           autocomplete="new-password" placeholder="Минимум 4 символа" />
           </div>
 
-          <div class="field-label mb-1">Роли</div>
-          <div class="d-flex flex-column" style="gap: 2px;">
-            <v-checkbox v-model="form.is_admin" label="Администратор" density="compact" hide-details color="deep-purple" />
-            <v-checkbox v-model="form.is_hr" label="Кадровик" density="compact" hide-details color="teal" />
-            <v-checkbox v-model="form.timesheet_inspector" label="Инспектор табелей" density="compact" hide-details color="orange" />
-            <v-checkbox v-model="form.is_user" label="Пользователь" density="compact" hide-details color="blue" hint="Доступ к «Табель фактический», «Табель», создание и заполнение табелей" persistent-hint />
-            <v-checkbox v-model="form.is_report" label="Отчёт" density="compact" hide-details color="indigo" hint="Доступ к странице «Отчёт по часам» (табель vs факт, сверхурочные)" persistent-hint />
-            <v-checkbox v-model="form.is_documents_manager" label="Документы и приказы" density="compact" hide-details color="brown" hint="Доступ к разделу «Документы и приказы»: ввод отпусков, командировок, больничных для автозаполнения табеля" persistent-hint />
-          </div>
+          <!-- ✅ ЭТАП 8: основная роль (заменяет старые чекбоксы is_admin/is_hr/...) -->
+          <div class="field-label mb-1">Основная роль</div>
+          <v-select :menu-icon="null" v-model="form.role" :items="roleOptions" density="compact" variant="outlined" hide-details
+                    item-title="title" item-value="value" class="mb-3">
+            <!-- ✅ ЭТАП 6/8: кнопка «Применить рекомендуемые права для этой роли» -->
+            <template #append>
+              <v-btn icon="mdi-refresh" size="small" variant="text"
+                     title="Применить рекомендуемые права для этой роли"
+                     @click="applyRolePermissions" />
+            </template>
+          </v-select>
 
-          <div v-if="form.is_user && !form.is_admin && !form.is_hr && !form.timesheet_inspector" class="mt-3">
-            <div class="field-label mb-1">Права на подразделения</div>
-            <v-checkbox v-model="allDepartments" label="Все подразделения" density="compact" hide-details color="blue-grey" class="mb-1" />
-            <v-select :menu-icon="null" v-if="!allDepartments" v-model="form.deptIds" :items="deptItems" multiple chips closable-chips
-                      density="compact" variant="outlined" hide-details clearable label="Выберите подразделения"
-                      item-title="title" item-value="value" />
-            <div class="text-caption text-grey mt-1">Если не выбрано ни одного подразделения — сотрудник будет недоступен в списке при создании табеля.</div>
-          </div>
-
-          <!-- ✅ НОВОЕ: доступ к вкладкам сайта -->
-          <div class="mt-4">
+          <!-- Доступ к вкладкам сайта (права из новой системы permissions) -->
+          <div class="mb-3">
             <div class="field-label mb-1">Доступ к вкладкам сайта</div>
-            <v-alert v-if="form.is_admin" type="info" variant="tonal" density="compact" class="mb-2">
+            <v-alert v-if="form.role === 'admin'" type="info" variant="tonal" density="compact" class="mb-2">
               Администратор имеет автоматический доступ ко всем вкладкам
             </v-alert>
             <template v-else>
@@ -125,31 +114,23 @@
             </template>
           </div>
 
-          <!-- ✅ ЭТАП 5: Расширенные настройки прав (новая система). Старые чекбоксы выше продолжают работать -->
+          <!-- ✅ ЭТАП 8: новая система прав — единственный источник настроек (старые чекбоксы удалены) -->
           <v-divider class="my-4" />
-          <div class="field-label mb-1">🛡️ Расширенные настройки прав (Новая система)</div>
-          <v-alert type="info" variant="tonal" density="compact" class="mb-3">
-            Эти настройки дополняют старые права. Старые галочки выше продолжают работать.
-            Пока новая логика не активирована — поля сохраняются и будут использоваться в следующих этапах.
-          </v-alert>
+          <div class="field-label mb-1">🛡️ Настройки прав доступа</div>
 
           <div class="d-flex" style="gap: 8px;">
-            <v-select :menu-icon="null" v-model="form.role" :items="roleOptions" density="compact" variant="outlined" hide-details
-                      clearable label="Основная роль" item-title="title" item-value="value" class="flex-grow-1 mb-3">
-              <!-- ✅ ЭТАП 6: кнопка «Применить рекомендуемые права для этой роли» -->
-              <template #append>
-                <v-btn icon="mdi-refresh" size="small" variant="text"
-                       title="Применить рекомендуемые права для этой роли"
-                       @click="applyRolePermissions" />
-              </template>
-            </v-select>
             <v-select :menu-icon="null" v-model="form.data_scope" :items="dataScopeOptions" density="compact" variant="outlined" hide-details
                       clearable label="Область видимости данных" item-title="title" item-value="value" class="flex-grow-1 mb-3" />
           </div>
 
-          <v-select v-if="form.data_scope === 'custom'" :menu-icon="null" v-model="form.allowed_department_ids" :items="deptItems"
-                    multiple chips closable-chips density="compact" variant="outlined" hide-details clearable
-                    label="Выберите подразделения (расширенные)" item-title="title" item-value="value" class="mb-3" />
+          <!-- Права на подразделения: единый блок при области видимости «Выбранные подразделения» -->
+          <template v-if="form.data_scope === 'custom' && form.role !== 'admin'">
+            <v-checkbox v-model="allDepartments" label="Все подразделения" density="compact" hide-details color="blue-grey" class="mb-2" />
+            <v-select v-if="!allDepartments" :menu-icon="null" v-model="form.allowed_department_ids" :items="deptItems"
+                      multiple chips closable-chips density="compact" variant="outlined" hide-details clearable
+                      label="Выберите подразделения" item-title="title" item-value="value" class="mb-2" />
+            <div class="text-caption text-grey mb-3">Если не выбрано ни одного подразделения — сотрудник будет недоступен в списке при создании табеля.</div>
+          </template>
 
           <!-- ✅ ЭТАП 6: визуальная индикация автозаполнения прав -->
           <v-alert v-if="showAutoFillAlert" type="success" density="compact" variant="tonal" class="mb-3" closable
@@ -232,6 +213,12 @@ const roleOptions = [
   { title: 'Администратор', value: 'admin' }
 ]
 
+// ✅ ЭТАП 8: отображение роли в таблице пользователей (только новая система)
+const ROLE_TITLES = Object.fromEntries(roleOptions.map(r => [r.value, r.title]))
+const ROLE_COLORS = { admin: 'deep-purple', hr: 'teal', manager: 'blue', inspector: 'orange', accountant: 'indigo', user: 'blue-grey' }
+const roleTitle = role => ROLE_TITLES[role] || role
+const roleChipColor = role => ROLE_COLORS[role] || 'grey'
+
 const dataScopeOptions = [
   { title: 'Только свои табели', value: 'own' },
   { title: 'Своё подразделение', value: 'department' },
@@ -267,18 +254,25 @@ const ROLE_PERMISSIONS = {
   }
 }
 
-const CAN_KEYS = ['can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels']
+// ✅ ЭТАП 8 (шаг 3): Рекомендуемый доступ к вкладкам (permissions) для каждой роли.
+// null / [] => «все вкладки» (allTabs = true).
+const ROLE_TAB_PERMISSIONS = {
+  admin: null,                                     // доступ ко всем вкладкам по роли
+  hr: ['/', '/tabels', '/employees', '/turnstile-fix', '/timesheet-report', '/hours-report', '/dismissal-notes', '/documents'],
+  manager: ['/tabels', '/timesheet-report'],
+  inspector: ['/tabels', '/timesheet-report', '/hours-report'],
+  accountant: ['/tabels', '/hours-report', '/timesheet-report'],
+  user: ['/tabels']
+}
 
-// Ключи новых полей (этапы 1, 3, 4) — используются при загрузке/сохранении формы
-const EXT_PERM_KEYS = ['role', 'data_scope', 'allowed_department_ids',
-  'can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels']
+const CAN_KEYS = ['can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels']
 
 const emptyForm = () => ({
   username: '', full_name: '', password: '',
-  // Старые поля (остаются для совместимости)
-  is_admin: false, is_hr: false, timesheet_inspector: false, is_user: true, is_report: false, is_documents_manager: false,
-  deptIds: [], allTabs: true, permissions: [],
-  // ✅ ЭТАП 5: новые поля (этапы 1–4)
+  allTabs: true, permissions: [],
+  // ✅ ЭТАП 8: форма использует ТОЛЬКО новую систему прав (role, data_scope, can_*, permissions).
+  // Старые булевы поля (is_admin, is_hr, timesheet_inspector, is_user, is_report,
+  // is_documents_manager) и deptIds удалены из модели формы и не отправляются на бэкенд.
   role: 'user', data_scope: 'own', allowed_department_ids: [],
   can_approve: false, can_edit_references: false, can_view_salary: false,
   can_import: false, can_manage_users: false, can_view_all_tabels: false
@@ -290,10 +284,21 @@ let suppressRoleWatch = false
 let autoFillHideTimer = null
 const showAutoFillAlert = ref(false)
 
-// Применить рекомендуемые права текущей роли к форме (кнопка mdi-refresh)
+// ✅ ЭТАП 8 (шаг 3): Применить рекомендуемые права текущей роли к форме:
+// специальные can_* флаги И доступ к вкладкам (permissions/allTabs).
 function applyRolePermissions() {
   const perms = ROLE_PERMISSIONS[form.value.role] || ROLE_PERMISSIONS.user
   for (const key of CAN_KEYS) form.value[key] = !!perms[key]
+  // ✅ ЭТАП 8: автоинициализация permissions по роли
+  // (admin — все вкладки/null, user — ['/tabels'] и т.д.)
+  const tabs = ROLE_TAB_PERMISSIONS[form.value.role] ?? null
+  if (tabs === null || tabs.length === 0) {
+    form.value.allTabs = true
+    form.value.permissions = []
+  } else {
+    form.value.allTabs = false
+    form.value.permissions = tabs.slice()
+  }
   // Визуальная обратная связь — показать alert и скрыть через 5 секунд
   showAutoFillAlert.value = true
   clearTimeout(autoFillHideTimer)
@@ -443,20 +448,16 @@ function openEdit(item) {
     username: item.username,
     full_name: item.full_name,
     password: '',
-    is_admin: item.is_admin,
-    is_hr: item.is_hr,
-    timesheet_inspector: item.timesheet_inspector,
-    is_user: item.is_user !== false,
-    is_report: !!item.is_report,
-    is_documents_manager: !!item.is_documents_manager,
-    deptIds: parseAllowed(item.allowed_departments),
     // ✅ null/пусто — все вкладки; список — только выбранные
     allTabs: !perms || perms.length === 0,
     permissions: perms || [],
-    // ✅ ЭТАП 5: новые поля из ответа API (с безопасными значениями по умолчанию)
+    // ✅ ЭТАП 8: заполняем ТОЛЬКО новые поля из ответа API (с безопасными значениями по умолчанию).
+    // Старые булевы поля (is_admin/is_hr/...) в форму больше не попадают.
     role: item.role || 'user',
     data_scope: item.data_scope || 'own',
-    allowed_department_ids: Array.isArray(item.allowed_department_ids) ? item.allowed_department_ids.slice() : [],
+    allowed_department_ids: Array.isArray(item.allowed_department_ids) && item.allowed_department_ids.length
+      ? item.allowed_department_ids.slice()
+      : parseAllowed(item.allowed_departments), // тихий фолбэк для старых данных
     can_approve: !!item.can_approve,
     can_edit_references: !!item.can_edit_references,
     can_view_salary: !!item.can_view_salary,
@@ -482,28 +483,35 @@ async function saveUser() {
   saving.value = true
   dialogError.value = ''
   try {
-    const allowed = allDepartments.value ? '*' : JSON.stringify(form.value.deptIds || [])
-    // ✅ Права к вкладкам: все вкладки -> null (обратная совместимость), иначе — выбранный список
-    const permissions = (!form.value.is_admin && !form.value.allTabs)
+    // ✅ ЭТАП 8: подразделения берутся из нового поля allowed_department_ids
+    const deptIds = form.value.allowed_department_ids || []
+    const allowed = allDepartments.value ? '*' : JSON.stringify(deptIds)
+    // ✅ Права к вкладкам: админ по роли или «все вкладки» -> null, иначе — выбранный список
+    const permissions = (form.value.role !== 'admin' && !form.value.allTabs)
       ? (form.value.permissions || [])
       : null
+    // ✅ ЭТАП 8: payload содержит ТОЛЬКО новую систему прав — старые поля не отправляются
+    const basePayload = {
+      full_name: form.value.full_name,
+      allowed_departments: allowed,
+      permissions,
+      role: form.value.role,
+      data_scope: form.value.data_scope,
+      allowed_department_ids: deptIds,
+      can_approve: form.value.can_approve,
+      can_edit_references: form.value.can_edit_references,
+      can_view_salary: form.value.can_view_salary,
+      can_import: form.value.can_import,
+      can_manage_users: form.value.can_manage_users,
+      can_view_all_tabels: form.value.can_view_all_tabels
+    }
     if (editing.value) {
-      const payload = { ...form.value, allowed_departments: allowed, permissions }
-      if (!payload.password) delete payload.password
-      payload.username = undefined
-      delete payload.deptIds
-      delete payload.allTabs
-      delete payload.tab_number
-      delete payload.position
-      delete payload.department_id
+      const payload = { ...basePayload, username: undefined }
+      if (!form.value.password) delete payload.password
+      else payload.password = form.value.password
       await api.put(`/users/with-roles/${editing.value.id}`, payload)
     } else {
-      const payload = { ...form.value, allowed_departments: allowed, permissions }
-      delete payload.deptIds
-      delete payload.allTabs
-      delete payload.tab_number
-      delete payload.position
-      delete payload.department_id
+      const payload = { ...basePayload, username: form.value.username, password: form.value.password }
       await api.post('/users/with-roles', payload)
     }
     dialog.value = false

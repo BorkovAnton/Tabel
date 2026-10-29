@@ -78,31 +78,27 @@ router.beforeEach((to) => {
     return { name: 'Login', query: { redirect: to.fullPath } }
   }
   if (to.meta.requiresAdmin) {
-    let user = null
-    try { user = JSON.parse(localStorage.getItem('user') || 'null') } catch (e) { /* noop */ }
-    if (!user || !user.is_admin) {
+    // ✅ ЭТАП 8: только новая система — роль 'admin'
+    if (!auth.isAdmin) {
       return { name: 'Tabels' }
     }
   }
   if (to.meta.requiresDocuments) {
-    let user = null
-    try { user = JSON.parse(localStorage.getItem('user') || 'null') } catch (e) { /* noop */ }
-    const ok = !!user && (user.is_documents_manager || user.is_admin || user.is_hr)
-    if (!ok) {
+    // ✅ ЭТАП 8: доступ по новой роли/правам (см. auth.isDocumentsManager)
+    if (!auth.isDocumentsManager) {
       return { name: 'Tabels' }
     }
   }
   if (to.meta.requiresReport) {
-    let user = null
-    try { user = JSON.parse(localStorage.getItem('user') || 'null') } catch (e) { /* noop */ }
-    if (!user || !(user.is_report || user.is_admin || user.is_hr)) {
+    // ✅ ЭТАП 8: доступ по новой роли/правам (см. auth.isReport)
+    if (!auth.isReport) {
       return { name: 'Tabels' }
     }
   }
   // ✅ Система управления доступом к вкладкам: если у пользователя заданы permissions
   // и текущая страница в них отсутствует — редирект на первую доступную страницу.
-  // (Администраторы и пользователи без permissions имеют доступ ко всем вкладкам.)
-  if (auth.isAuthenticated && auth.user && Array.isArray(auth.user.permissions) && auth.user.permissions.length > 0 && !auth.user.is_admin) {
+  // (Администраторы по роли и пользователи без permissions имеют базовый доступ.)
+  if (auth.isAuthenticated && auth.user && Array.isArray(auth.user.permissions) && auth.user.permissions.length > 0 && !auth.isAdmin) {
     const pagePath = to.path === '/tabels' || to.path.startsWith('/tabels/') ? '/tabels' : to.path
     const isPublicPage = to.name === 'Login' || to.name === 'Home'
     if (!isPublicPage && !auth.hasPermission(pagePath)) {

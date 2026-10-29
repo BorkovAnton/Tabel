@@ -8,78 +8,84 @@ export const auth = reactive({
   get isAuthenticated() {
     return !!this.token
   },
-  // ✅ ЭТАП 7: геттеры проверяют И старые булевы поля, И новые поля role/permissions
-  // (полная обратная совместимость со старыми пользователями).
+  // ✅ ЭТАП 8: фронтенд работает ТОЛЬКО с новой системой прав:
+  // role ('admin','hr','manager','inspector','accountant','user'),
+  // data_scope ('own','department','custom','all'), can_* флаги и permissions (пути вкладок).
+  // Старые булевы поля (is_admin, is_hr, timesheet_inspector, is_user, is_report,
+  // is_documents_manager) на фронтенде БОЛЬШЕ НЕ используются — они остались
+  // только в моделях бэкенда/БД как тихий фолбэк.
 
-  // Инспектор табелей: Администратор или Кадровик с ролью «Инспектор табелей» — видит все табели.
-  // Старое поле ИЛИ новая роль 'inspector'
+  // Только Администратор: справочник «Коды часов», пользователи и роли.
+  get isAdmin() {
+    return !!this.user && this.user.role === 'admin'
+  },
+
+  // Кадровик (администратор обладает правами кадровика).
+  get isHR() {
+    return !!this.user && (this.user.role === 'hr' || this.user.role === 'admin')
+  },
+
+  // Инспектор табелей: видит все табели (adm/hr — по умолчанию тоже).
   get isTimesheetInspector() {
     return !!this.user && (
-      ((this.user.is_admin || this.user.is_hr) && this.user.timesheet_inspector) ||
-      this.user.role === 'inspector'
+      this.user.role === 'inspector' ||
+      this.user.role === 'admin' ||
+      this.user.role === 'hr' ||
+      // спец-флаги новой системы
+      !!this.user.can_view_all_tabels
     )
   },
-  // Роль «Пользователь»: базовая роль — меню «Табель», «Табель фактический»,
-  // создание и заполнение табелей (где он ответственный).
-  // Старое поле ИЛИ наличие любой новой роли ИЛИ непустой список permissions
+
+  // Базовый доступ: любая назначенная роль.
   get isUser() {
+    return !!this.user && !!this.user.role
+  },
+
+  // Создание/удаление табелей: admin / hr / manager либо спец-право can_approve.
+  get canManageTabels() {
     return !!this.user && (
-      !!this.user.is_user ||
-      !!this.user.role ||
-      (Array.isArray(this.user.permissions) && this.user.permissions.length > 0)
+      this.user.role === 'admin' ||
+      this.user.role === 'hr' ||
+      this.user.role === 'manager' ||
+      !!this.user.can_approve
     )
   },
-  // Создание/удаление табелей: пользователь либо инспектор табелей (или спец-право can_approve)
-  get canManageTabels() {
-    return this.isUser || this.isTimesheetInspector || !!this.user?.can_approve
-  },
-  // Кадровик: старое поле ИЛИ новая роль 'hr'
-  get isHR() {
-    return !!this.user && (!!this.user.is_hr || this.user.role === 'hr')
-  },
+
   // Роль «Отчёт»: страница сводного отчёта часов (табель vs факт).
-  // Старое поле ИЛИ роль accountant/hr/admin
   get isReport() {
     return !!this.user && (
-      !!this.user.is_report ||
-      !!this.user.is_admin || !!this.user.is_hr ||
       this.user.role === 'admin' ||
       this.user.role === 'hr' ||
       this.user.role === 'accountant'
     )
   },
+
   // Роль «Документы и приказы»: ввод событий сотрудников (отпуска, командировки, больничные).
-  // Старое поле ИЛИ роль hr/admin
   get isDocumentsManager() {
     return !!this.user && (
-      !!this.user.is_documents_manager ||
-      !!this.user.is_admin || !!this.user.is_hr ||
       this.user.role === 'admin' ||
       this.user.role === 'hr'
     )
   },
-  // Только Администратор: справочник «Коды часов», пользователи и роли.
-  // Старое поле ИЛИ новая роль 'admin'
-  get isAdmin() {
-    return !!this.user && (!!this.user.is_admin || this.user.role === 'admin')
+
+  // Область видимости данных (new system): 'own' | 'department' | 'custom' | 'all'.
+  get dataScope() {
+    return this.user?.data_scope || 'own'
   },
 
-  // ✅ Права доступа к вкладкам сайта.
+  // ✅ Права доступа к вкладкам сайта (только новая система).
   // Ключ вкладки = путь страницы ('/', '/tabels', '/employees', ...).
   // Правила:
-  //  - администратор имеет доступ ко всем вкладкам;
-  //  - если permissions не заданы (null/пусто) — доступны все вкладки
-  //    (обратная совместимость со старыми пользователями);
-  //  - иначе — только вкладки из списка permissions.
+  //  - администратор (role === 'admin') имеет доступ ко всем вкладкам;
+  //  - если permissions не заданы (null/пусто), но есть роль — базовый доступ к табелям;
+  //  - иначе — только вкладки из списка permissions ('/' даёт доступ ко всем вкладкам).
   hasPermission(path) {
     if (!this.user) return false
-    // Администратор: старое поле ИЛИ новая роль — доступ ко всем вкладкам
-    if (this.user.is_admin || this.user.role === 'admin') return true
+    if (this.user.role === 'admin') return true
     const perms = this.user.permissions
     if (!Array.isArray(perms) || perms.length === 0) {
-      // Если permissions пустые, но есть базовая роль, даём доступ к табелям по умолчанию
-      if (this.user.role) return path === '/tabels' || path === '/'
-      return true // Обратная совместимость со старыми пользователями без ролей
+      // Если permissions пуст, но есть роль, даём базовый доступ к табелям
+      return path === '/tabels' || path === '/' || path === ''
     }
     return perms.includes(path) || perms.includes('/')
   },
@@ -118,20 +124,19 @@ export const auth = reactive({
   },
 
   // ✅ Первая доступная пользователю страница (для умного редиректа после входа).
-  // Правила совпадают с hasPermission: админ — любая, пустые permissions — '/tabels'.
+  // ЭТАП 8: опирается только на новую систему (role / permissions).
   firstAvailablePage() {
     if (!this.user) return null
-    // Администратор: старое поле ИЛИ новая роль — доступ ко всем вкладкам
-    if (this.user.is_admin || this.user.role === 'admin') return '/tabels'
+    // Администратор по роли — доступ ко всем вкладкам
+    if (this.user.role === 'admin') return '/tabels'
     const perms = this.user.permissions
     if (!Array.isArray(perms) || perms.length === 0) {
-      // Пустые permissions + новая роль — по умолчанию табели (совпадает с hasPermission)
-      if (this.user.role) return '/tabels'
-      return '/tabels' // Обратная совместимость: старые пользователи видят все вкладки
+      // Пустые permissions — базовая страница по умолчанию (совпадает с hasPermission)
+      return '/tabels'
     }
     // Первая реально доступная страница ('/' даёт доступ ко всем вкладкам)
     if (perms.includes('/')) return '/tabels'
-    return perms[0] || '/tabels'
+    return perms.find(p => typeof p === 'string' && p !== '/login') || '/tabels'
   },
 
   logout() {
