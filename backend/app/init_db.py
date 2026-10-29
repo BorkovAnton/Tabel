@@ -72,20 +72,86 @@ MIGRATIONS = [
 
 
 def ensure_columns() -> None:
-    engine = create_engine(DATABASE_URL)
-    inspector = inspect(engine)
+    """Добавляет недостающие колонки из MIGRATIONS и выполняет миграции данных.
+
+    Диагностика (почему раньше «миграции не срабатывали»):
+    1. INSPECTCache-проблема: один Inspector кэширует результат has_table() и
+       get_columns() на весь свой жизненный цикл. Теперь для каждой таблицы
+       создаётся НОВЫЙ inspector сразу перед проверкой — метаданные всегда свежие.
+    2. Движок переиспользуется от app.database.engine (общий пул соединений),
+       а не создаётся новый — меньше подключений и нет рассинхрона состояния.
+    3. Все шаги логируются с префиксом [migrate], включая COMMIT транзакции,
+       чтобы по логам было видно, где именно обрывается процесс.
+    """
+    print("[migrate] === НАЧАЛО МИГРАЦИИ ===")
+    print(f"[migrate] DATABASE_URL: {DATABASE_URL[:50]}...")
+
+    # Переиспользуем общий движок приложения (app.database.engine)
+    from app.database import engine
+    dialect = engine.url.get_dialect().name  # 'postgresql' / 'sqlite' / ...
+    supports_if_not_exists = dialect.startswith("postgresql")
+    with engine.connect() as probe:
+        tables = inspect(probe).get_table_names()
+    print(f"[migrate] Подключение к БД установлено (dialect: {dialect})")
+    print(f"[migrate] Таблицы в БД: {sorted(tables)}")
+    print(f"[migrate] Всего миграций в списке: {len(MIGRATIONS)}")
+
+    added = 0
+    skipped_exists = 0
+    skipped_no_table = 0
+    errors = []
+
     with engine.begin() as conn:
+        print("[migrate] Транзакция открыта (engine.begin(), авто-COMMIT при выходе)")
+
         for table, column, coltype in MIGRATIONS:
-            if not inspector.has_table(table):
+            print(f"[migrate] Проверяем {table}.{column}...")
+
+            # ВАЖНО: новый inspector на каждую проверку — иначе SQLAlchemy
+            # отдаёт закэшированный список таблиц/колонок (кэш живёт в Inspector).
+            insp = inspect(conn)
+            if not insp.has_table(table):
+                print(f"[migrate]   Таблица {table} не существует, пропускаем")
+                skipped_no_table += 1
                 continue
-            existing = {c["name"] for c in inspector.get_columns(table)}
+
+            try:
+                existing = {c["name"] for c in insp.get_columns(table)}
+            except Exception as e:  # таблица могла появиться позже списка
+                print(f"[migrate]   ❌ Не удалось прочитать колонки {table}: {e}")
+                errors.append((table, column, str(e)))
+                continue
+
             if column not in existing:
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"))
-                print(f"[migrate] {table}.{column} added")
+                print(f"[migrate]   Колонка {column} отсутствует, добавляем...")
+                try:
+                    if supports_if_not_exists:
+                        # PostgreSQL 9.6+: двойная защита от гонки/рассинхрона
+                        conn.execute(text(
+                            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {coltype}"
+                        ))
+                    else:
+                        # SQLite и прочие не поддерживают IF NOT EXISTS в ALTER TABLE
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"))
+                    print(f"[migrate]   ✅ {table}.{column} добавлена")
+                    added += 1
+                except Exception as e2:
+                    print(f"[migrate]   ❌ Ошибка при добавлении {table}.{column}: {e2}")
+                    errors.append((table, column, str(e2)))
+                    raise
+            else:
+                print(f"[migrate]   Колонка {column} уже существует")
+                skipped_exists += 1
 
         # ─── ЭТАП 2: миграция данных — заполняем role по старым булевым флагам ───
         # Идемпотентна: можно запускать многократно, старые поля не изменяются.
-        _sync_user_roles(conn, engine)
+        _sync_user_roles(conn)
+
+    # Выход из engine.begin() = COMMIT (если не было исключений).
+    print(f"[migrate] Транзакция зафиксирована (COMMIT выполнен)")
+    print(f"[migrate] ИТОГ: добавлено={added}, уже существовало={skipped_exists}, "
+          f"нет таблицы={skipped_no_table}, ошибок={len(errors)}")
+    print("[migrate] === МИГРАЦИЯ ЗАВЕРШЕНА ===")
 
 
 ROLE_SYNC_SQL = """
@@ -98,7 +164,7 @@ ROLE_SYNC_SQL = """
 """
 
 
-def _sync_user_roles(conn, engine) -> None:
+def _sync_user_roles(conn) -> None:
     """Заполняет users.role на основе старых флагов (ЭТАП 2).
 
     Выполняется только если в таблице users есть колонки role и все три
@@ -106,15 +172,28 @@ def _sync_user_roles(conn, engine) -> None:
     значения. Булевы поля не читаются для записи и не изменяются.
     Приоритет ролей: admin > hr > inspector > user.
     """
-    insp = inspect(engine)
+    # Новый inspector на каждое обращение — без кэша метаданных.
+    insp = inspect(conn)
     if not insp.has_table("users"):
+        print("[migrate] Этап 2: таблица users отсутствует, пропускаем")
         return
     user_cols = {c["name"] for c in insp.get_columns("users")}
     required = {"role", "is_admin", "is_hr", "timesheet_inspector"}
-    if not required.issubset(user_cols):
+    missing = required - user_cols
+    if missing:
+        print(f"[migrate] Этап 2: нет обязательных колонок {sorted(missing)}, пропускаем")
         return
 
-    print("[migrate] Этап 2: Обновление поля role на основе старых флагов...")
-    result = conn.execute(text(ROLE_SYNC_SQL))
-    print(f"[migrate] Этап 2: Поле role успешно обновлено "
-          f"для существующих пользователей (rows={result.rowcount})")
+    needs_update = conn.execute(text(
+        "SELECT COUNT(*) FROM users "
+        "WHERE role = 'user' AND (is_admin = TRUE OR is_hr = TRUE OR timesheet_inspector = TRUE)"
+    )).scalar()
+    print(f"[migrate] Пользователей для обновления role: {needs_update}")
+
+    if needs_update and needs_update > 0:
+        print("[migrate] Этап 2: Обновление поля role на основе старых флагов...")
+        result = conn.execute(text(ROLE_SYNC_SQL))
+        print(f"[migrate] ✅ Поле role успешно обновлено "
+              f"для существующих пользователей (rows={result.rowcount})")
+    else:
+        print("[migrate] Этап 2: role уже синхронизирован, UPDATE не требуется")

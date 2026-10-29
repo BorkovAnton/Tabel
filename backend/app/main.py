@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import sys as _sys
+import os as _os
 from app.database import engine, Base  # ← Теперь engine здесь есть!
 from app.api import employees, turnstile, timesheet
 from app.api.turnstile_fix import router as turnstile_fix_router
@@ -19,9 +21,36 @@ from app.api.import_positions import router as import_positions_router
 from app.init_data import seed
 from app.init_db import ensure_columns
 
+# ✅ ПРОВЕРКА ВЕРСИИ КОДА (диагностика: контейнер использует актуальный код?)
+print("=" * 60)
+print("BACKEND STARTING")
+print("=" * 60)
+print(f"Python version: {_sys.version}")
+try:
+    import fastapi as _fastapi
+    print(f"FastAPI version: {_fastapi.__version__}")
+except Exception as _e:  # pragma: no cover
+    print(f"FastAPI version: НЕ ОПРЕДЕЛЕНА ({_e})")
+import app.main as _self_mod
+print(f"main.py location: {_self_mod.__file__}")
+_mpy = _os.path.join(_os.path.dirname(_self_mod.__file__), "init_db.py")
+try:
+    import hashlib as _hashlib
+    with open(_mpy, "rb") as _f:
+        _digest = _hashlib.sha256(_f.read()).hexdigest()[:12]
+    print(f"init_db.py sha256: {_digest} (если хэш меняется после git pull — код в контейнере актуален)")
+except Exception as _e:  # pragma: no cover
+    print(f"init_db.py hash: не удалось вычислить ({_e})")
+print("=" * 60)
+
 # Авто-миграция: добавляем недостающие колонки в старые базы (до create_all)
+print("[main] Вызываем ensure_columns()...")
 ensure_columns()
+print("[main] ensure_columns() завершена")
+
+print("[main] Вызываем Base.metadata.create_all()...")
 Base.metadata.create_all(bind=engine)
+print("[main] Base.metadata.create_all() завершена")
 
 # Инициализация справочников и пользователей по умолчанию
 from app.database import SessionLocal

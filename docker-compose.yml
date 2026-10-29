@@ -14,6 +14,11 @@ services:
 
   backend:
     build: ./backend
+    # ВАЖНО: без --reload миграция ensure_columns() выполняется только при старте
+    # процесса. С --reload uvicorn перезапускает процесс при изменении кода в
+    # примонтированном ./backend — миграции применяются сразу после git pull,
+    # без docker-compose up --build.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - '8000:8000'
     depends_on:
@@ -21,6 +26,11 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:password@postgres:5432/tabel
       - SECRET_KEY=your-secret-key
+    volumes:
+      # ✅ МОНТИРУЕМ КОД ДЛЯ HOT RELOAD: изменения из E:\tabel видны в контейнере
+      # без пересборки образа (решает проблему «миграции не срабатывают, потому
+      # что в контейнере старый образ»).
+      - ./backend:/app
 
   frontend:
     build: ./frontend
