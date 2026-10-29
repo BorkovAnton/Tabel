@@ -61,6 +61,13 @@ MIGRATIONS = [
     ("users", "data_scope", "VARCHAR(20) NOT NULL DEFAULT 'own'"),
     # Список ID разрешённых подразделений (JSON); старое allowed_departments сохранено.
     ("users", "allowed_department_ids_json", "JSON DEFAULT NULL"),
+    # ─── ЭТАП 4: специальные права (логика пока не меняется, DEFAULT FALSE) ───
+    ("users", "can_approve", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("users", "can_edit_references", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("users", "can_view_salary", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("users", "can_import", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("users", "can_manage_users", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("users", "can_view_all_tabels", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 

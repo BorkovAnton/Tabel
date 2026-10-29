@@ -52,6 +52,15 @@ class RoleFlags(BaseModel):
     # Optional: None означает «не менять» при обновлении.
     data_scope: Optional[str] = None
     allowed_department_ids_json: Optional[List[int]] = None
+    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (пока не влияют на логику).
+    # В RoleFlags — только как Optional (None = «не менять»), чтобы существующие
+    # клиенты, не присылающие эти поля, не сбрасывали их в false при обновлении.
+    can_approve: Optional[bool] = None
+    can_edit_references: Optional[bool] = None
+    can_view_salary: Optional[bool] = None
+    can_import: Optional[bool] = None
+    can_manage_users: Optional[bool] = None
+    can_view_all_tabels: Optional[bool] = None
     # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: bool = False            # Администратор
     is_hr: bool = False               # Кадровик
@@ -167,6 +176,13 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
         role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
         data_scope=payload.data_scope,  # ✅ НОВОЕ ПОЛЕ (этап 3)
         allowed_department_ids_json=payload.allowed_department_ids_json,  # ✅ НОВОЕ ПОЛЕ (этап 3)
+        # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (None -> False при создании)
+        can_approve=payload.can_approve or False,
+        can_edit_references=payload.can_edit_references or False,
+        can_view_salary=payload.can_view_salary or False,
+        can_import=payload.can_import or False,
+        can_manage_users=payload.can_manage_users or False,
+        can_view_all_tabels=payload.can_view_all_tabels or False,
         is_admin=payload.is_admin,
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,
@@ -200,6 +216,12 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
         target.data_scope = new_data_scope
     if "allowed_department_ids_json" in data:
         target.allowed_department_ids_json = data.pop("allowed_department_ids_json")
+    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права — None = «не менять»,
+    # чтобы старые клиенты, не присылающие эти поля, ничего не сбросили.
+    for _perm_field in ("can_approve", "can_edit_references", "can_view_salary",
+                        "can_import", "can_manage_users", "can_view_all_tabels"):
+        if _perm_field in data:
+            setattr(target, _perm_field, bool(data[_perm_field]))
     target.is_admin = payload.is_admin
     target.is_hr = payload.is_hr
     target.timesheet_inspector = payload.timesheet_inspector

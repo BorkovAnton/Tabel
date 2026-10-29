@@ -72,6 +72,14 @@ class UserOut(BaseModel):
         # Обратная совместимость: если в БД NULL — считаем 'own'
         return v if v else "own"
 
+    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (пока не влияют на логику)
+    can_approve: bool = False
+    can_edit_references: bool = False
+    can_view_salary: bool = False
+    can_import: bool = False
+    can_manage_users: bool = False
+    can_view_all_tabels: bool = False
+
     @model_validator(mode="before")
     @classmethod
     def _fill_adid_json_from_orm(cls, values):
@@ -84,6 +92,8 @@ class UserOut(BaseModel):
             return values
         data = {}
         for k in ("id", "username", "full_name", "role", "data_scope",
+                  "can_approve", "can_edit_references", "can_view_salary",
+                  "can_import", "can_manage_users", "can_view_all_tabels",
                   "is_admin", "is_hr", "timesheet_inspector", "is_user", "is_report",
                   "is_documents_manager", "permissions", "allowed_departments"):
             data[k] = getattr(values, k)
@@ -120,6 +130,13 @@ class UserCreate(BaseModel):
     # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных (пока не влияет на логику)
     data_scope: str = 'own'
     allowed_department_ids: Optional[List[int]] = None
+    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (пока не влияют на логику)
+    can_approve: bool = False
+    can_edit_references: bool = False
+    can_view_salary: bool = False
+    can_import: bool = False
+    can_manage_users: bool = False
+    can_view_all_tabels: bool = False
     # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: bool = False
     is_hr: bool = False
@@ -139,6 +156,13 @@ class UserUpdate(BaseModel):
     # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных (пока не влияет на логику)
     data_scope: Optional[str] = None
     allowed_department_ids: Optional[List[int]] = None
+    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (None = «не менять»)
+    can_approve: Optional[bool] = None
+    can_edit_references: Optional[bool] = None
+    can_view_salary: Optional[bool] = None
+    can_import: Optional[bool] = None
+    can_manage_users: Optional[bool] = None
+    can_view_all_tabels: Optional[bool] = None
     # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: Optional[bool] = None
     is_hr: Optional[bool] = None
@@ -185,6 +209,13 @@ def create_user(payload: UserCreate, user: User = Depends(get_current_user), db:
         role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
         data_scope=payload.data_scope,  # ✅ НОВОЕ ПОЛЕ (этап 3)
         allowed_department_ids_json=payload.allowed_department_ids,  # ✅ НОВОЕ ПОЛЕ (этап 3)
+        # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права
+        can_approve=payload.can_approve,
+        can_edit_references=payload.can_edit_references,
+        can_view_salary=payload.can_view_salary,
+        can_import=payload.can_import,
+        can_manage_users=payload.can_manage_users,
+        can_view_all_tabels=payload.can_view_all_tabels,
         is_admin=payload.is_admin,
         is_hr=payload.is_hr,
         timesheet_inspector=payload.timesheet_inspector,

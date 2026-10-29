@@ -25,6 +25,15 @@ class User(Base):
     data_scope: Mapped[str] = mapped_column(String(20), nullable=False, default="own", server_default="own")
     allowed_department_ids_json: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
 
+    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права, независимые от базовой роли.
+    # Пока не влияют на логику — только добавляются в модель и БД.
+    can_approve: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    can_edit_references: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    can_view_salary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    can_import: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    can_manage_users: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    can_view_all_tabels: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
     # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)          # Администратор
     is_hr: Mapped[bool] = mapped_column(Boolean, default=False)             # Кадровик
