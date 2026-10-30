@@ -120,6 +120,8 @@ class RoleFlags(BaseModel):
     can_import: Optional[bool] = None
     can_manage_users: Optional[bool] = None
     can_view_all_tabels: Optional[bool] = None
+    # Видеть все документы/приказы (admin/hr получают автоматически)
+    can_view_all_documents: Optional[bool] = None
     # ✅ Права доступа к вкладкам: список путей или null (все страницы)
     permissions: Optional[List[str]] = None
     # ✅ ЭТАП 10: старые булевы поля (is_admin, is_hr, timesheet_inspector,
@@ -314,8 +316,12 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
             can_import=payload.can_import or False,
             can_manage_users=payload.can_manage_users or False,
             can_view_all_tabels=payload.can_view_all_tabels or False,
+            can_view_all_documents=payload.can_view_all_documents or False,
             permissions=_normalize_permissions(payload.permissions),
         )
+        # ✅ Право «видеть все документы» автоматически для ролей admin/hr
+        if obj.role in ('admin', 'hr'):
+            obj.can_view_all_documents = True
         # ✅ ЭТАП 10: переключатель «Все подразделения» из формы ('*') -> data_scope='all'
         _apply_ui_all_departments(obj, getattr(payload, "allowed_departments", None))
         db.add(obj)
@@ -359,9 +365,13 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
     # Специальные права — None = «не менять»,
     # чтобы старые клиенты, не присылающие эти поля, ничего не сбросили.
     for _perm_field in ("can_approve", "can_edit_references", "can_view_salary",
-                        "can_import", "can_manage_users", "can_view_all_tabels"):
+                        "can_import", "can_manage_users", "can_view_all_tabels",
+                        "can_view_all_documents"):
         if _perm_field in data:
             setattr(target, _perm_field, bool(data[_perm_field]))
+    # ✅ Право «видеть все документы» автоматически для ролей admin/hr
+    if target.role in ('admin', 'hr'):
+        target.can_view_all_documents = True
     # ✅ ЭТАП 10: обновление прав доступа к вкладкам (None — все страницы)
     target.permissions = _normalize_permissions(payload.permissions)
     # ✅ ЭТАП 10: переключатель «Все подразделения» из формы ('*') -> data_scope='all'

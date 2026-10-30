@@ -74,6 +74,7 @@ class UserOut(BaseModel):
     can_import: bool = False
     can_manage_users: bool = False
     can_view_all_tabels: bool = False
+    can_view_all_documents: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -88,7 +89,7 @@ class UserOut(BaseModel):
         for k in ("id", "username", "full_name", "role", "data_scope",
                   "can_approve", "can_edit_references", "can_view_salary",
                   "can_import", "can_manage_users", "can_view_all_tabels",
-                  "permissions"):
+                  "can_view_all_documents", "permissions"):
             data[k] = getattr(values, k)
         data["allowed_department_ids"] = list(getattr(values, "allowed_department_ids", []) or [])
         return data
@@ -120,6 +121,7 @@ class UserCreate(BaseModel):
     can_import: bool = False
     can_manage_users: bool = False
     can_view_all_tabels: bool = False
+    can_view_all_documents: bool = False
     permissions: Optional[List[str]] = None  # ✅ Права доступа к вкладкам (null — все страницы)
 
 
@@ -136,6 +138,7 @@ class UserUpdate(BaseModel):
     can_import: Optional[bool] = None
     can_manage_users: Optional[bool] = None
     can_view_all_tabels: Optional[bool] = None
+    can_view_all_documents: Optional[bool] = None
     permissions: Optional[List[str]] = None  # ✅ Права доступа к вкладкам (null — все страницы)
 
 

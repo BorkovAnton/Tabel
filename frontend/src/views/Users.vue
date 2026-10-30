@@ -146,6 +146,7 @@
             <v-checkbox v-model="form.can_import" label="Импортировать данные" density="compact" hide-details color="#2d5a3d" />
             <v-checkbox v-model="form.can_manage_users" label="Управлять пользователями" density="compact" hide-details color="#2d5a3d" />
             <v-checkbox v-model="form.can_view_all_tabels" label="Просмотр всех табелей (без редактирования)" density="compact" hide-details color="warning" />
+            <v-checkbox v-model="form.can_view_all_documents" label="Видеть все документы и приказы" density="compact" hide-details color="warning" hint="Без права видны только созданные пользователем документы" persistent-hint />
           </div>
 
           <v-alert v-if="dialogError" type="error" density="compact" variant="tonal" class="mt-3">{{ dialogError }}</v-alert>
@@ -230,27 +231,33 @@ const dataScopeOptions = [
 const ROLE_PERMISSIONS = {
   admin: {
     can_approve: true, can_edit_references: true, can_view_salary: true,
-    can_import: true, can_manage_users: true, can_view_all_tabels: true
+    can_import: true, can_manage_users: true, can_view_all_tabels: true,
+    can_view_all_documents: true
   },
   hr: {
     can_approve: true, can_edit_references: true, can_view_salary: true,
-    can_import: true, can_manage_users: false, can_view_all_tabels: true
+    can_import: true, can_manage_users: false, can_view_all_tabels: true,
+    can_view_all_documents: true
   },
   manager: {
     can_approve: true, can_edit_references: false, can_view_salary: false,
-    can_import: false, can_manage_users: false, can_view_all_tabels: false
+    can_import: false, can_manage_users: false, can_view_all_tabels: false,
+    can_view_all_documents: false
   },
   inspector: {
     can_approve: false, can_edit_references: false, can_view_salary: false,
-    can_import: false, can_manage_users: false, can_view_all_tabels: true // Только просмотр
+    can_import: false, can_manage_users: false, can_view_all_tabels: true, // Только просмотр
+    can_view_all_documents: false
   },
   accountant: {
     can_approve: false, can_edit_references: false, can_view_salary: true, // Бухгалтеру нужны зарплатные данные
-    can_import: false, can_manage_users: false, can_view_all_tabels: true
+    can_import: false, can_manage_users: false, can_view_all_tabels: true,
+    can_view_all_documents: false
   },
   user: {
     can_approve: false, can_edit_references: false, can_view_salary: false,
-    can_import: false, can_manage_users: false, can_view_all_tabels: false
+    can_import: false, can_manage_users: false, can_view_all_tabels: false,
+    can_view_all_documents: false
   }
 }
 
@@ -265,7 +272,7 @@ const ROLE_TAB_PERMISSIONS = {
   user: ['/tabels']
 }
 
-const CAN_KEYS = ['can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels']
+const CAN_KEYS = ['can_approve', 'can_edit_references', 'can_view_salary', 'can_import', 'can_manage_users', 'can_view_all_tabels', 'can_view_all_documents']
 
 const emptyForm = () => ({
   username: '', full_name: '', password: '',
@@ -275,7 +282,8 @@ const emptyForm = () => ({
   // is_documents_manager) и deptIds удалены из модели формы и не отправляются на бэкенд.
   role: 'user', data_scope: 'own', allowed_department_ids: [],
   can_approve: false, can_edit_references: false, can_view_salary: false,
-  can_import: false, can_manage_users: false, can_view_all_tabels: false
+  can_import: false, can_manage_users: false, can_view_all_tabels: false,
+  can_view_all_documents: false
 })
 const form = ref(emptyForm())
 
@@ -464,6 +472,7 @@ function openEdit(item) {
     can_import: !!item.can_import,
     can_manage_users: !!item.can_manage_users,
     can_view_all_tabels: !!item.can_view_all_tabels,
+    can_view_all_documents: !!item.can_view_all_documents,
   }
   allDepartments.value = !!item.all_departments
   loadDepartments()
@@ -503,7 +512,8 @@ async function saveUser() {
       can_view_salary: form.value.can_view_salary,
       can_import: form.value.can_import,
       can_manage_users: form.value.can_manage_users,
-      can_view_all_tabels: form.value.can_view_all_tabels
+      can_view_all_tabels: form.value.can_view_all_tabels,
+      can_view_all_documents: form.value.can_view_all_documents
     }
     if (editing.value) {
       const payload = { ...basePayload, username: undefined }

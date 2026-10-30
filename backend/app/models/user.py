@@ -33,6 +33,10 @@ class User(Base):
     can_import: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     can_manage_users: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     can_view_all_tabels: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Видеть ВСЕ документы/приказы: роли admin/hr получают автоматически; остальным —
+    # явно (например, опытному начальнику участка). Без права видны только
+    # документы, созданные пользователем (Document.created_by == User.id).
+    can_view_all_documents: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     # ✅ Права доступа к вкладкам сайта: JSON-список путей страниц,
     # напр. ["/tabels", "/timesheet-report", "/employees"].

@@ -11,7 +11,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user, require_documents_manager
+from app.core.security import can_see_all_documents, get_current_user, require_documents_manager
 from app.database import get_db
 from app.models.document import Document
 from app.models.employee import Employee
@@ -35,6 +35,7 @@ def _to_out(d: Document) -> DocumentOut:
         hours=float(d.hours) if d.hours is not None else None,
         is_active=d.is_active,
         created_at=d.created_at,
+        created_by=d.created_by,
         employee_full_name=emp.full_name if emp else "",
         employee_tab_number=emp.tab_number if emp else "",
     )
@@ -52,6 +53,10 @@ def list_documents(
     user=Depends(get_current_user),
 ):
     q = db.query(Document)
+    # ✅ Фильтрация по автору: без права «видеть все документы» пользователь
+    # видит только созданные им документы (admin/hr/data_scope='all' — все).
+    if not can_see_all_documents(user):
+        q = q.filter(Document.created_by == user.id)
     if not include_inactive:
         q = q.filter(Document.is_active.is_(True))
     if employee_id is not None:
@@ -94,6 +99,7 @@ def create_document(
         code=payload.code,
         hours=payload.hours,
         is_active=payload.is_active,
+        created_by=user.id,
     )
     db.add(doc)
     db.commit()

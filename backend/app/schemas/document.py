@@ -64,6 +64,7 @@ class DocumentUpdate(BaseModel):
 class DocumentOut(DocumentBase):
     id: int
     created_at: Optional[date] = None
+    created_by: Optional[int] = None  # автор документа (для фильтрации видимости)
     employee_full_name: str = ""
     employee_tab_number: str = ""
 

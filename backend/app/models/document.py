@@ -35,6 +35,12 @@ class Document(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # Автор документа (создатель): используется для фильтрации видимости —
+    # пользователи без права can_view_all_documents видят только свои документы.
+    created_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=None, index=True
+    )
+
     created_at: Mapped[date] = mapped_column(Date, default=date.today)
 
     employee: Mapped["Employee"] = relationship("Employee")

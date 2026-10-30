@@ -156,6 +156,19 @@ def require_documents_manager(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def can_see_all_documents(user: User) -> bool:
+    """Видит ли пользователь ВСЕ документы/приказы (а не только созданные им).
+
+    Право дают: роли admin/hr, явный флаг can_view_all_documents,
+    либо data_scope == 'all' (полная область видимости данных).
+    """
+    if has_role(user, "admin", "hr"):
+        return True
+    if getattr(user, "data_scope", None) == "all":
+        return True
+    return bool(getattr(user, "can_view_all_documents", False))
+
+
 def can_view_salary(user: User) -> bool:
     """Просмотр зарплатных данных: роли admin/hr/accountant либо флаг can_view_salary."""
     return has_role(user, "admin", "hr", "accountant") or bool(user.can_view_salary)

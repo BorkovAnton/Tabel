@@ -68,6 +68,16 @@ MIGRATIONS = [
     ("users", "can_import", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("users", "can_manage_users", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("users", "can_view_all_tabels", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # ─── Видимость документов: явное право видеть все документы/приказы ───
+    ("users", "can_view_all_documents", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # Автор документа (для фильтрации видимости без can_view_all_documents)
+    ("documents", "created_by", "INTEGER REFERENCES users(id)"),
+]
+
+# ✅ Новые права: автоматически проставляем can_view_all_documents=True
+# администраторам и кадровикам (после добавления колонки).
+POST_MIGRATION_SQL = [
+    "UPDATE users SET can_view_all_documents = TRUE WHERE role IN ('admin', 'hr')",
 ]
 
 # ✅ ЭТАП 10: старые колонки прав, подлежащие удалению из существующих БД.
@@ -156,6 +166,14 @@ def ensure_columns() -> None:
 
         # ─── ЭТАП 10: удаление старых колонок прав (с резервной копией таблицы) ───
         _drop_legacy_columns(conn)
+
+        # ─── can_view_all_documents: автоматическое право для admin/hr ───
+        for stmt in POST_MIGRATION_SQL:
+            try:
+                conn.execute(text(stmt))
+                print(f"[migrate] ✅ post-migration SQL выполнен: {stmt[:80]}")
+            except Exception as e:
+                print(f"[migrate] ⚠ post-migration SQL пропущен ({e})")
 
     # Выход из engine.begin() = COMMIT (если не было исключений).
     print(f"[migrate] Транзакция зафиксирована (COMMIT выполнен)")
