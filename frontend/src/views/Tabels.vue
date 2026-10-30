@@ -65,8 +65,10 @@
           Открыть
         </v-btn>
         <v-btn v-if="auth.canManageTabels"
-               size="small" variant="text" color="primary" icon="mdi-content-copy"
-               title="Копировать табель на новый месяц" @click.stop="openCopyDialog(item)" />
+               size="small" variant="text" color="#2d5a3d"
+               title="Копировать табель на новый месяц" @click.stop="openCopyDialog(item)">
+          <template #prepend><CustomCopyButton /></template>
+        </v-btn>
         <v-btn v-if="canDelete(item)"
                size="small" variant="text" color="red"
                title="Удалить табель" @click.stop="removeTabel(item)">
@@ -163,6 +165,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
 import CustomDeleteButton from '../components/CustomDeleteButton.vue'
+import CustomCopyButton from '../components/CustomCopyButton.vue'
 import { auth } from '../auth'
 
 const router = useRouter()
