@@ -141,17 +141,23 @@ def require_hr_or_admin(user: User = Depends(get_current_user)) -> User:
 
 
 def can_manage_documents(user: User) -> bool:
-    """Раздел «Документы и приказы»: роли admin/hr (новая система)."""
-    return has_role(user, "admin", "hr")
+    """Раздел «Документы и приказы»: роли admin/hr/manager (новая система).
+
+    Начальники участков (manager) могут создавать документы для своих
+    сотрудников, но видят только созданные ими документы
+    (фильтрация по created_by в GET /documents/), если у них нет
+    явного права can_view_all_documents.
+    """
+    return has_role(user, "admin", "hr", "manager")
 
 
 def require_documents_manager(user: User = Depends(get_current_user)) -> User:
-    """Доступ для редактирования документов/приказов."""
+    """Доступ для создания/редактирования документов и приказов."""
     if not can_manage_documents(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для управления документами. "
-                   "Требуется роль «Администратор» или «Кадровик».",
+                   "Требуется роль «Администратор», «Кадровик» или «Начальник».",
         )
     return user
 
