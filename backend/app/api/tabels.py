@@ -134,6 +134,19 @@ class TabelCreate(BaseModel):
     responsible_user_id: Optional[int] = None
 
 
+class CopyTabelRequest(BaseModel):
+    source_id: int
+    new_month: int
+    new_year: int
+
+    @field_validator("new_month")
+    @classmethod
+    def _validate_month(cls, v: int) -> int:
+        if not (1 <= v <= 12):
+            raise ValueError("Некорректный месяц (ожидается 1..12)")
+        return v
+
+
 class DocumentBrief(BaseModel):
     """Краткая сводка активного документа для автозаполнения табеля."""
     id: int
@@ -475,6 +488,84 @@ def create_tabel(payload: TabelCreate, db: Session = Depends(get_db),
         responsible_user_name=tabel.responsible_user.full_name or tabel.responsible_user.username,
         employees_count=0,
         **approval_fields(tabel),
+    )
+
+
+@router.post("/copy", response_model=TabelOut)
+def copy_tabel(payload: CopyTabelRequest, db: Session = Depends(get_db),
+               user: User = Depends(require_timesheet_inspector)):
+    """Скопировать табель на новый месяц.
+
+    Переносятся: подразделение, ответственный и список сотрудников (TabelEntry).
+    НЕ переносятся: ежедневные данные (часы/коды по дням) и значения КДУ —
+    это новый расчётный период, все ячейки остаются пустыми.
+    Доступ: новая система прав (role admin/hr/manager/inspector или can_approve).
+    """
+    # 1. Исходный табель
+    source = db.query(Tabel).filter(Tabel.id == payload.source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Исходный табель не найден")
+    # Просмотр исходного табеля должен быть разрешён копирующему
+    if not _can_access(source, user, db):
+        raise HTTPException(status_code=403, detail="Нет доступа к исходному табелю")
+    # Права на подразделение результата
+    check_department_access(user, db, source.department_id)
+
+    # 2. Не существует ли уже табель за новый период в этом подразделении
+    existing = db.query(Tabel).filter(
+        Tabel.department_id == source.department_id,
+        Tabel.month == payload.new_month,
+        Tabel.year == payload.new_year,
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Табель за {payload.new_month}/{payload.new_year} "
+                   f"в этом подразделении уже существует (id={existing.id})",
+        )
+
+    # 3. Новый табель (метаданные из исходного, статус — черновик)
+    new_tabel = Tabel(
+        department_id=source.department_id,
+        month=payload.new_month,
+        year=payload.new_year,
+        responsible_user_id=source.responsible_user_id,
+        created_by=user.id,
+        # Ежедневные данные нового периода пусты, согласование сбрасывается
+        hr_approved=False,
+        security_approved=False,
+    )
+    db.add(new_tabel)
+    db.flush()  # получаем new_tabel.id
+
+    # 4. Копируем сотрудников БЕЗ значений по дням и КДУ
+    source_entries = (db.query(TabelEntry)
+                      .filter(TabelEntry.tabel_id == source.id)
+                      .order_by(TabelEntry.position, TabelEntry.id)
+                      .all())
+    for entry in source_entries:
+        # Проверяем, что сотрудник ещё существует (защита от «висячих» ссылок)
+        if not db.get(Employee, entry.employee_id):
+            continue
+        db.add(TabelEntry(
+            tabel_id=new_tabel.id,
+            employee_id=entry.employee_id,
+            position=entry.position,
+            # day_1..day_31, kdu_* НЕ копируются — новый период
+        ))
+
+    db.commit()
+    db.refresh(new_tabel)
+    return TabelOut(
+        id=new_tabel.id, year=new_tabel.year, month=new_tabel.month,
+        department_id=new_tabel.department_id,
+        department_name=new_tabel.department.name if new_tabel.department else None,
+        responsible_user_id=new_tabel.responsible_user_id,
+        responsible_user_name=(new_tabel.responsible_user.full_name
+                               or new_tabel.responsible_user.username)
+                              if new_tabel.responsible_user else None,
+        employees_count=len(source_entries),
+        **approval_fields(new_tabel),
     )
 
 

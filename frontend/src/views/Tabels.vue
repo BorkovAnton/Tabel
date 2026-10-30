@@ -64,6 +64,9 @@
                @click.stop="openTabel(item)">
           Открыть
         </v-btn>
+        <v-btn v-if="auth.canManageTabels"
+               size="small" variant="text" color="primary" icon="mdi-content-copy"
+               title="Копировать табель на новый месяц" @click.stop="openCopyDialog(item)" />
         <v-btn v-if="canDelete(item)"
                size="small" variant="text" color="red"
                title="Удалить табель" @click.stop="removeTabel(item)">
@@ -104,6 +107,51 @@
           <v-spacer />
           <v-btn @click="createDialog = false">Отмена</v-btn>
           <v-btn color="#2d5a3d" :loading="creating" @click="createTabel">Создать</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Диалог копирования табеля на новый месяц -->
+    <v-dialog v-model="copyDialog" max-width="500">
+      <v-card title="Копировать табель">
+        <v-card-text>
+          <p class="mb-2">
+            Копирование табеля:
+            <strong>{{ sourceTabel?.department_name || '—' }}
+              ({{ monthNames[(sourceTabel?.month ?? 1) - 1] }} {{ sourceTabel?.year }})</strong>
+          </p>
+          <p class="text-caption text-grey mb-4">
+            Будет создан новый табель с тем же списком сотрудников.
+            Ежедневные данные (часы/коды) будут очищены — это новый период.
+          </p>
+          <v-row>
+            <v-col cols="6">
+              <v-select
+                v-model="newMonth"
+                :items="monthItems"
+                item-title="title"
+                item-value="value"
+                label="Новый месяц"
+                variant="outlined"
+                density="compact"
+              />
+            </v-col>
+            <v-col cols="6">
+              <v-select
+                v-model="newYear"
+                :items="years"
+                label="Новый год"
+                variant="outlined"
+                density="compact"
+              />
+            </v-col>
+          </v-row>
+          <v-alert v-if="copyError" type="error" density="compact" variant="tonal">{{ copyError }}</v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn color="grey" variant="text" @click="copyDialog = false">Отмена</v-btn>
+          <v-btn color="#2d5a3d" :loading="copying" @click="executeCopy">Копировать</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -213,6 +261,50 @@ async function createTabel() {
     createError.value = e.response?.data?.detail || 'Ошибка создания'
   } finally {
     creating.value = false
+  }
+}
+
+// ─── Копирование табеля на новый месяц ───
+const copyDialog = ref(false)
+const sourceTabel = ref(null)
+const newMonth = ref(now.getMonth() + 1)
+const newYear = ref(now.getFullYear())
+const copying = ref(false)
+const copyError = ref('')
+
+function openCopyDialog(tabel) {
+  sourceTabel.value = tabel
+  copyError.value = ''
+  // По умолчанию предлагаем следующий месяц после исходного периода
+  let nextM = tabel.month + 1
+  let nextY = tabel.year
+  if (nextM > 12) {
+    nextM = 1
+    nextY += 1
+  }
+  newMonth.value = nextM
+  newYear.value = nextY
+  copyDialog.value = true
+}
+
+async function executeCopy() {
+  if (!sourceTabel.value) return
+  copying.value = true
+  copyError.value = ''
+  try {
+    const { data } = await api.post('/tabels/copy', {
+      source_id: sourceTabel.value.id,
+      new_month: newMonth.value,
+      new_year: newYear.value,
+    })
+    copyDialog.value = false
+    await load()          // обновляем список без перезагрузки страницы
+    router.push(`/tabels/${data.id}`)  // открываем скопированный табель
+  } catch (e) {
+    console.error(e)
+    copyError.value = e.response?.data?.detail || 'Ошибка при копировании табеля'
+  } finally {
+    copying.value = false
   }
 }
 
