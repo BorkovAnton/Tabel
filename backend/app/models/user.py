@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import Boolean, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -34,43 +34,39 @@ class User(Base):
     can_manage_users: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     can_view_all_tabels: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
-    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
-    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)          # Администратор
-    is_hr: Mapped[bool] = mapped_column(Boolean, default=False)             # Кадровик
-    timesheet_inspector: Mapped[bool] = mapped_column(Boolean, default=False)  # Инспектор табелей
-    is_user: Mapped[bool] = mapped_column(Boolean, default=True)            # Пользователь (базовая роль)
-    is_report: Mapped[bool] = mapped_column(Boolean, default=False)         # Отчёт (страница сводного отчёта часов)
-    is_documents_manager: Mapped[bool] = mapped_column(Boolean, default=False)  # Документы и приказы
-
-    # ✅ Права доступа к вкладкам сайта: JSON-список ключей страниц,
-    # напр. ["tabels", "timesheet-report", "employees"].
-    # NULL/пусто — доступны все страницы (обратная совместимость со старыми пользователями).
+    # ✅ Права доступа к вкладкам сайта: JSON-список путей страниц,
+    # напр. ["/tabels", "/timesheet-report", "/employees"].
+    # NULL/пусто — доступны все страницы (обратная совместимость).
+    # ВНИМАНИЕ: это поле — часть НОВОЙ системы прав, НЕ удалять!
     permissions: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
 
-    # Права на подразделения: JSON-список id, напр. "[3, 7]".
-    # Пусто/NULL — подразделений нет; "*" — все подразделения.
-    allowed_departments: Mapped[str] = mapped_column(Text, default="")
+    # ✅ ЭТАП 10: старые поля прав УДАЛЕНЫ из модели и БД:
+    # is_admin, is_hr, timesheet_inspector, is_user, is_report,
+    # is_documents_manager, allowed_departments.
+    # Разрешённые подразделения хранятся в allowed_department_ids_json (колонка выше).
 
     # Табельщик видит только те табели, где он ответственный
     responsible_for_all_departments: Mapped[bool] = mapped_column(Boolean, default=False)
 
     @property
     def allowed_department_ids(self) -> list[int]:
-        """Список id разрешённых подразделений ([] если не задано)."""
+        """Список id разрешённых подразделений ([] если не задано).
+
+        ЭТАП 10: источник — новая JSON-колонка allowed_department_ids_json
+        (старая текстовая allowed_departments удалена).
+        """
         try:
-            data = json.loads(self.allowed_departments or "")
+            data = self.allowed_department_ids_json
+            if isinstance(data, str):
+                data = json.loads(data or "[]")
+            if not isinstance(data, list):
+                return []
+            return [int(x) for x in data if str(x).lstrip("-").isdigit()]
         except (ValueError, TypeError):
             return []
-        if data == "*":
-            return []
-        return [int(x) for x in data if str(x).isdigit()]
 
     @property
     def all_departments_allowed(self) -> bool:
-        raw = (self.allowed_departments or "").strip()
-        if raw == "*":
-            return True
-        try:
-            return json.loads(raw) == "*"
-        except (ValueError, TypeError):
-            return False
+        """ЭТАП 10: полный доступ ко всем подразделениям — по новой системе:
+        роль admin или data_scope == 'all'."""
+        return self.data_scope == "all" or self.role == "admin"

@@ -13,42 +13,36 @@ from app.core.security import (
     is_admin_user,
 )
 from app.database import get_db
-from app.models.department import Department
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-def _normalize_allowed_departments(raw, db: Session) -> str:
-    """Приводит значение прав на подразделения к каноничному виду в БД.
+def _normalize_dept_ids(raw) -> list[int]:
+    """✅ ЭТАП 10: нормализация списка id подразделений в новую JSON-колонку.
 
-    Допустимые форматы на вход: "" (пусто), "*" (все), JSON-список id [1,2].
-    Сохраняется: "" | '"*"' | JSON-список существующих id.
+    Принимает список id (числа или строки), "*" (все) или пустое значение;
+    возвращает список int либо [] ('*' трактуется как data_scope='all',
+    полный доступ задаётся через role/data_scope, а не через этот список).
     """
-    import json
-
-    if raw is None:
-        return ""
-    s = str(raw).strip()
-    if not s:
-        return ""
-    if s == "*":
-        return '"*"'
-    try:
-        ids = json.loads(s)
-    except (ValueError, TypeError):
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, (str, int)):
+        s = str(raw).strip()
+        if not s or s == "*":
+            return []
+        raw = [s]
+    if not isinstance(raw, list):
         raise HTTPException(status_code=400, detail="Некорректный формат подразделений")
-    if not isinstance(ids, list):
-        raise HTTPException(status_code=400, detail="Некорректный формат подразделений")
-    clean = []
-    for x in ids:
+    out: list[int] = []
+    for x in raw:
         try:
             did = int(x)
-        except (ValueError, TypeError):
+        except (TypeError, ValueError):
             continue
-        if did not in clean and db.get(Department, did) is not None:
-            clean.append(did)
-    return json.dumps(clean) if clean else ""
+        if did not in out:
+            out.append(did)
+    return out
 
 
 class UserOut(BaseModel):
@@ -83,34 +77,24 @@ class UserOut(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _fill_adid_json_from_orm(cls, values):
+    def _fill_from_orm(cls, values):
         # В модели SQLAlchemy новое поле этапа 3 называется allowed_department_ids_json.
         # Pydantic с from_attributes читает атрибуты по именам полей схемы; имя
-        # allowed_department_ids в ORM занято property (старые права из колонки
-        # allowed_departments). Поэтому при чтении из ORM явно берём колонку
-        # allowed_department_ids_json и кладём её в dict для валидации.
+        # allowed_department_ids в ORM занято property (список id из JSON-колонки).
+        # ✅ ЭТАП 10: старые булевы поля удалены — берём только новые поля модели.
         if isinstance(values, dict):
             return values
         data = {}
         for k in ("id", "username", "full_name", "role", "data_scope",
                   "can_approve", "can_edit_references", "can_view_salary",
                   "can_import", "can_manage_users", "can_view_all_tabels",
-                  "is_admin", "is_hr", "timesheet_inspector", "is_user", "is_report",
-                  "is_documents_manager", "permissions", "allowed_departments"):
+                  "permissions"):
             data[k] = getattr(values, k)
-        data["allowed_department_ids_json"] = getattr(values, "allowed_department_ids_json", None)
+        data["allowed_department_ids"] = list(getattr(values, "allowed_department_ids", []) or [])
         return data
 
-    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
-    is_admin: bool
-    is_hr: bool
-    timesheet_inspector: bool
-    is_user: bool = True
-    is_report: bool = False
-    is_documents_manager: bool = False  # Документы и приказы
     permissions: Optional[List[str]] = None  # ✅ Права доступа к вкладкам (null — все страницы)
-    allowed_departments: str = ""   # JSON-список id подразделений или "*" — все
-    allowed_department_ids_json: Optional[List[int]] = None  # ✅ НОВОЕ ПОЛЕ (этап 3)
+    allowed_department_ids: Optional[List[int]] = None  # ✅ НОВОЕ ПОЛЕ (этап 3/10)
 
     class Config:
         from_attributes = True
@@ -126,53 +110,33 @@ class UserCreate(BaseModel):
     username: str
     password: str
     full_name: str = ""
-    # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику)
+    # ✅ ЭТАП 10: только новая система прав (role, data_scope, can_*, permissions)
     role: str = 'user'
-    # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных (пока не влияет на логику)
     data_scope: str = 'own'
     allowed_department_ids: Optional[List[int]] = None
-    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (пока не влияют на логику)
     can_approve: bool = False
     can_edit_references: bool = False
     can_view_salary: bool = False
     can_import: bool = False
     can_manage_users: bool = False
     can_view_all_tabels: bool = False
-    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
-    is_admin: bool = False
-    is_hr: bool = False
-    timesheet_inspector: bool = False
-    is_user: bool = True
-    is_report: bool = False
-    is_documents_manager: bool = False
     permissions: Optional[List[str]] = None  # ✅ Права доступа к вкладкам (null — все страницы)
-    allowed_departments: str = ""
 
 
 class UserUpdate(BaseModel):
     password: Optional[str] = None
     full_name: Optional[str] = None
-    # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику)
+    # ✅ ЭТАП 10: только новая система прав; None = «не менять»
     role: Optional[str] = None
-    # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных (пока не влияет на логику)
     data_scope: Optional[str] = None
     allowed_department_ids: Optional[List[int]] = None
-    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (None = «не менять»)
     can_approve: Optional[bool] = None
     can_edit_references: Optional[bool] = None
     can_view_salary: Optional[bool] = None
     can_import: Optional[bool] = None
     can_manage_users: Optional[bool] = None
     can_view_all_tabels: Optional[bool] = None
-    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
-    is_admin: Optional[bool] = None
-    is_hr: Optional[bool] = None
-    timesheet_inspector: Optional[bool] = None
-    is_user: Optional[bool] = None
-    is_report: Optional[bool] = None
-    is_documents_manager: Optional[bool] = None
     permissions: Optional[List[str]] = None  # ✅ Права доступа к вкладкам (null — все страницы)
-    allowed_departments: Optional[str] = None
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -207,22 +171,17 @@ def create_user(payload: UserCreate, user: User = Depends(get_current_user), db:
         username=payload.username,
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name,
-        role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
-        data_scope=payload.data_scope,  # ✅ НОВОЕ ПОЛЕ (этап 3)
-        allowed_department_ids_json=payload.allowed_department_ids,  # ✅ НОВОЕ ПОЛЕ (этап 3)
-        # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права
+        role=payload.role,
+        data_scope=payload.data_scope,
+        # ✅ ЭТАП 10: подразделения — только новая JSON-колонка (список id)
+        allowed_department_ids_json=_normalize_dept_ids(payload.allowed_department_ids),
         can_approve=payload.can_approve,
         can_edit_references=payload.can_edit_references,
         can_view_salary=payload.can_view_salary,
         can_import=payload.can_import,
         can_manage_users=payload.can_manage_users,
         can_view_all_tabels=payload.can_view_all_tabels,
-        is_admin=payload.is_admin,
-        is_hr=payload.is_hr,
-        timesheet_inspector=payload.timesheet_inspector,
-        is_user=payload.is_user,
-        permissions=payload.permissions,  # ✅ Права доступа к вкладкам (null — все страницы)
-        allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
+        permissions=payload.permissions,
     )
     db.add(new_user)
     db.commit()
@@ -242,11 +201,9 @@ def update_user(user_id: int, payload: UserUpdate, user: User = Depends(get_curr
         target.hashed_password = hash_password(data.pop("password"))
     else:
         data.pop("password", None)
-    # ✅ ЭТАП 3: allowed_department_ids (из схемы) сохраняем в колонку allowed_department_ids_json
+    # ✅ ЭТАП 10: allowed_department_ids (список из схемы) сохраняем в JSON-колонку модели
     if "allowed_department_ids" in data:
-        data["allowed_department_ids_json"] = data.pop("allowed_department_ids")
-    if "allowed_departments" in data:
-        data["allowed_departments"] = _normalize_allowed_departments(data["allowed_departments"], db)
+        data["allowed_department_ids_json"] = _normalize_dept_ids(data.pop("allowed_department_ids"))
     if "permissions" in data and data["permissions"] is not None and not isinstance(data["permissions"], list):
         raise HTTPException(status_code=400, detail="Недопустимый формат прав доступа")
     for k, v in data.items():

@@ -9,7 +9,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from typing import List, Optional, Union
 
-from app.api.auth import _normalize_allowed_departments
 from app.core.security import hash_password, require_admin
 from app.database import get_db
 from app.models.department import Department
@@ -98,15 +97,13 @@ def _normalize_permissions(raw) -> Optional[List[str]]:
 
 
 class RoleFlags(BaseModel):
-    # ✅ НОВОЕ ПОЛЕ (этап 1): единая роль (пока не влияет на логику).
-    # Optional: None означает «не менять» при обновлении.
+    # ✅ ЭТАП 10: только новая система прав.
+    # Optional role/data_scope: None означает «не менять» при обновлении.
     role: Optional[str] = None
-    # ✅ НОВЫЕ ПОЛЯ (этап 3): область видимости данных (пока не влияет на логику).
-    # Optional: None означает «не менять» при обновлении.
     data_scope: Optional[str] = None
     allowed_department_ids_json: Optional[List[int]] = None
-    # ✅ ЭТАП 5: фронтенд может прислать allowed_department_ids — принимаем как алиас,
-    # чтобы форма пользователя могла сохранять список подразделений в новой JSON-колонке.
+    # Фронтенд присылает allowed_department_ids — используем как основной алиас,
+    # значение сохраняется в JSON-колонку allowed_department_ids_json.
     allowed_department_ids: Optional[List[int]] = Field(default=None)
 
     @model_validator(mode="after")
@@ -115,36 +112,19 @@ class RoleFlags(BaseModel):
             self.allowed_department_ids_json = self.allowed_department_ids
         return self
 
-    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (пока не влияют на логику).
-    # В RoleFlags — только как Optional (None = «не менять»), чтобы существующие
-    # клиенты, не присылающие эти поля, не сбрасывали их в false при обновлении.
+    # Специальные права (None = «не менять» при обновлении,
+    # чтобы существующие клиенты не сбрасывали их в false).
     can_approve: Optional[bool] = None
     can_edit_references: Optional[bool] = None
     can_view_salary: Optional[bool] = None
     can_import: Optional[bool] = None
     can_manage_users: Optional[bool] = None
     can_view_all_tabels: Optional[bool] = None
-    # ✅ СТАРЫЕ ПОЛЯ (продолжают работать)
-    is_admin: bool = False            # Администратор
-    is_hr: bool = False               # Кадровик
-    timesheet_inspector: bool = False # Инспектор табелей
-    is_user: bool = True              # Пользователь (базовая роль)
-    is_report: bool = False           # Отчёт (страница сводного отчёта часов)
-    is_documents_manager: bool = False  # Документы и приказы
     # ✅ Права доступа к вкладкам: список путей или null (все страницы)
     permissions: Optional[List[str]] = None
-    # Права на подразделения: JSON-строка '["*"]'-список id или "*" (все).
-    # Фронтенд может прислать и список чисел — нормализуем валидатором.
-    allowed_departments: str = ""
-
-    @field_validator("allowed_departments", mode="before")
-    @classmethod
-    def _ad_to_str(cls, v):
-        if v is None:
-            return ""
-        if isinstance(v, list):
-            return json.dumps([int(x) for x in v])
-        return str(v)
+    # ✅ ЭТАП 10: старые булевы поля (is_admin, is_hr, timesheet_inspector,
+    # is_user, is_report, is_documents_manager) и текстовое allowed_departments
+    # УДАЛЕНЫ из схем — используется только новая система прав.
 
     # ✅ FIX 422: терпимая нормализация роли — принимаем ключ ('admin', 'hr', ...),
     # отображаемое имя ('Администратор', 'Кадровик', ...) или пустое значение.
@@ -275,12 +255,26 @@ def _dept_names_map(db: Session) -> dict:
 
 def _to_with_roles(u: User, names: dict) -> UserWithRoles:
     obj = UserWithRoles.model_validate(u)
+    # ✅ ЭТАП 10: полный доступ ко всем подразделениям — по новой системе
+    # (role='admin' или data_scope='all'; '*' из формы преобразуется в data_scope='all').
     if u.all_departments_allowed:
         obj.all_departments = True
         obj.allowed_department_names = ["Все подразделения"]
     else:
         obj.allowed_department_names = [names.get(i, f"#{i}") for i in u.allowed_department_ids]
     return obj
+
+
+def _apply_ui_all_departments(target: User, allowed_raw) -> None:
+    """✅ ЭТАП 10: поддержка переключателя «Все подразделения» из формы пользователя.
+
+    Фронтенд присылает allowed_departments='*' (или JSON-список id). Текстовая
+    колонка удалена, поэтому '*' преобразуем в data_scope='all' (полный доступ),
+    а список id игнорируем (при '*' подразделения не нужны).
+    """
+    s = str(allowed_raw).strip() if allowed_raw is not None else ""
+    if s == "*":
+        target.data_scope = "all"
 
 @router.get("/with-roles", response_model=List[UserWithRoles])
 def list_users_with_roles(db: Session = Depends(get_db),
@@ -291,23 +285,9 @@ def list_users_with_roles(db: Session = Depends(get_db),
             for u in db.query(User).order_by(User.username).all()]
 
 
-def _sync_legacy_flags(obj: User, role: str | None) -> None:
-    """ЭТАП 9: фронтенд больше НЕ отправляет старые булевы поля.
-
-    При сохранении пользователя синхронизируем тихий резерв (старые колонки)
-    с новой ролью, чтобы любые оставшиеся потребители старых флагов
-    (и обратный откат на Этапе 10) работали согласованно.
-    Старые колонки и поля схем не удаляем — удаление на Этапе 10.
-    """
-    if not role or role == "none":
-        return
-    obj.is_admin = role == "admin"
-    obj.is_hr = role == "hr"
-    obj.timesheet_inspector = role == "inspector"
-    obj.is_report = role in ("accountant", "hr", "admin")
-    obj.is_documents_manager = role in ("hr", "admin")
-    # базовый доступ есть у любой назначенной роли
-    obj.is_user = True
+# ✅ ЭТАП 10: _sync_legacy_flags удалена — старые булевы колонки (is_admin,
+# is_hr, timesheet_inspector, is_user, is_report, is_documents_manager)
+# удалены из модели и БД; права определяются role / data_scope / can_* / permissions.
 
 
 @router.post("/with-roles", response_model=UserWithRoles)
@@ -324,31 +304,20 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
             username=username,
             hashed_password=hash_password(payload.password),
             full_name=payload.full_name.strip(),
-            role=payload.role,  # ✅ НОВОЕ ПОЛЕ (этап 1)
-            data_scope=payload.data_scope,  # ✅ НОВОЕ ПОЛЕ (этап 3)
-            allowed_department_ids_json=payload.allowed_department_ids_json,  # ✅ НОВОЕ ПОЛЕ (этап 3)
-            # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права (None -> False при создании)
+            # ✅ ЭТАП 10: только новая система прав
+            role=payload.role,
+            data_scope=payload.data_scope,
+            allowed_department_ids_json=payload.allowed_department_ids_json,
             can_approve=payload.can_approve or False,
             can_edit_references=payload.can_edit_references or False,
             can_view_salary=payload.can_view_salary or False,
             can_import=payload.can_import or False,
             can_manage_users=payload.can_manage_users or False,
             can_view_all_tabels=payload.can_view_all_tabels or False,
-            is_admin=payload.is_admin,
-            is_hr=payload.is_hr,
-            timesheet_inspector=payload.timesheet_inspector,
-            is_user=payload.is_user,
-            is_report=payload.is_report,
-            is_documents_manager=payload.is_documents_manager,
-            permissions=_normalize_permissions(payload.permissions),  # ✅ НОВОЕ ПОЛЕ
-            allowed_departments=_normalize_allowed_departments(payload.allowed_departments, db),
+            permissions=_normalize_permissions(payload.permissions),
         )
-        # ✅ ЭТАП 7: безопасный дефолт — если задана роль, но is_user явно не включён,
-        # автоматически ставим is_user = True (старые части кода зависят от этого поля)
-        if obj.role and not obj.is_user:
-            obj.is_user = True
-        # ✅ ЭТАП 9: синхронизация старых флагов с новой ролью (тихий резерв)
-        _sync_legacy_flags(obj, obj.role)
+        # ✅ ЭТАП 10: переключатель «Все подразделения» из формы ('*') -> data_scope='all'
+        _apply_ui_all_departments(obj, getattr(payload, "allowed_departments", None))
         db.add(obj)
         db.commit()
         db.refresh(obj)
@@ -374,43 +343,29 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    # ✅ НОВОЕ ПОЛЕ (этап 1): role — Optional[str]; None означает «не менять»
+    # ✅ ЭТАП 10: role — Optional[str]; None означает «не менять»
     data = payload.model_dump(exclude_unset=True)
     new_role = data.pop("role", None)
     if new_role is not None:
         target.role = new_role
-    # ✅ НОВЫЕ ПОЛЯ (этап 3): data_scope / allowed_department_ids_json — None = «не менять»
+    # data_scope / allowed_department_ids_json — None = «не менять»
     new_data_scope = data.pop("data_scope", None)
     if new_data_scope is not None:
         target.data_scope = new_data_scope
     if "allowed_department_ids_json" in data:
         target.allowed_department_ids_json = data.pop("allowed_department_ids_json")
-    # ✅ ЭТАП 5: алиас из фронтенда не является колонкой модели — убираем, чтобы не попасть в setattr ниже
+    # алиас из фронтенда не является колонкой модели — убираем, чтобы не попасть в setattr ниже
     data.pop("allowed_department_ids", None)
-    # ✅ НОВЫЕ ПОЛЯ (этап 4): специальные права — None = «не менять»,
+    # Специальные права — None = «не менять»,
     # чтобы старые клиенты, не присылающие эти поля, ничего не сбросили.
     for _perm_field in ("can_approve", "can_edit_references", "can_view_salary",
                         "can_import", "can_manage_users", "can_view_all_tabels"):
         if _perm_field in data:
             setattr(target, _perm_field, bool(data[_perm_field]))
-    target.is_admin = payload.is_admin
-    target.is_hr = payload.is_hr
-    target.timesheet_inspector = payload.timesheet_inspector
-    target.is_user = payload.is_user
-    target.is_report = payload.is_report
-    target.is_documents_manager = payload.is_documents_manager
-    # ✅ ЭТАП 7: безопасный дефолт — если роль задана (не 'none'), а is_user не включён,
-    # автоматически ставим is_user = True, чтобы старые части кода не ломались
-    effective_role = new_role if new_role is not None else target.role
-    if effective_role and effective_role != 'none' and not target.is_user:
-        target.is_user = True
-    # ✅ ЭТАП 9: синхронизация старых флагов с новой ролью (тихий резерв).
-    # Фронтенд больше не отправляет старые чекбоксы — значения из payload
-    # игнорируем, колонки приводим в соответствие с role.
-    _sync_legacy_flags(target, effective_role)
-    # ✅ НОВОЕ: обновление прав доступа к вкладкам (None — все страницы)
+    # ✅ ЭТАП 10: обновление прав доступа к вкладкам (None — все страницы)
     target.permissions = _normalize_permissions(payload.permissions)
-    target.allowed_departments = _normalize_allowed_departments(payload.allowed_departments, db)
+    # ✅ ЭТАП 10: переключатель «Все подразделения» из формы ('*') -> data_scope='all'
+    _apply_ui_all_departments(target, getattr(payload, "allowed_departments", None))
     db.commit()
     db.refresh(target)
     return _to_with_roles(target, _dept_names_map(db))

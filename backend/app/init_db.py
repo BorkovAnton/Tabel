@@ -1,7 +1,12 @@
 """Простая авто-миграция: добавляет недостающие колонки в существующие таблицы.
 
 Вызывается из main.py до create_all/seed, чтобы запросы к новым полям
-(например users.is_user) не падали на старых базах PostgreSQL/SQLite.
+не падали на старых базах PostgreSQL/SQLite.
+
+ЭТАП 10: список миграций очищен от старых полей прав (is_user, is_report,
+is_documents_manager, allowed_departments — они больше не создаются).
+Добавлена DROP-миграция, удаляющая старые колонки из существующих баз;
+перед удалением автоматически создаётся резервная копия users_backup_stage10.
 """
 from sqlalchemy import create_engine, inspect, text
 
@@ -9,9 +14,6 @@ from app.database import DATABASE_URL
 
 MIGRATIONS = [
     ("tabel_entries", "position", "INTEGER DEFAULT 0"),
-    ("users", "is_user", "BOOLEAN NOT NULL DEFAULT TRUE"),
-    ("users", "allowed_departments", "TEXT DEFAULT ''"),
-    ("users", "is_report", "BOOLEAN NOT NULL DEFAULT FALSE"),
     # Ручные итоговые колонки «КДУ» в табеле заполнения
     ("tabel_entries", "kdu_work_days", "NUMERIC(4,2)"),
     ("tabel_entries", "kdu_weekend_days", "NUMERIC(4,2)"),
@@ -27,8 +29,6 @@ MIGRATIONS = [
     ("work_schedule_days", "auto_fill_code", "VARCHAR NULL"),
     # «Часы для выходного дня»: фиксированные часы кода в выходные (напр. 8 для «К»)
     ("time_codes", "weekend_hours", "NUMERIC(5,2) DEFAULT NULL"),
-    # Роль «Документы и приказы» — ввод событий сотрудников для автозаполнения табеля
-    ("users", "is_documents_manager", "BOOLEAN NOT NULL DEFAULT FALSE"),
     # Часы события в документе (автоподставляются из выбранного «Кода часов»)
     ("documents", "hours", "NUMERIC(5,2) DEFAULT NULL"),
     # Внутренняя категория типа документа (vacation/business_trip/sick/other) — цвет чипа
@@ -53,21 +53,32 @@ MIGRATIONS = [
     ("users", "permissions", "JSON DEFAULT NULL"),
     # ─── Должность сотрудника (колонка «Должность» при импорте из Excel) ───
     ("employees", "position", "VARCHAR(200) DEFAULT NULL"),
-    # ✅ ЭТАП 1: единая роль пользователя (старые флаги сохранены, логика не меняется)
+    # ✅ ЭТАП 1: единая роль пользователя
     ("users", "role", "VARCHAR(20) NOT NULL DEFAULT 'user'"),
-    # ─── ЭТАП 3: область видимости данных (логика пока не меняется) ───
+    # ─── ЭТАП 3: область видимости данных ───
     # 'own' — только свои табели, 'department' — своё подразделение,
     # 'custom' — выбранные подразделения, 'all' — все табели.
     ("users", "data_scope", "VARCHAR(20) NOT NULL DEFAULT 'own'"),
-    # Список ID разрешённых подразделений (JSON); старое allowed_departments сохранено.
+    # Список ID разрешённых подразделений (JSON); заменил старое allowed_departments.
     ("users", "allowed_department_ids_json", "JSON DEFAULT NULL"),
-    # ─── ЭТАП 4: специальные права (логика пока не меняется, DEFAULT FALSE) ───
+    # ─── ЭТАП 4: специальные права ───
     ("users", "can_approve", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("users", "can_edit_references", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("users", "can_view_salary", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("users", "can_import", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("users", "can_manage_users", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("users", "can_view_all_tabels", "BOOLEAN NOT NULL DEFAULT FALSE"),
+]
+
+# ✅ ЭТАП 10: старые колонки прав, подлежащие удалению из существующих БД.
+LEGACY_DROP_COLUMNS = [
+    "is_admin",
+    "is_hr",
+    "timesheet_inspector",
+    "is_user",
+    "is_report",
+    "is_documents_manager",
+    "allowed_departments",
 ]
 
 
@@ -143,9 +154,8 @@ def ensure_columns() -> None:
                 print(f"[migrate]   Колонка {column} уже существует")
                 skipped_exists += 1
 
-        # ─── ЭТАП 2: миграция данных — заполняем role по старым булевым флагам ───
-        # Идемпотентна: можно запускать многократно, старые поля не изменяются.
-        _sync_user_roles(conn)
+        # ─── ЭТАП 10: удаление старых колонок прав (с резервной копией таблицы) ───
+        _drop_legacy_columns(conn)
 
     # Выход из engine.begin() = COMMIT (если не было исключений).
     print(f"[migrate] Транзакция зафиксирована (COMMIT выполнен)")
@@ -154,46 +164,34 @@ def ensure_columns() -> None:
     print("[migrate] === МИГРАЦИЯ ЗАВЕРШЕНА ===")
 
 
-ROLE_SYNC_SQL = """
-    UPDATE users SET role = CASE
-        WHEN is_admin = TRUE THEN 'admin'
-        WHEN is_hr = TRUE THEN 'hr'
-        WHEN timesheet_inspector = TRUE THEN 'inspector'
-        ELSE 'user'
-    END
-"""
+def _drop_legacy_columns(conn) -> None:
+    """ЭТАП 10: удаляет старые колонки прав из таблицы users.
 
+    Идемпотентна: если колонок нет — ничего не делает. Перед первым удалением
+    создаёт резервную копию всей таблицы users в users_backup_stage10
+    (если такой ещё нет), чтобы данные можно было восстановить.
 
-def _sync_user_roles(conn) -> None:
-    """Заполняет users.role на основе старых флагов (ЭТАП 2).
-
-    Выполняется только если в таблице users есть колонки role и все три
-    старых флага. Идемпотентна: повторный запуск лишь переписывает те же
-    значения. Булевы поля не читаются для записи и не изменяются.
-    Приоритет ролей: admin > hr > inspector > user.
+    Замечание: раньше здесь выполнялась миграция ROLE_SYNC_SQL (заполнение
+    role по старым флагам, Этап 2). К этому моменту она многократно выполнена
+    на всех рабочих базах, поэтому удалена вместе со старыми колонками.
     """
-    # Новый inspector на каждое обращение — без кэша метаданных.
     insp = inspect(conn)
     if not insp.has_table("users"):
-        print("[migrate] Этап 2: таблица users отсутствует, пропускаем")
+        print("[migrate] Этап 10: таблица users отсутствует, пропускаем")
         return
-    user_cols = {c["name"] for c in insp.get_columns("users")}
-    required = {"role", "is_admin", "is_hr", "timesheet_inspector"}
-    missing = required - user_cols
-    if missing:
-        print(f"[migrate] Этап 2: нет обязательных колонок {sorted(missing)}, пропускаем")
+    existing = {c["name"] for c in insp.get_columns("users")}
+    to_drop = [c for c in LEGACY_DROP_COLUMNS if c in existing]
+    if not to_drop:
+        print("[migrate] Этап 10: старых колонок нет — база уже чистая")
         return
 
-    needs_update = conn.execute(text(
-        "SELECT COUNT(*) FROM users "
-        "WHERE role = 'user' AND (is_admin = TRUE OR is_hr = TRUE OR timesheet_inspector = TRUE)"
-    )).scalar()
-    print(f"[migrate] Пользователей для обновления role: {needs_update}")
+    tables = set(insp.get_table_names())
+    if "users_backup_stage10" not in tables:
+        conn.execute(text("CREATE TABLE users_backup_stage10 AS SELECT * FROM users"))
+        print("[migrate] Этап 10: ✅ создана резервная копия users_backup_stage10")
 
-    if needs_update and needs_update > 0:
-        print("[migrate] Этап 2: Обновление поля role на основе старых флагов...")
-        result = conn.execute(text(ROLE_SYNC_SQL))
-        print(f"[migrate] ✅ Поле role успешно обновлено "
-              f"для существующих пользователей (rows={result.rowcount})")
-    else:
-        print("[migrate] Этап 2: role уже синхронизирован, UPDATE не требуется")
+    dialect = conn.engine.url.get_dialect().name
+    if_exists = "IF EXISTS" if dialect.startswith("postgresql") else ""
+    for col in to_drop:
+        conn.execute(text(f"ALTER TABLE users DROP COLUMN {if_exists} {col}"))
+        print(f"[migrate] Этап 10: ✅ удалена колонка users.{col}")

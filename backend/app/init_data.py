@@ -1,9 +1,7 @@
 """Инициализация справочников и учётных записей по умолчанию."""
-from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
-from app.database import DATABASE_URL
 from app.models.time_code import TimeCode
 from app.models.user import User
 
@@ -18,9 +16,9 @@ DEFAULT_TIME_CODES = [
 ]
 
 DEFAULT_USERS = [
-    # username, password, full_name, is_admin, is_hr, timesheet_inspector, is_user
-    ("admin", "admin123", "Администратор", True, False, True, True),
-    ("hr",    "hr123",    "Кадровик",      False, True, True, True),
+    # username, password, full_name, role, data_scope
+    ("admin", "admin123", "Администратор", "admin", "all"),
+    ("hr",    "hr123",    "Кадровик",      "hr",    "all"),
 ]
 
 
@@ -31,67 +29,36 @@ def seed(db: Session) -> None:
             db.add(TimeCode(code=code, name=name, hours_day=h_day, hours_night=h_night))
 
     # Пользователи по умолчанию (создаются только если таблица users пуста)
+    # ✅ ЭТАП 10: старые булевы флаги удалены — используются только role/data_scope.
     if db.query(User).count() == 0:
-        for username, password, full_name, is_admin, is_hr, inspector, is_user in DEFAULT_USERS:
-            # ЭТАП 9: новым пользователям сразу назначаем роль (основной признак прав);
-            # старые флаги — как тихий резерв до Этапа 10.
-            role = "admin" if is_admin else ("hr" if is_hr else ("inspector" if inspector else "user"))
+        for username, password, full_name, role, data_scope in DEFAULT_USERS:
             db.add(User(
                 username=username,
                 full_name=full_name,
                 hashed_password=hash_password(password),
                 role=role,
-                is_admin=is_admin,
-                is_hr=is_hr,
-                timesheet_inspector=inspector,
-                is_user=is_user,
+                data_scope=data_scope,
             ))
     db.commit()
 
-    # Гарантируем, что у учётной записи admin включена роль «Администратор»
+    # Гарантируем, что у учётной записи admin стоит роль «Администратор»
     # (без неё не виден пункт меню «Пользователи»).
     fix_admin = db.query(User).filter(User.username == "admin").first()
-    if fix_admin and not fix_admin.is_admin:
-        fix_admin.is_admin = True
-    # ЭТАП 9: основной признак — новая роль; чиним её и у существующих админов,
-    # созданных до введения поля role (role мог остаться 'user' при is_admin=True).
     if fix_admin and fix_admin.role != "admin":
         fix_admin.role = "admin"
+    if fix_admin and fix_admin.data_scope != "all":
+        fix_admin.data_scope = "all"
     db.commit()
 
     # Миграция: добавляем недостающие колонки в существующие таблицы (SQLite / PostgreSQL)
     _ensure_columns()
 
-    # Администратору доступны все подразделения
-    fix_admin = db.query(User).filter(User.username == "admin").first()
-    if fix_admin and (fix_admin.allowed_departments or "") != '"*"':
-        fix_admin.allowed_departments = '"*"'
-        db.commit()
-
 
 def _ensure_columns() -> None:
-    """Добавляет новые колонки в уже созданные таблицы (простая авто-миграция)."""
-    engine = create_engine(DATABASE_URL)
-    inspector = inspect(engine)
-    migrations = [
-        ("tabel_entries", "position", "INTEGER DEFAULT 0"),
-        ("users", "is_user", "BOOLEAN DEFAULT 1"),
-        ("users", "allowed_departments", "TEXT DEFAULT ''"),
-        # Должность сотрудника (колонка «Должность» при импорте из Excel)
-        ("employees", "position", "VARCHAR(200) DEFAULT NULL"),
-    ]
-    with engine.begin() as conn:
-        for table, column, coltype in migrations:
-            if not inspector.has_table(table):
-                continue
-            existing = {c["name"] for c in inspector.get_columns(table)}
-            if column not in existing:
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"))
-        # Существующим пользователям без ролей выдаём базовую роль «Пользователь»
-        if "users" in {m[0] for m in migrations} and inspector.has_table("users"):
-            try:
-                conn.execute(text(
-                    "UPDATE users SET is_user = 1 WHERE is_user IS NULL"
-                ))
-            except Exception:
-                pass
+    """Добавляет новые колонки в уже созданные таблицы (простая авто-миграция).
+
+    ✅ ЭТАП 10: миграции старых полей (is_user, allowed_departments) удалены —
+    полный список авто-миграций находится в app/init_db.py (ensure_columns()).
+    """
+    from app.init_db import ensure_columns as _ensure_all_columns
+    _ensure_all_columns()

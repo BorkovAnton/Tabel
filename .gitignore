@@ -1,8 +1,14 @@
 __pycache__/
 *.pyc
-.env
-.env.local
-
-# test artifacts
 *.db
-backend/test_stage9.py
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Local test/dev databases
+*.db
+backend/test_*.db
+backend/dev.db
+backend/app.db
