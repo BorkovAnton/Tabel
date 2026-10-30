@@ -226,9 +226,10 @@ def allowed_department_id_set(user: User, db: Session) -> set[int] | None:
         scope = getattr(user, "data_scope", "own")
         if scope == "all":
             return None
-        # 4) data_scope: 'department' — подразделения, за которые пользователь
-        #    отвечает в табелях (собираются из таблицы tabels)
-        if scope == "department":
+        # 4) data_scope: 'department' ИЛИ role='manager' с data_scope='own' —
+        #    подразделения, за которые пользователь отвечает в табелях
+        #    (собираются из таблицы tabels)
+        if scope == "department" or (scope == "own" and user.role == "manager"):
             from app.models.tabel import Tabel
 
             rows = db.query(Tabel.department_id).filter(
@@ -236,7 +237,7 @@ def allowed_department_id_set(user: User, db: Session) -> set[int] | None:
             ).distinct().all()
             base_ids = {int(r[0]) for r in rows if r[0] is not None}
         else:
-            # 'own' / 'custom' без списка / отсутствие роли — своих подразделений нет
+            # 'custom' без списка / отсутствие роли — своих подразделений нет
             return set()
     if not base_ids:
         return set()
