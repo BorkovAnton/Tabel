@@ -213,6 +213,7 @@
             <td class="add-cell sticky-left-2"><div class="sticky-fill" style="justify-content: flex-start; min-height: 48px;">
               <div class="d-flex align-center" style="gap: 6px;">
                 <v-autocomplete
+                  ref="employeeAutocompleteRef"
                   v-model="selectedEmployee"
                   :items="employeeOptions"
                   item-title="label"
@@ -258,6 +259,7 @@
       <div v-else class="pa-4">
         <div class="d-flex align-center mb-4" style="gap: 6px;">
           <v-autocomplete
+            ref="employeeAutocompleteRef"
             v-model="selectedEmployee"
             :items="employeeOptions"
             item-title="label"
@@ -824,7 +826,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 import CustomEditButton from '../components/CustomEditButton.vue'
@@ -1294,6 +1296,7 @@ const calendarNotLoaded = computed(() =>
 
 const allEmployees = ref([])
 const selectedEmployee = ref(null)
+const employeeAutocompleteRef = ref(null)
 let addingInProgress = false
 let empSearchTimer = null
 
@@ -1352,6 +1355,35 @@ async function onEmployeePicked(empId) {
   } finally {
     selectedEmployee.value = null
     addingInProgress = false
+
+    // Принудительно очищаем внутреннее состояние поиска autocomplete:
+    // Vuetify 3 хранит введённый текст в internalSearch, и после выбора
+    // он оставался в поле — при следующем открытии показывалось
+    // «Ничего не найдено», т.к. фильтр уже не находил совпадений.
+    await nextTick()
+    clearAutocompleteSearch()
+  }
+}
+
+// Очистка внутреннего search-состояния v-autocomplete (работает для
+// обоих экземпляров компонента: в таблице и в режиме без таблицы).
+// ref на два одинаковых v-autocomplete может содержать массив компонентов.
+function clearAutocompleteSearch() {
+  const refs = Array.isArray(employeeAutocompleteRef.value)
+    ? employeeAutocompleteRef.value
+    : [employeeAutocompleteRef.value]
+  for (const autocomplete of refs) {
+    if (!autocomplete) continue
+    // Vuetify 3: проксируем очистку через exposed-свойство search
+    if (autocomplete.search !== undefined) {
+      autocomplete.search = ''
+    }
+    // Для надёжности также очищаем internalSearch, если он доступен
+    if (autocomplete.internalSearch !== undefined) {
+      autocomplete.internalSearch = ''
+    }
+    // закрываем выпадающее меню
+    autocomplete.blur?.()
   }
 }
 
