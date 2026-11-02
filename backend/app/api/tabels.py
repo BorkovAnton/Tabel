@@ -25,6 +25,7 @@ from app.models.employee import Employee
 from app.models.tabel import Tabel, TabelEntry
 from app.models.time_code import TimeCode
 from app.models.user import User
+from app.models.timesheet_record import TimesheetRecord
 
 router = APIRouter(prefix="/tabels", tags=["Tabels"])
 
@@ -594,27 +595,68 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             ac = (getattr(r, "auto_fill_code", None) or "").strip()
             if ac:
                 schedule_codes.setdefault(r.schedule_id, {})[r.day_of_week] = ac
+
+    emp_ids = [e.employee_id for e in tabel.entries]
+    m_start = date(tabel.year, tabel.month, 1)
+    m_end = date(tabel.year, tabel.month, dim)
+    
+    ts_records = db.query(TimesheetRecord).filter(
+        TimesheetRecord.employee_id.in_(emp_ids),
+        TimesheetRecord.date >= m_start,
+        TimesheetRecord.date <= m_end
+    ).all()
+    
+    fact_hours_map = {}
+    for rec in ts_records:
+        fact_hours_map.setdefault(rec.employee_id, {})[rec.date.day] = float(rec.fact_hours or 0.0)
+
     entries = []
     for e in sorted(tabel.entries, key=lambda x: (x.position or 0, x.id)):
         emp = e.employee
-        # Норма для каждого дня месяца: из графика по дню недели; fallback — employees.norm_hours или 8
+        
+        # Нормы часов по дням недели из графиков работы (оставляем как было)
         day_norms: Dict[int, float] = {}
-        # Коды автозаполнения по дням месяца: из графика по дню недели
         day_auto_codes: Dict[int, str] = {}
         if emp and emp.schedule_id and emp.schedule_id in schedule_norms:
             norms_by_dow = schedule_norms[emp.schedule_id]
             codes_by_dow = schedule_codes.get(emp.schedule_id, {})
             for d in range(1, dim + 1):
-                dow = date(tabel.year, tabel.month, d).weekday()  # 0=Пн ... 6=Вс
+                dow = date(tabel.year, tabel.month, d).weekday()
                 day_norms[d] = float(norms_by_dow.get(dow, 0.0))
                 if dow in codes_by_dow:
                     day_auto_codes[d] = codes_by_dow[dow]
+        
+        # 2. Формируем days с учетом документов и факта
+        days_dict = {}
+        emp_fact_hours = fact_hours_map.get(e.employee_id, {})
+        
+        for d in range(1, dim + 1):
+            val = getattr(e, f"day_{d}") or ""
+            
+            # Ищем активный документ для этого сотрудника в этот день
+            active_doc = next(
+                (doc for doc in documents_brief 
+                 if doc.employee_id == e.employee_id 
+                 and doc.start_date.day <= d <= doc.end_date.day), 
+                None
+            )
+            
+            # Если ячейка содержит код документа И есть фактические часы > 0
+            if active_doc and val == active_doc.code:
+                fact_h = emp_fact_hours.get(d, 0.0)
+                if fact_h > 0:
+                    h = int(fact_h)
+                    m = int(round((fact_h - h) * 60))
+                    val = f"{active_doc.code}+{h}:{m:02d}"
+            
+            days_dict[d] = val
+            
         entries.append(EntryRow(
             employee_id=e.employee_id,
             full_name=emp.full_name if emp else "",
             tab_number=emp.tab_number if emp else "",
             position=(emp.position or None) if emp else None,
-            days=entry_days(e, dim),
+            days=days_dict,  # <-- Используем наш новый словарь
             kdu_work_days=float(e.kdu_work_days) if e.kdu_work_days is not None else None,
             kdu_weekend_days=float(e.kdu_weekend_days) if e.kdu_weekend_days is not None else None,
             norm_hours=float(emp.norm_hours) if (emp and emp.norm_hours is not None) else None,
