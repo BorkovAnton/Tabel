@@ -3,7 +3,7 @@ import axios from 'axios'
 // циклической зависимости (router -> views -> auth -> api). См. handleUnauthorized.
 
 const api = axios.create({
-  baseURL: 'http://192.168.100.61:8000',
+  baseURL: 'http://192.168.100.231:8000',
   headers: {
     'Content-Type': 'application/json'
   }
