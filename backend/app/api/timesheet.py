@@ -24,6 +24,7 @@ from app.models.department import Department
 from app.models.document import Document
 from app.models.time_code import TimeCode
 from app.api.company_settings import get_overtime_threshold, apply_overtime_threshold
+from app.api.turnstile_fix import detect_lunch_break_minutes
 from app.schemas.employee import format_short_name
 from app.schemas.timesheet import (
     TimesheetRecordResponse,
@@ -167,6 +168,7 @@ def calculate_day_record(
     events: List[TurnstileEvent],
     lunch_minutes: int,
     night_lunch_minutes: Optional[int] = None,
+    detected_lunch_minutes: Optional[int] = None,
 ):
     """Вычисляет first_in, last_out, fact_hours, needs_review, review_reason
     по списку событий проходной за один день.
@@ -175,6 +177,12 @@ def calculate_day_record(
     длительность считается с коррекцией на переход суток, а обеденный
     перерыв вычитается по правилу ночных смен (night_lunch_minutes;
     None = не вычитать вовсе).
+
+    detected_lunch_minutes — фактические обеденные перерывы, обнаруженные
+    по событиям проходной («Выход» -> следующий «Вход» короче 90 минут,
+    см. turnstile_fix.detect_lunch_break_minutes). Если они больше обеда
+    по графику, из fact_hours вычитается именно они (реально не отработанное
+    время), а не планый перерыв.
     """
 
     in_events = [e for e in events if e.event_type == "in"]
@@ -220,6 +228,12 @@ def calculate_day_record(
             )
         else:
             lunch_to_subtract = lunch_minutes
+
+        # Фактический обеденный перерыв по проходной (< 90 мин между «Выход»
+        # и следующим «Вход»): если он длиннее планого обеда из графика,
+        # вычитаем из fact_hours именно его — сотрудник реально не работал.
+        if detected_lunch_minutes and detected_lunch_minutes > lunch_to_subtract:
+            lunch_to_subtract = detected_lunch_minutes
 
         fact_hours -= lunch_to_subtract / 60
         fact_hours = round(fact_hours, 2)
@@ -398,7 +412,10 @@ def calculate_timesheet(
             # но сохраняем код документа («О») для начисления отпускных.
             if is_vacation_doc and events:
                 first_in, last_out, fact_hours, needs_review, review_reason = (
-                    calculate_day_record(events, lunch_minutes)
+                    calculate_day_record(
+                        events, lunch_minutes,
+                        detected_lunch_minutes=detect_lunch_break_minutes(events),
+                    )
                 )
                 if review_reason:
                     review_reason += " (работа в период отпуска)"
@@ -533,7 +550,8 @@ def calculate_timesheet(
                 continue
 
             first_in, last_out, fact_hours, needs_review, review_reason = calculate_day_record(
-                events, lunch_minutes
+                events, lunch_minutes,
+                detected_lunch_minutes=detect_lunch_break_minutes(events),
             )
 
             existing = (

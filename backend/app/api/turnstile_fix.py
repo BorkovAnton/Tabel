@@ -21,13 +21,47 @@ NIGHT_OUT_MAX_HOUR = 12
 # Увеличено до 24 часов: сотрудники могут работать по 14-15 часов (две смены
 # подряд), чтобы длинная смена не разрывалась ложным «Нет выхода».
 MAX_SHIFT_HOURS = 24
+# Если между «Выход» и следующим «Вход» одного сотрудника прошло меньше стольких
+# минут — это обеденный перерыв, а не конец смены. Такие события объединяются
+# в одну смену (первый вход ... последний выход), время обеда сохраняется в
+# lunch_break_minutes/lunch_breaks и вычитается из фактических часов.
+LUNCH_BREAK_THRESHOLD_MINUTES = 90
+
+
+def detect_lunch_break_minutes(events):
+    """Суммарное время обеденных перерывов (минуты) по отсортированным событиям.
+
+    Обедом считается интервал между «Выход» и следующим «Вход» того же
+    сотрудника, если между ними прошло меньше LUNCH_BREAK_THRESHOLD_MINUTES
+    (90 мин). Используется при расчёте табеля: это время вычитается из
+    фактических часов смены (в отличие от планого обеда из графика, который
+    уже учтён в planned/default часах).
+    """
+    total = 0
+    last_out = None
+    for e in sorted(events, key=lambda x: x.datetime):
+        et = getattr(e, "event_type", None)
+        if et == "out":
+            last_out = e.datetime
+        elif et == "in":
+            if last_out is not None and e.datetime > last_out:
+                gap_min = (e.datetime - last_out).total_seconds() / 60.0
+                if gap_min < LUNCH_BREAK_THRESHOLD_MINUTES:
+                    total += round(gap_min)
+            last_out = None
+    return int(total)
 
 
 def _pair_shifts(events):
-    """Связать события «вход-выход» в смены с учётом ночных переходов через полночь.
+    """Связать события «вход-выход» в смены с учётом ночных переходов через
+    полночь и обеденных перерывов.
 
     Логика:
       * События для каждого сотрудника сортируются по времени.
+      * Если между "Выход" и следующим "Вход" того же сотрудника прошло меньше
+        LUNCH_BREAK_THRESHOLD_MINUTES (90 мин) — это обеденный перерыв, а не
+        конец смены; смена продолжается (пример: 08:17 вход, 12:32 выход на
+        обед, 12:54 возврат, 16:01 конец смены -> одна смена 08:17->16:01).
       * Вход после NIGHT_IN_HOUR (20:00) ожидает выход до NIGHT_OUT_MAX_HOUR (12:00)
         следующего дня — это одна ночная смена (например, 22:47 -> 07:02).
       * Обычный вход закрывается ближайшим выходом; если выход найден позже чем
@@ -59,6 +93,8 @@ def _pair_shifts(events):
                 "duration_hours": duration,
                 "events": [e],
                 "is_manual": True,
+                "lunch_break_minutes": 0,
+                "lunch_breaks": [],
             })
             continue
         by_emp.setdefault(e.employee_id, []).append(e)
@@ -68,6 +104,7 @@ def _pair_shifts(events):
         open_in = None       # datetime незакрытого входа
         open_events = []     # события текущей открытой смены
         pending_outs = []    # выходы, не нашедшие свой вход
+        lunch_breaks = []    # обеденные перерывы текущей смены [{'start','end','minutes'}]
 
         def close_shift(start, end, shift_events, is_night):
             duration = round((end - start).total_seconds() / 3600.0, 2) if end else None
@@ -82,15 +119,43 @@ def _pair_shifts(events):
                 "is_night": is_night,
                 "duration_hours": duration,
                 "events": shift_events,
+                "lunch_break_minutes": sum(lb["minutes"] for lb in lunch_breaks),
+                "lunch_breaks": list(lunch_breaks),
             })
 
-        for e in evs:
+        def is_lunch_break(out_dt):
+            """True, если ближайший следующий «Вход» того же сотрудника — раньше
+            LUNCH_BREAK_THRESHOLD_MINUTES (значит, это выход на обед, а не
+            конец смены)."""
+            for ne in evs:
+                if ne.event_type == "in" and ne.datetime > out_dt:
+                    gap_min = (ne.datetime - out_dt).total_seconds() / 60.0
+                    return gap_min < LUNCH_BREAK_THRESHOLD_MINUTES, ne
+                # дошли до события позже, чем возможный возврат с обеда,
+                # и оно не «вход» — продолжаем поиск только пока не встретим вход
+            return False, None
+
+        for idx, e in enumerate(evs):
             dt = e.datetime
             if e.event_type == "in":
                 if open_in is not None:
-                    # Новый вход раньше закрытия предыдущей смены — фиксируем
-                    # предыдущую как «нет выхода» и открываем новую.
+                    # Возврат с обеда: предыдущий выход был коротким перерывом —
+                    # фиксируем его как обед и НЕ закрываем смену.
+                    prev_out = next((pe for pe in reversed(open_events)
+                                     if pe.event_type == "out"), None)
+                    if prev_out is not None and \
+                            (dt - prev_out.datetime).total_seconds() / 60.0 < LUNCH_BREAK_THRESHOLD_MINUTES:
+                        lunch_breaks.append({
+                            "start": prev_out.datetime,
+                            "end": dt,
+                            "minutes": round((dt - prev_out.datetime).total_seconds() / 60.0),
+                        })
+                        open_events.append(e)
+                        continue
+                    # Новый вход без возврата с обеда — фиксируем предыдущую
+                    # смену как «нет выхода» и открываем новую.
                     close_shift(open_in, None, open_events, open_in.hour >= NIGHT_IN_HOUR)
+                    lunch_breaks = []
                 open_in = dt
                 open_events = [e]
                 # Присоединяем ранее «висящие» выходы этой же ночной смены
@@ -102,16 +167,24 @@ def _pair_shifts(events):
                         pending_outs.remove(pe)
                         open_in = None
                         open_events = []
+                        lunch_breaks = []
                         break
             elif e.event_type == "out":
                 if open_in is not None and dt > open_in \
                         and (dt - open_in) <= timedelta(hours=MAX_SHIFT_HOURS):
+                    # Обеденный перерыв: ближайший следующий вход — раньше 90 мин.
+                    # Смена не закрывается, выход запоминается как начало обеда.
+                    lunch_flag, _ = is_lunch_break(dt)
+                    if lunch_flag:
+                        open_events.append(e)
+                        continue
                     is_night = (dt.date() > open_in.date() and dt.hour < NIGHT_OUT_MAX_HOUR) \
                         or open_in.hour >= NIGHT_IN_HOUR
                     open_events.append(e)
                     close_shift(open_in, dt, open_events, is_night)
                     open_in = None
                     open_events = []
+                    lunch_breaks = []
                 elif open_in is None:
                     pending_outs.append(e)
                 # если dt <= open_in — случайный выброс, игнорируем в составе смены
@@ -131,6 +204,8 @@ def _pair_shifts(events):
                 "is_night": pe.datetime.hour < NIGHT_OUT_MAX_HOUR,
                 "duration_hours": None,
                 "events": [pe],
+                "lunch_break_minutes": 0,
+                "lunch_breaks": [],
             })
 
     return sorted(shifts, key=lambda s: (s["shift_start"], s["employee_id"]))
@@ -270,7 +345,8 @@ def recalc_timesheet_for_employee(db: Session, day_map: dict) -> dict:
         lunch_minutes = schedule_lunch_minutes(schedule, day)
         default_hours = schedule_norm_hours(schedule, day)
         first_in, last_out, fact_hours, needs_review, review_reason = calculate_day_record(
-            events, lunch_minutes
+            events, lunch_minutes,
+            detected_lunch_minutes=detect_lunch_break_minutes(events),
         )
 
         existing = (
