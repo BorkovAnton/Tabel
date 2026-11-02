@@ -311,11 +311,14 @@ def recalc_timesheet_for_employee(db: Session, day_map: dict) -> dict:
         if not employee:
             continue
 
+        # Умное расширение окна (Подход 1): сначала берём события только за
+        # текущий день; расширяем до 12:00 следующего дня ТОЛЬКО если первый
+        # вход вечерний (>= NIGHT_SHIFT_START_HOUR) — ночная смена через
+        # полночь. Для дневных смен окно остаётся в пределах одного дня,
+        # иначе min/max за двое суток даёт ложные 28+ часов.
+        NIGHT_SHIFT_START_HOUR = 20
         day_start = datetime.combine(day, datetime.min.time())
-        # Окно расширяем на сутки вперёд, чтобы захватить выход ночной смены
-        # через полночь (вход 23:00 D -> выход 07:00 D+1), как в основном
-        # расчёте табеля (app.api.timesheet.calculate_timesheet).
-        day_end = datetime.combine(day + timedelta(days=1), datetime.max.time())
+        day_end = datetime.combine(day, datetime.max.time())
         events = (
             db.query(TurnstileEvent)
             .filter(
@@ -326,13 +329,37 @@ def recalc_timesheet_for_employee(db: Session, day_map: dict) -> dict:
             .order_by(TurnstileEvent.datetime)
             .all()
         )
+
+        first_in_event = next((e for e in events if e.event_type == "in"), None)
+        is_night_window = (
+            first_in_event is not None
+            and first_in_event.datetime.hour >= NIGHT_SHIFT_START_HOUR
+        )
+        if is_night_window:
+            night_end = datetime.combine(
+                day + timedelta(days=1), datetime.strptime("12:00", "%H:%M").time()
+            )
+            extra_events = (
+                db.query(TurnstileEvent)
+                .filter(
+                    TurnstileEvent.employee_id == emp_id,
+                    TurnstileEvent.datetime > day_end,
+                    TurnstileEvent.datetime <= night_end,
+                )
+                .order_by(TurnstileEvent.datetime)
+                .all()
+            )
+            events = events + extra_events
+
         if not events:
             continue
 
         # Отсекаем события следующей смены (повторный вход следующего дня,
         # отстоящий более чем на 20 часов от первого входа текущего дня).
+        # Только для не-ночных окон: для ночной смены утренние события
+        # следующего дня относятся к той же смене.
         _in_times = [e.datetime for e in events if e.event_type == "in"]
-        if len(_in_times) >= 2:
+        if len(_in_times) >= 2 and not is_night_window:
             _first_in_min = min(_in_times)
             _next_shift_in = max(_in_times)
             if (

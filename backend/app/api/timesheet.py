@@ -366,16 +366,19 @@ def calculate_timesheet(
             # События проходной запрашиваем, если день НЕ закрыт документом
             # (или это отпуск — тогда проверяем, был ли сотрудник на работе)
             events = []
+            is_night_window = False
             if doc_code_obj is None or is_vacation_doc:
-                # Окно событий расширяем на сутки вперёд, чтобы захватить
-                # отметку выхода ночной смены через полночь
-                # (вход 23:00 D -> выход 07:00 D+1). Это позволяет корректно
-                # рассчитать длительность ночной смены, привязанной к дню
-                # входа. Сдвоенные утренние события следующего дня не
-                # искажают расчёт: first_in — минимум, last_out — максимум;
-                # смена длиннее суток помечается на проверку.
+                # Умное расширение окна (Подход 1): сначала берём события
+                # только за текущий день. Расширяем окно на следующий день
+                # ТОЛЬКО если первый вход был вечером (>= NIGHT_SHIFT_START_HOUR,
+                # 20:00) — это ночная смена, у которой выход через полночь
+                # (вход 22:47 D -> выход 07:02 D+1). Для дневных смен окно
+                # остаётся в пределах одного дня, иначе min/max за двое
+                # суток даёт ложные 28+ часов.
+                NIGHT_SHIFT_START_HOUR = 20
                 day_start = datetime.combine(day, time.min)
-                day_end = datetime.combine(day + timedelta(days=1), time.max)
+                day_end = datetime.combine(day, time.max)
+
                 events = (
                     db.query(TurnstileEvent)
                     .filter(
@@ -387,17 +390,46 @@ def calculate_timesheet(
                     .all()
                 )
 
-            # Ограничиваем расчёт рамками смены текущего дня: если в
-            # расширенном окне есть повторный вход следующего дня, отстоящий
-            # не менее чем на 8 часов от первого входа текущего дня — это
-            # начало ДРУГОЙ смены (например, после ночной смены D сотрудник
-            # вышел в 07:00 и пошёл в дневную смену D+1 в 08:00); события
-            # после этого входа относятся к следующему дню табеля.
+                # Проверяем, есть ли вечерний вход (ночная смена)
+                first_in_event = next(
+                    (e for e in events if e.event_type == "in"), None
+                )
+                is_night_window = (
+                    first_in_event is not None
+                    and first_in_event.datetime.hour >= NIGHT_SHIFT_START_HOUR
+                )
+
+                # Если ночная смена — расширяем окно до 12:00 следующего
+                # дня, чтобы захватить выход через полночь
+                if is_night_window:
+                    night_end = datetime.combine(
+                        day + timedelta(days=1), time(12, 0)
+                    )
+                    extra_events = (
+                        db.query(TurnstileEvent)
+                        .filter(
+                            TurnstileEvent.employee_id == employee.id,
+                            TurnstileEvent.datetime > day_end,
+                            TurnstileEvent.datetime <= night_end,
+                        )
+                        .order_by(TurnstileEvent.datetime)
+                        .all()
+                    )
+                    events = events + extra_events
+
+            # Ограничиваем расчёт рамками смены текущего дня:
+            # для ночной смены — до 12:00 следующего дня, для дневной —
+            # до конца текущего дня. Если в окне есть повторный вход
+            # следующего дня (для дневной смены), отстоящий не менее чем
+            # на 8 часов от первого входа — это начало ДРУГОЙ смены
+            # (например, после ночной смены D сотрудник вышел в 07:00 и
+            # пошёл в дневную смену D+1 в 08:00); события после этого
+            # входа относятся к следующему дню табеля.
             # Порог 8 ч: короткий перерыв (сдвоенная смена через 1-2 часа)
             # остаётся в текущем дне как суммарное время работы.
             if events:
                 _in_times = [e.datetime for e in events if e.event_type == "in"]
-                if len(_in_times) >= 2:
+                if len(_in_times) >= 2 and not is_night_window:
                     _day_in_min = min(_in_times)
                     _next_shift_in = max(_in_times)
                     if (
