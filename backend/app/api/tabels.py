@@ -605,17 +605,43 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
     emp_ids = [e.employee_id for e in tabel.entries]
     m_start = date(tabel.year, tabel.month, 1)
     m_end = date(tabel.year, tabel.month, dim)
-    
+
+    # ==============================================================================
+    # 1. ЗАГРУЖАЕМ ДОКУМЕНТЫ И ФАКТИЧЕСКИЕ ЧАСЫ ДО ЦИКЛА entries
+    #    (исправление UnboundLocalError: documents_brief использовалась в цикле,
+    #     а инициализировалась только после него)
+    # ==============================================================================
+    # Активные «Документы и приказы», пересекающиеся с месяцем табеля —
+    # для автозаполнения (дни события заполняются кодом документа).
+    from app.models.document import Document
+    doc_rows = db.query(Document).filter(
+        Document.is_active.is_(True),
+        Document.start_date <= m_end,
+        Document.end_date >= m_start,
+    ).order_by(Document.start_date).all()
+    documents_brief = [
+        DocumentBrief(
+            id=d.id, employee_id=d.employee_id, doc_type=d.doc_type,
+            title=d.title or "", code=d.code,
+            hours=float(d.hours) if d.hours is not None else None,
+            start_date=d.start_date, end_date=d.end_date,
+        ) for d in doc_rows
+    ]
+
+    # Фактические часы за месяц из расчёта табеля (для формата «Код+Ч:ММ»).
     ts_records = db.query(TimesheetRecord).filter(
         TimesheetRecord.employee_id.in_(emp_ids),
         TimesheetRecord.date >= m_start,
         TimesheetRecord.date <= m_end
     ).all()
-    
+
     fact_hours_map = {}
     for rec in ts_records:
         fact_hours_map.setdefault(rec.employee_id, {})[rec.date.day] = float(rec.fact_hours or 0.0)
 
+    # ==============================================================================
+    # 2. ФОРМИРУЕМ СПИСОК СОТРУДНИКОВ (entries)
+    # ==============================================================================
     entries = []
     for e in sorted(tabel.entries, key=lambda x: (x.position or 0, x.id)):
         emp = e.employee
@@ -670,23 +696,6 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             day_norms=day_norms,
             day_auto_codes=day_auto_codes,
         ))
-    # Активные «Документы и приказы», пересекающиеся с месяцем табеля —
-    # для автозаполнения (дни события заполняются кодом документа).
-    from app.models.document import Document
-    m_start, m_end = date(tabel.year, tabel.month, 1), date(tabel.year, tabel.month, dim)
-    doc_rows = db.query(Document).filter(
-        Document.is_active.is_(True),
-        Document.start_date <= m_end,
-        Document.end_date >= m_start,
-    ).order_by(Document.start_date).all()
-    documents_brief = [
-        DocumentBrief(
-            id=d.id, employee_id=d.employee_id, doc_type=d.doc_type,
-            title=d.title or "", code=d.code,
-            hours=float(d.hours) if d.hours is not None else None,
-            start_date=d.start_date, end_date=d.end_date,
-        ) for d in doc_rows
-    ]
     can_edit, edit_reason = get_tabel_edit_access(tabel, user, db)
     return TabelDetailOut(
         id=tabel.id, year=tabel.year, month=tabel.month, days_in_month=dim,
