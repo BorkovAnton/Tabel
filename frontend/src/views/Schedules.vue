@@ -30,7 +30,8 @@
                 <th>День</th>
                 <th>Начало</th>
                 <th>Конец</th>
-                <th>Обед</th>
+                <th>Начало обеда</th>
+                <th>Конец обеда</th>
                 <th>Норма</th>
               </tr>
             </thead>
@@ -40,7 +41,8 @@
                 <td class="font-weight-medium">{{ day.day_name }}</td>
                 <td>{{ day.start_time || '-' }}</td>
                 <td>{{ day.end_time || '-' }}</td>
-                <td>{{ day.is_day_off ? '-' : day.lunch_minutes + ' мин' }}</td>
+                <td>{{ day.is_day_off ? '-' : (day.lunch_start || '-') }}</td>
+                <td>{{ day.is_day_off ? '-' : (day.lunch_end || day.lunch_minutes + ' мин') }}</td>
                 <td>
                   <v-chip :color="day.is_day_off ? 'grey' : 'green'" size="small">
                     {{ day.norm_hours }} ч
@@ -77,7 +79,8 @@
                      обрезались (было видно "08:0" вместо "08:00") -->
                 <th class="col-time">Начало</th>
                 <th class="col-time">Конец</th>
-                <th class="col-lunch">Обед (мин)</th>
+                <th class="col-lunch">Начало обеда</th>
+                <th class="col-lunch">Конец обеда</th>
                 <th class="col-norm">Норма</th>
                 <th class="col-code">Код для автозаполнения</th>
               </tr>
@@ -108,12 +111,20 @@
                 </td>
                 <td class="col-lunch">
                   <v-text-field
-                    v-model.number="day.lunch_minutes"
-                    type="number"
+                    v-model="day.lunch_start"
+                    type="time"
                     :disabled="day.is_day_off"
                     density="compact"
                     hide-details
-                    min="0"
+                  ></v-text-field>
+                </td>
+                <td class="col-lunch">
+                  <v-text-field
+                    v-model="day.lunch_end"
+                    type="time"
+                    :disabled="day.is_day_off"
+                    density="compact"
+                    hide-details
                   ></v-text-field>
                 </td>
                 <td class="col-norm">
@@ -217,7 +228,9 @@ function emptyDay(day_of_week) {
     day_name: DAY_NAMES[day_of_week],
     start_time: '08:00',
     end_time: '17:00',
-    lunch_minutes: 60,
+    lunch_start: '12:00',   // конкретный промежуток обеда
+    lunch_end: '13:00',
+    lunch_minutes: 60,      // обратная совместимость
     is_day_off: day_of_week >= 5,  // Сб и Вс по умолчанию выходные
     auto_fill_code: null           // «Код для автозаполнения» из графика
   }
@@ -235,7 +248,14 @@ function calculateDayNorm(day) {
   let endMin = eh * 60 + em
   if (endMin <= startMin) endMin += 24 * 60
   const gross = (endMin - startMin) / 60
-  return Math.max(gross - day.lunch_minutes / 60, 0).toFixed(2)
+  let lunchMin = day.lunch_minutes || 0
+  if (day.lunch_start && day.lunch_end) {
+    const [lh, lm] = day.lunch_start.split(':').map(Number)
+    const [rh, rm] = day.lunch_end.split(':').map(Number)
+    const diff = (rh * 60 + rm) - (lh * 60 + lm)
+    if (diff > 0) lunchMin = diff
+  }
+  return Math.max(gross - lunchMin / 60, 0).toFixed(2)
 }
 
 const weekNorm = computed(() => {
@@ -271,6 +291,8 @@ function openEditDialog(item) {
     day_name: d.day_name,
     start_time: d.start_time || '08:00',
     end_time: d.end_time || '17:00',
+    lunch_start: d.lunch_start || null,
+    lunch_end: d.lunch_end || null,
     lunch_minutes: d.lunch_minutes,
     is_day_off: d.is_day_off,
     auto_fill_code: d.auto_fill_code || null
@@ -292,6 +314,8 @@ async function saveSchedule() {
         day_of_week: d.day_of_week,
         start_time: d.is_day_off ? null : d.start_time,
         end_time: d.is_day_off ? null : d.end_time,
+        lunch_start: d.is_day_off ? null : (d.lunch_start || null),
+        lunch_end: d.is_day_off ? null : (d.lunch_end || null),
         lunch_minutes: d.lunch_minutes,
         is_day_off: d.is_day_off,
         // ИСПРАВЛЕНО: сохраняем «Код для автозаполнения» (пустой -> null)

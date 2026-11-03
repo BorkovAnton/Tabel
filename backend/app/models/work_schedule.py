@@ -1,3 +1,5 @@
+from datetime import date as _date, datetime
+
 from sqlalchemy import Column, Integer, String, Time, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -25,6 +27,11 @@ class WorkScheduleDay(Base):
     
     start_time = Column(Time, nullable=True)  # NULL если выходной
     end_time = Column(Time, nullable=True)
+    # Конкретный промежуток времени обеда (например 12:00–13:00).
+    lunch_start = Column(Time, nullable=True)
+    lunch_end = Column(Time, nullable=True)
+    # Старое поле сохранено для обратной совместимости: если промежуток
+    # обеда не задан, используется количество минут из него.
     lunch_minutes = Column(Integer, default=60)
     is_day_off = Column(Boolean, default=False)  # Выходной день
 
@@ -34,3 +41,20 @@ class WorkScheduleDay(Base):
     
     # Связь с родителем
     schedule = relationship("WorkSchedule", back_populates="days")
+
+    @property
+    def lunch_duration_minutes(self) -> int:
+        """Длительность обеда в минутах.
+
+        Если задан конкретный промежуток (lunch_start/lunch_end) — считаем
+        от него; иначе — обратная совместимость со старым lunch_minutes.
+        """
+        if self.lunch_start and self.lunch_end:
+            delta = (
+                datetime.combine(_date.min, self.lunch_end)
+                - datetime.combine(_date.min, self.lunch_start)
+            )
+            minutes = int(delta.total_seconds() / 60)
+            if minutes > 0:
+                return minutes
+        return self.lunch_minutes or 0

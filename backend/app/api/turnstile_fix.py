@@ -296,6 +296,7 @@ def recalc_timesheet_for_employee(db: Session, day_map: dict) -> dict:
     """
     from app.api.timesheet import (
         calculate_day_record,
+        schedule_day_row,
         schedule_lunch_minutes,
         schedule_norm_hours,
     )
@@ -371,9 +372,19 @@ def recalc_timesheet_for_employee(db: Session, day_map: dict) -> dict:
         schedule = employee.schedule
         lunch_minutes = schedule_lunch_minutes(schedule, day)
         default_hours = schedule_norm_hours(schedule, day)
+        # Конкретный промежуток обеда из графика (если задан).
+        _sched_day = schedule_day_row(schedule, day)
+        sched_lunch_start = getattr(_sched_day, "lunch_start", None) if (
+            _sched_day and not _sched_day.is_day_off
+        ) else None
+        sched_lunch_end = getattr(_sched_day, "lunch_end", None) if (
+            _sched_day and not _sched_day.is_day_off
+        ) else None
         first_in, last_out, fact_hours, needs_review, review_reason = calculate_day_record(
             events, lunch_minutes,
             detected_lunch_minutes=detect_lunch_break_minutes(events),
+            schedule_lunch_start=sched_lunch_start,
+            schedule_lunch_end=sched_lunch_end,
         )
 
         existing = (

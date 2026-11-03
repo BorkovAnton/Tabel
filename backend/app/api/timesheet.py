@@ -27,6 +27,7 @@ from app.models.time_code import TimeCode
 from app.api.company_settings import get_overtime_threshold, apply_overtime_threshold
 from app.api.turnstile_fix import detect_lunch_break_minutes
 from app.schemas.employee import format_short_name
+from app.api.schedules import _day_norm  # норма с учётом промежутка обеда
 from app.schemas.timesheet import (
     TimesheetRecordResponse,
     TimesheetCalculateRequest,
@@ -99,9 +100,44 @@ def schedule_lunch_minutes(schedule: Optional[WorkSchedule], day: date) -> int:
         return 0
     
     if day_schedule:
-        return day_schedule.lunch_minutes
+        # Учитываем конкретный промежуток обеда, если он задан в графике.
+        return day_schedule.lunch_duration_minutes
     
     return DEFAULT_LUNCH_MINUTES
+
+
+def schedule_day_row(schedule: Optional[WorkSchedule], day: date):
+    """Строка графика работы (WorkScheduleDay) для дня недели или None."""
+    if not schedule:
+        return None
+    return next(
+        (d for d in schedule.days if d.day_of_week == day.weekday()),
+        None,
+    )
+
+
+def subtract_lunch_from_shift(first_in, last_out, lunch_start, lunch_end) -> int:
+    """Минуты пересечения смены (first_in -> last_out) с промежутком обеда.
+
+    Обед задаётся конкретным временем из графика (lunch_start/lunch_end,
+    например 12:00-13:00). Вычитается только та часть обеда, которая
+    попадает внутрь фактической смены; если пересечения нет (например,
+    короткая ночная смена) — возвращается 0.
+    """
+    if not lunch_start or not lunch_end or not first_in or not last_out:
+        return 0
+    lunch_start_dt = datetime.combine(first_in.date(), lunch_start)
+    lunch_end_dt = datetime.combine(first_in.date(), lunch_end)
+    # Обед через полночь (например 23:30-00:30)
+    if lunch_end_dt <= lunch_start_dt:
+        lunch_end_dt += timedelta(days=1)
+    # Смена через полночь: достраиваем выход следующего дня относительно входа
+    shift_end = last_out if last_out >= first_in else last_out + timedelta(days=1)
+    overlap_start = max(first_in, lunch_start_dt)
+    overlap_end = min(shift_end, lunch_end_dt)
+    if overlap_start < overlap_end:
+        return int((overlap_end - overlap_start).total_seconds() / 60)
+    return 0
 
 
 def schedule_norm_hours(schedule: Optional[WorkSchedule], day: date) -> float:
@@ -130,7 +166,17 @@ def schedule_norm_hours(schedule: Optional[WorkSchedule], day: date) -> float:
         end_dt += timedelta(days=1)
     
     gross = (end_dt - start_dt).total_seconds() / 3600
-    net = gross - day_schedule.lunch_minutes / 60
+    lunch_hours = 0.0
+    ls = getattr(day_schedule, "lunch_start", None)
+    le = getattr(day_schedule, "lunch_end", None)
+    if ls and le:
+        ls_dt = datetime.combine(day, ls)
+        le_dt = datetime.combine(day, le)
+        if le_dt > ls_dt:
+            lunch_hours = (le_dt - ls_dt).total_seconds() / 3600
+    if lunch_hours <= 0:
+        lunch_hours = (day_schedule.lunch_minutes or 0) / 60
+    net = gross - lunch_hours
     return round(max(net, 0.0), 2)
 
 
@@ -170,6 +216,8 @@ def calculate_day_record(
     lunch_minutes: int,
     night_lunch_minutes: Optional[int] = None,
     detected_lunch_minutes: Optional[int] = None,
+    schedule_lunch_start=None,
+    schedule_lunch_end=None,
 ):
     """Вычисляет first_in, last_out, fact_hours, needs_review, review_reason
     по списку событий проходной за один день.
@@ -178,6 +226,12 @@ def calculate_day_record(
     длительность считается с коррекцией на переход суток, а обеденный
     перерыв вычитается по правилу ночных смен (night_lunch_minutes;
     None = не вычитать вовсе).
+
+    Если в графике задан конкретный промежуток обеда (schedule_lunch_start/
+    schedule_lunch_end), из fact_hours вычитается время пересечения смены с
+    этим промежутком (обед вычитается ВСЕГДА — сотрудник питается в столовой
+    на территории, независимо от отметок проходной). Без промежутка
+    используется старое правило lunch_minutes (обратная совместимость).
 
     detected_lunch_minutes — фактические обеденные перерывы, обнаруженные
     по событиям проходной («Выход» -> следующий «Вход» короче 90 минут,
@@ -221,9 +275,16 @@ def calculate_day_record(
             needs_review = False
             review_reason = None
 
-        # Обед: для ночной смены — по особому правилу (по умолчанию не
-        # вычитается), для дневной — обычный перерыв из графика.
-        if is_night_shift(first_in, last_out):
+        # Обед: если в графике задан конкретный промежуток (lunch_start/
+        # lunch_end) — вычитаем пересечение смены с ним (всегда, независимо
+        # от отметок проходной). Иначе — старое правило: для ночной смены
+        # по особому расписанию (по умолчанию не вычитается), для дневной —
+        # обычные минуты обеда из графика.
+        if schedule_lunch_start and schedule_lunch_end:
+            lunch_to_subtract = subtract_lunch_from_shift(
+                first_in, last_out, schedule_lunch_start, schedule_lunch_end
+            )
+        elif is_night_shift(first_in, last_out):
             lunch_to_subtract = (
                 night_lunch_minutes if night_lunch_minutes is not None else 0
             )
@@ -339,6 +400,15 @@ def _run_calculate_timesheet(
             # ПРАВИЛЬНОЕ МЕСТО: внутри цикла по дням!
             lunch_minutes = schedule_lunch_minutes(schedule, day)
             default_hours = schedule_norm_hours(schedule, day)
+            # Конкретный промежуток обеда из графика (если задан) —
+            # вычитается из fact_hours по пересечению со сменой.
+            _sched_day = schedule_day_row(schedule, day)
+            sched_lunch_start = getattr(_sched_day, "lunch_start", None) if (
+                _sched_day and not _sched_day.is_day_off
+            ) else None
+            sched_lunch_end = getattr(_sched_day, "lunch_end", None) if (
+                _sched_day and not _sched_day.is_day_off
+            ) else None
 
             # === УЧЁТ ДОКУМЕНТОВ («Документы и приказы») ===
             # Командировка «К» и другие документы-присутствия: день заполняется
@@ -444,6 +514,8 @@ def _run_calculate_timesheet(
                     calculate_day_record(
                         events, lunch_minutes,
                         detected_lunch_minutes=detect_lunch_break_minutes(events),
+                        schedule_lunch_start=sched_lunch_start,
+                        schedule_lunch_end=sched_lunch_end,
                     )
                 )
                 if review_reason:
@@ -581,6 +653,8 @@ def _run_calculate_timesheet(
             first_in, last_out, fact_hours, needs_review, review_reason = calculate_day_record(
                 events, lunch_minutes,
                 detected_lunch_minutes=detect_lunch_break_minutes(events),
+                schedule_lunch_start=sched_lunch_start,
+                schedule_lunch_end=sched_lunch_end,
             )
 
             existing = (

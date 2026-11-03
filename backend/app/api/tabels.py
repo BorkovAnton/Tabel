@@ -585,12 +585,10 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
     schedule_norms: Dict[int, Dict[int, float]] = {}
     schedule_codes: Dict[int, Dict[int, str]] = {}
     if sched_ids:
-        from app.api.schedules import calculate_day_norm
+        from app.api.schedules import _day_norm
         rows = db.query(WorkScheduleDay).filter(WorkScheduleDay.schedule_id.in_(sched_ids)).all()
         for r in rows:
-            schedule_norms.setdefault(r.schedule_id, {})[r.day_of_week] = calculate_day_norm(
-                r.start_time, r.end_time, r.lunch_minutes, r.is_day_off
-            )
+            schedule_norms.setdefault(r.schedule_id, {})[r.day_of_week] = _day_norm(r)
             # «Код для автозаполнения» из графика (пустой не сохраняем)
             ac = (getattr(r, "auto_fill_code", None) or "").strip()
             if ac:

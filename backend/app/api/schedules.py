@@ -18,6 +18,11 @@ class ScheduleDayCreate(BaseModel):
     day_of_week: int  # 0-6
     start_time: Optional[str] = None  # "HH:MM" или None для выходного
     end_time: Optional[str] = None
+    # Конкретный промежуток обеда ("HH:MM"), например 12:00–13:00.
+    lunch_start: Optional[str] = None
+    lunch_end: Optional[str] = None
+    # Старое поле сохранено для обратной совместимости (используется,
+    # если промежуток обеда не задан).
     lunch_minutes: int = 60
     is_day_off: bool = False
     # Код из справочника для «Заполнить по графику» (например "8ч15м", "В").
@@ -34,6 +39,8 @@ class ScheduleDayResponse(BaseModel):
     day_name: str
     start_time: Optional[str] = None
     end_time: Optional[str] = None
+    lunch_start: Optional[str] = None
+    lunch_end: Optional[str] = None
     lunch_minutes: int
     is_day_off: bool
     norm_hours: float
@@ -64,7 +71,19 @@ def parse_time(time_str: Optional[str]) -> Optional[time]:
         )
 
 
-def calculate_day_norm(start: Optional[time], end: Optional[time], lunch: int, is_off: bool) -> float:
+def calculate_day_norm(
+    start: Optional[time],
+    end: Optional[time],
+    lunch: int = 0,
+    is_off: bool = False,
+    lunch_start: Optional[time] = None,
+    lunch_end: Optional[time] = None,
+) -> float:
+    """Норма часов за день по графику.
+
+    Если задан конкретный промежуток обеда (lunch_start/lunch_end) —
+    вычитаем его; иначе обратная совместимость со старым lunch_minutes.
+    """
     if is_off or not start or not end:
         return 0.0
     from datetime import datetime, date, timedelta
@@ -73,7 +92,26 @@ def calculate_day_norm(start: Optional[time], end: Optional[time], lunch: int, i
     if end_dt <= start_dt:
         end_dt += timedelta(days=1)
     gross = (end_dt - start_dt).total_seconds() / 3600
-    return round(max(gross - lunch / 60, 0.0), 2)
+    lunch_hours = 0.0
+    if lunch_start and lunch_end:
+        ls = datetime.combine(date.today(), lunch_start)
+        le = datetime.combine(date.today(), lunch_end)
+        if le > ls:
+            lunch_hours = (le - ls).total_seconds() / 3600
+    if lunch_hours <= 0:
+        lunch_hours = max(lunch or 0, 0) / 60
+    return round(max(gross - lunch_hours, 0.0), 2)
+
+
+def _fmt(t: Optional[time]) -> Optional[str]:
+    return t.strftime("%H:%M") if t else None
+
+
+def _day_norm(day: WorkScheduleDay) -> float:
+    return calculate_day_norm(
+        day.start_time, day.end_time, day.lunch_minutes or 0, day.is_day_off,
+        getattr(day, "lunch_start", None), getattr(day, "lunch_end", None),
+    )
 
 
 @router.get("/", response_model=List[ScheduleResponse])
@@ -84,14 +122,16 @@ def get_schedules(db: Session = Depends(get_db)):
         days_data = []
         week_norm = 0.0
         for day in sorted(sched.days, key=lambda d: d.day_of_week):
-            norm = calculate_day_norm(day.start_time, day.end_time, day.lunch_minutes, day.is_day_off)
+            norm = _day_norm(day)
             week_norm += norm
             days_data.append({
                 "day_of_week": day.day_of_week,
                 "day_name": DAY_NAMES[day.day_of_week],
                 "start_time": day.start_time.strftime("%H:%M") if day.start_time else None,
                 "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
-                "lunch_minutes": day.lunch_minutes,
+                "lunch_start": _fmt(getattr(day, "lunch_start", None)),
+                "lunch_end": _fmt(getattr(day, "lunch_end", None)),
+                "lunch_minutes": day.lunch_duration_minutes if getattr(day, "lunch_start", None) and getattr(day, "lunch_end", None) else (day.lunch_minutes or 0),
                 "is_day_off": day.is_day_off,
                 "norm_hours": norm,
                 # ИСПРАВЛЕНО: код для автозаполнения из графика
@@ -131,6 +171,8 @@ def create_schedule(schedule: ScheduleCreate, db: Session = Depends(get_db)):
             day_of_week=day_data.day_of_week,
             start_time=parse_time(day_data.start_time) if not day_data.is_day_off else None,
             end_time=parse_time(day_data.end_time) if not day_data.is_day_off else None,
+            lunch_start=parse_time(day_data.lunch_start) if not day_data.is_day_off else None,
+            lunch_end=parse_time(day_data.lunch_end) if not day_data.is_day_off else None,
             lunch_minutes=day_data.lunch_minutes,
             is_day_off=day_data.is_day_off,
             # ИСПРАВЛЕНО: сохраняем «Код для автозаполнения» (пустая строка = NULL)
@@ -145,14 +187,16 @@ def create_schedule(schedule: ScheduleCreate, db: Session = Depends(get_db)):
     days_data = []
     week_norm = 0.0
     for day in sorted(new_schedule.days, key=lambda d: d.day_of_week):
-        norm = calculate_day_norm(day.start_time, day.end_time, day.lunch_minutes, day.is_day_off)
+        norm = _day_norm(day)
         week_norm += norm
         days_data.append({
             "day_of_week": day.day_of_week,
             "day_name": DAY_NAMES[day.day_of_week],
             "start_time": day.start_time.strftime("%H:%M") if day.start_time else None,
             "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
-            "lunch_minutes": day.lunch_minutes,
+            "lunch_start": _fmt(getattr(day, "lunch_start", None)),
+            "lunch_end": _fmt(getattr(day, "lunch_end", None)),
+            "lunch_minutes": day.lunch_duration_minutes if getattr(day, "lunch_start", None) and getattr(day, "lunch_end", None) else (day.lunch_minutes or 0),
             "is_day_off": day.is_day_off,
             "norm_hours": norm,
             # ИСПРАВЛЕНО: код для автозаполнения из графика
@@ -188,6 +232,8 @@ def update_schedule(schedule_id: int, schedule: ScheduleCreate, db: Session = De
             day_of_week=day_data.day_of_week,
             start_time=parse_time(day_data.start_time) if not day_data.is_day_off else None,
             end_time=parse_time(day_data.end_time) if not day_data.is_day_off else None,
+            lunch_start=parse_time(day_data.lunch_start) if not day_data.is_day_off else None,
+            lunch_end=parse_time(day_data.lunch_end) if not day_data.is_day_off else None,
             lunch_minutes=day_data.lunch_minutes,
             is_day_off=day_data.is_day_off,
             # ИСПРАВЛЕНО: сохраняем «Код для автозаполнения» (пустая строка = NULL)
@@ -203,14 +249,16 @@ def update_schedule(schedule_id: int, schedule: ScheduleCreate, db: Session = De
     days_data = []
     week_norm = 0.0
     for day in sorted(sched.days, key=lambda d: d.day_of_week):
-        norm = calculate_day_norm(day.start_time, day.end_time, day.lunch_minutes, day.is_day_off)
+        norm = _day_norm(day)
         week_norm += norm
         days_data.append({
             "day_of_week": day.day_of_week,
             "day_name": DAY_NAMES[day.day_of_week],
             "start_time": day.start_time.strftime("%H:%M") if day.start_time else None,
             "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
-            "lunch_minutes": day.lunch_minutes,
+            "lunch_start": _fmt(getattr(day, "lunch_start", None)),
+            "lunch_end": _fmt(getattr(day, "lunch_end", None)),
+            "lunch_minutes": day.lunch_duration_minutes if getattr(day, "lunch_start", None) and getattr(day, "lunch_end", None) else (day.lunch_minutes or 0),
             "is_day_off": day.is_day_off,
             "norm_hours": norm,
             # ИСПРАВЛЕНО: код для автозаполнения из графика
@@ -266,9 +314,11 @@ def get_schedule_day(
         "day_name": DAY_NAMES[day.day_of_week],
         "start_time": day.start_time.strftime("%H:%M") if day.start_time else None,
         "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
-        "lunch_minutes": day.lunch_minutes,
+        "lunch_start": _fmt(getattr(day, "lunch_start", None)),
+        "lunch_end": _fmt(getattr(day, "lunch_end", None)),
+        "lunch_minutes": day.lunch_duration_minutes if getattr(day, "lunch_start", None) and getattr(day, "lunch_end", None) else (day.lunch_minutes or 0),
         "is_day_off": day.is_day_off,
-        "norm_hours": calculate_day_norm(day.start_time, day.end_time, day.lunch_minutes, day.is_day_off),
+        "norm_hours": _day_norm(day),
         "auto_fill_code": getattr(day, "auto_fill_code", None) or None
     }
 
@@ -285,7 +335,5 @@ def get_schedule_day_norms(schedule_id: int, db: Session = Depends(get_db)):
     norms = {d: None for d in range(7)}
     for day in sched.days:
         if 0 <= day.day_of_week <= 6:
-            norms[day.day_of_week] = calculate_day_norm(
-                day.start_time, day.end_time, day.lunch_minutes, day.is_day_off
-            )
+            norms[day.day_of_week] = _day_norm(day)
     return {"schedule_id": sched.id, "name": sched.name, "norms": norms}
