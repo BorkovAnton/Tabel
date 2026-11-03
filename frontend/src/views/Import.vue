@@ -216,7 +216,65 @@
             >
               Рассчитать
             </v-btn>
+            <v-btn
+              color="primary"
+              variant="outlined"
+              :loading="recalcLoading"
+              :disabled="!calcDateFrom || !calcDateTo"
+              prepend-icon="mdi-refresh"
+              class="ml-2"
+              @click="recalculateTimesheet"
+            >
+              Пересчитать табель
+            </v-btn>
+            <v-btn
+              color="error"
+              variant="outlined"
+              :disabled="!calcDateFrom || !calcDateTo"
+              prepend-icon="mdi-delete"
+              class="ml-2"
+              @click="showClearDialog = true"
+            >
+              Очистить проходы
+            </v-btn>
           </v-card-actions>
+
+          <!-- Диалог подтверждения очистки событий проходной -->
+          <v-dialog v-model="showClearDialog" max-width="500">
+            <v-card>
+              <v-card-title class="text-h6">Подтверждение очистки</v-card-title>
+              <v-card-text>
+                Вы действительно хотите удалить все события проходной за период
+                <strong>{{ calcDateFrom }} — {{ calcDateTo }}</strong>?
+                <br><br>
+                <v-autocomplete
+                  v-model="clearEmployeeId"
+                  :items="employeeOptions"
+                  item-title="title"
+                  item-value="value"
+                  label="Сотрудник (оставьте пустым для всех)"
+                  variant="outlined"
+                  density="comfortable"
+                  clearable
+                ></v-autocomplete>
+                <br>
+                <v-alert type="warning" density="compact" variant="tonal">
+                  Это действие необратимо! После очистки нужно будет пересчитать табель.
+                </v-alert>
+              </v-card-text>
+              <v-card-actions>
+                <v-spacer />
+                <v-btn variant="text" @click="showClearDialog = false">Отмена</v-btn>
+                <v-btn
+                  color="error"
+                  :loading="clearLoading"
+                  @click="clearTurnstileEvents"
+                >
+                  Очистить
+                </v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
         </v-card>
       </v-col>
 
@@ -356,7 +414,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 import { auth } from '../auth'
 
@@ -377,6 +435,79 @@ const calcDateTo = ref('')
 const calcLoading = ref(false)
 const calcError = ref('')
 const calcResult = ref(null)
+
+// Пересчёт «с нуля» и очистка событий проходной (только Администратор)
+const recalcLoading = ref(false)
+const clearLoading = ref(false)
+const showClearDialog = ref(false)
+const clearEmployeeId = ref(null)
+const employeesList = ref([])
+
+const employeeOptions = computed(() =>
+  employeesList.value.map(e => ({ title: e.full_name, value: e.id }))
+)
+
+async function loadEmployeesForClear() {
+  if (!auth.isAdmin) return
+  try {
+    const response = await api.get('/employees/')
+    employeesList.value = response.data
+  } catch (e) {
+    console.error('Ошибка загрузки списка сотрудников:', e)
+  }
+}
+
+onMounted(loadEmployeesForClear)
+
+async function recalculateTimesheet() {
+  // Полный пересчёт табеля за выбранный период «с нуля»:
+  // удаляет старые TimesheetRecord и считает заново по текущим собыциям.
+  if (!calcDateFrom.value || !calcDateTo.value) return
+  if (!confirm(`Пересчитать табель за период ${calcDateFrom.value} — ${calcDateTo.value}? Старые расчётные записи будут удалены.`)) {
+    return
+  }
+
+  recalcLoading.value = true
+  calcError.value = ''
+  calcResult.value = null
+
+  try {
+    const response = await api.post('/api/timesheet/recalculate', {
+      employee_id: null,
+      date_from: calcDateFrom.value,
+      date_to: calcDateTo.value
+    })
+    calcResult.value = response.data
+  } catch (e) {
+    calcError.value = e.response?.data?.detail || 'Ошибка при пересчёте табеля'
+    console.error(e)
+  } finally {
+    recalcLoading.value = false
+  }
+}
+
+async function clearTurnstileEvents() {
+  clearLoading.value = true
+  calcError.value = ''
+  try {
+    const response = await api.post('/api/turnstile/clear', {
+      date_from: calcDateFrom.value,
+      date_to: calcDateTo.value,
+      employee_id: clearEmployeeId.value ?? null
+    })
+    const who = response.data.employee_id
+      ? ` (сотрудник ID ${response.data.employee_id})`
+      : ' (все сотрудники)'
+    alert(`Удалено событий проходной: ${response.data.deleted_count}${who}`)
+    showClearDialog.value = false
+    clearEmployeeId.value = null
+  } catch (e) {
+    calcError.value = e.response?.data?.detail || 'Ошибка при очистке событий проходной'
+    console.error(e)
+  } finally {
+    clearLoading.value = false
+  }
+}
 
 // Производственный календарь (xmlcalendar.ru)
 const calYear = ref(new Date().getFullYear())

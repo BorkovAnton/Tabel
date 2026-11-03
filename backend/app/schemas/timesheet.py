@@ -55,6 +55,7 @@ class TimesheetCalculateResponse(BaseModel):
     records_updated: int
     needs_review_count: int
     documents_applied: int = 0
+    message: Optional[str] = None
 
 
 class TimesheetUpdateRequest(BaseModel):

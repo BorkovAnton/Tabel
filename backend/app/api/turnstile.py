@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime, time
+from datetime import date, datetime, time
 import pandas as pd
 import io
 
@@ -10,6 +11,7 @@ from app.core.security import require_admin
 from app.database import get_db
 from app.models.employee import Employee
 from app.models.turnstile_event import TurnstileEvent
+from app.models.user import User
 from app.schemas.turnstile import (
     TurnstileEventResponse,
     TurnstileImportResponse,
@@ -356,3 +358,65 @@ def create_turnstile_event(
         return event
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Очистка событий проходной за период (только Администратор)
+# ---------------------------------------------------------------------------
+
+class ClearTurnstileRequest(BaseModel):
+    """Запрос на очистку событий проходной."""
+    date_from: date
+    date_to: date
+    employee_id: Optional[int] = None  # Если None — очистить для всех
+
+
+@router.post("/clear")
+def clear_turnstile_events(
+    payload: ClearTurnstileRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Удалить события проходной за указанный период.
+
+    Доступ только для Администратора (служебная операция).
+
+    Если employee_id указан — только для этого сотрудника.
+    Если employee_id = None — для всех сотрудников.
+
+    Возвращает количество удалённых записей.
+    """
+    if payload.date_from > payload.date_to:
+        raise HTTPException(
+            status_code=400,
+            detail="date_from не может быть позже date_to",
+        )
+
+    if payload.employee_id is not None:
+        employee = (
+            db.query(Employee).filter(Employee.id == payload.employee_id).first()
+        )
+        if not employee:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Сотрудник с ID {payload.employee_id} не найден",
+            )
+
+    query = db.query(TurnstileEvent).filter(
+        TurnstileEvent.datetime >= datetime.combine(payload.date_from, time.min),
+        TurnstileEvent.datetime <= datetime.combine(payload.date_to, time.max),
+    )
+
+    if payload.employee_id is not None:
+        query = query.filter(TurnstileEvent.employee_id == payload.employee_id)
+
+    count = query.count()
+    query.delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "deleted_count": count,
+        "date_from": payload.date_from.isoformat(),
+        "date_to": payload.date_to.isoformat(),
+        "employee_id": payload.employee_id,
+    }

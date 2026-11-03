@@ -6,6 +6,7 @@ from typing import List, Optional
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from fastapi.responses import FileResponse, StreamingResponse
 from openpyxl import Workbook
@@ -272,17 +273,11 @@ def is_vacation_document(active_doc, code: TimeCode) -> bool:
 # Эндпоинты
 # ---------------------------------------------------------------------------
 
-@router.post("/calculate", response_model=TimesheetCalculateResponse)
-def calculate_timesheet(
+def _run_calculate_timesheet(
     payload: TimesheetCalculateRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    db: Session,
 ):
-    """Рассчитывает табель на основе событий проходной за указанный период.
-
-    Доступ только для Администратора (служебная операция).
-    """
-
+    """Ядро расчёта табеля без HTTP-обвязки (общее для /calculate и /recalculate)."""
     date_from = parse_date(payload.date_from, "date_from")
     date_to = parse_date(payload.date_to, "date_to")
 
@@ -649,6 +644,83 @@ def calculate_timesheet(
         needs_review_count=needs_review_count,
         documents_applied=documents_applied,
     )
+
+
+@router.post("/calculate", response_model=TimesheetCalculateResponse)
+def calculate_timesheet(
+    payload: TimesheetCalculateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Рассчитывает табель на основе событий проходной за указанный период.
+
+    Доступ только для Администратора (служебная операция).
+    """
+    return _run_calculate_timesheet(payload, db)
+
+
+class RecalculateTimesheetRequest(BaseModel):
+    """Запрос на полный пересчёт табеля за период."""
+    employee_id: Optional[int] = None
+    date_from: str
+    date_to: str
+
+
+@router.post("/recalculate", response_model=TimesheetCalculateResponse)
+def recalculate_timesheet(
+    payload: RecalculateTimesheetRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Пересчитать табель (fact_hours) за указанный период «с нуля».
+
+    Доступ только для Администратора (служебная операция).
+
+    Удаляет старые записи TimesheetRecord за период (и для выбранного
+    сотрудника, если employee_id указан) и заново выполняет расчёт по
+    текущим событиям TurnstileEvent. Возвращает статистику расчёта —
+    все созданные записи будут числиться как records_created.
+    """
+    date_from = parse_date(payload.date_from, "date_from")
+    date_to = parse_date(payload.date_to, "date_to")
+
+    if date_from > date_to:
+        raise HTTPException(
+            status_code=400,
+            detail="date_from не может быть позже date_to",
+        )
+
+    if payload.employee_id is not None:
+        employee = (
+            db.query(Employee).filter(Employee.id == payload.employee_id).first()
+        )
+        if not employee:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Сотрудник с ID {payload.employee_id} не найден",
+            )
+
+    # 1. Удаляем старые записи расчёта за период
+    delete_query = db.query(TimesheetRecord).filter(
+        TimesheetRecord.date >= date_from,
+        TimesheetRecord.date <= date_to,
+    )
+    if payload.employee_id is not None:
+        delete_query = delete_query.filter(
+            TimesheetRecord.employee_id == payload.employee_id
+        )
+    delete_query.delete(synchronize_session=False)
+    db.commit()
+
+    # 2. Выполняем расчёт по текущим событиям проходной
+    calc_payload = TimesheetCalculateRequest(
+        employee_id=payload.employee_id,
+        date_from=payload.date_from,
+        date_to=payload.date_to,
+    )
+    result = _run_calculate_timesheet(calc_payload, db)
+    result.message = "Табель пересчитан"
+    return result
 
 
 @router.get("", response_model=List[TimesheetRecordResponse])
