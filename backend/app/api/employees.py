@@ -5,7 +5,12 @@ from typing import List, Optional
 import pandas as pd
 import io
 
-from app.core.security import require_admin
+from app.core.security import (
+    allowed_department_id_set,
+    check_department_access,
+    get_current_user,
+    require_admin,
+)
 from app.database import get_db
 from app.models.employee import Employee
 from app.models.department import Department
@@ -28,6 +33,7 @@ def get_employees(
     limit: int = 3000,
     search: Optional[str] = Query(None, description="Поиск по ФИО / таб. номеру / подразделению"),
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Получить список сотрудников с пагинацией и поиском.
 
@@ -35,8 +41,20 @@ def get_employees(
       - регистронезависимо по подстроке (роман находит и «Романов»,
         и «Бельков Роман»), с нормализацией Ё->Е;
       - поля: ФИО, табельный номер, название подразделения.
+
+    Область видимости: пользователи с ограниченными правами видят только
+    сотрудников назначенных им подразделений (allowed_department_id_set,
+    включая дочерние). admin/hr/inspector/accountant и data_scope='all'
+    видят всех.
     """
     query = db.query(Employee)
+
+    # Ограничение по доступным подразделениям (для пользователей без полного доступа)
+    allowed = allowed_department_id_set(current_user, db)
+    if allowed is not None:
+        if not allowed:
+            return []
+        query = query.filter(Employee.department_id.in_(allowed))
 
     if search and len(search.strip()) >= 1:
         q = search.strip()
@@ -79,10 +97,14 @@ def get_employees(
 @router.post("/", response_model=EmployeeResponse)
 def create_employee(
     employee: EmployeeCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Создать нового сотрудника вручную"""
-    
+
+    # Ограничение по подразделениям: создавать можно только в назначенных
+    check_department_access(current_user, db, employee.department_id)
+
     # Проверяем, нет ли уже сотрудника с таким табельным номером
     existing = db.query(Employee).filter(Employee.tab_number == employee.tab_number).first()
     if existing:
@@ -111,6 +133,7 @@ def update_employee(
     employee_id: int,
     employee_update: EmployeeUpdate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Частичное обновление сотрудника (ФИО, подразделение, график)."""
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
@@ -118,6 +141,11 @@ def update_employee(
         raise HTTPException(status_code=404, detail="Сотрудник не найден")
 
     data = employee_update.model_dump(exclude_unset=True)
+
+    # Ограничение по подразделениям: нельзя читать/перемещать чужого сотрудника
+    check_department_access(current_user, db, emp.department_id)
+    if "department_id" in data and data["department_id"] != emp.department_id:
+        check_department_access(current_user, db, data["department_id"])
 
     # Если меняется табельный номер — проверяем уникальность
     new_tab = data.get("tab_number")
@@ -160,11 +188,14 @@ def update_employee(
 def delete_employee(
     employee_id: int,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Удалить сотрудника."""
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    # Удалять можно только сотрудников назначенных подразделений
+    check_department_access(current_user, db, emp.department_id)
     db.delete(emp)
     db.commit()
     return {"ok": True}
