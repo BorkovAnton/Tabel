@@ -3,7 +3,7 @@
 эмулируем запросы фильтрацией по временным границам."""
 import sys, os
 from datetime import datetime, date, timedelta, time
-sys.path.insert(0, os.path.expanduser("~/tabel-system/backend"))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.api.timesheet import calculate_day_record, is_night_shift
 from app.api.turnstile_fix import detect_lunch_break_minutes

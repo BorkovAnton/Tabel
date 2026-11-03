@@ -235,7 +235,9 @@ def calculate_day_record(
         if detected_lunch_minutes and detected_lunch_minutes > lunch_to_subtract:
             lunch_to_subtract = detected_lunch_minutes
 
-        fact_hours -= lunch_to_subtract / 60
+        # Вычитаем обеденное время из фактических часов смены (max(0, ...) —
+        # защита от отрицательного результата на коротких сменах).
+        fact_hours = max(0.0, fact_hours - lunch_to_subtract / 60)
         fact_hours = round(fact_hours, 2)
         if fact_hours < 0:
             fact_hours = 0.0
