@@ -276,6 +276,11 @@ def _can_access(tabel: Tabel, user: User, db: Session = None) -> bool:
 
     if is_inspector(user):
         return True
+    # Право «Заполнение табелей» (can_approve) даёт доступ ко всем табелям —
+    # иначе пользователь-заполнитель получает 403 при открытии чужого табеля
+    # (например, созданного администратором с другим ответственным).
+    if can_manage_tabels(user):
+        return True
     # Назначенные роли согласования видят все табели (чтобы проверять и редактировать)
     if db is not None:
         settings = _get_settings(db)
@@ -284,6 +289,9 @@ def _can_access(tabel: Tabel, user: User, db: Session = None) -> bool:
     # Любой пользователь с доступом к управлению табелями: доступ к табелям,
     # где он ответственный
     if tabel.responsible_user_id == user.id:
+        return True
+    # Создатель табеля тоже должен иметь доступ (для старых записей author_id == created_by)
+    if getattr(tabel, "created_by", None) == user.id:
         return True
     return False
 

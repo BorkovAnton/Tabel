@@ -140,7 +140,7 @@
 
           <div class="field-label mb-1">Специальные возможности:</div>
           <div class="d-flex flex-column" style="gap: 2px;">
-            <v-checkbox v-model="form.can_approve" label="Согласовывать табели" density="compact" hide-details color="#2d5a3d" />
+            <v-checkbox v-model="form.can_approve" label="Заполнение табелей (создание, редактирование и согласование)" density="compact" hide-details color="#2d5a3d" hint="Без этого права пользователь видит только табели, где он ответственный" persistent-hint />
             <v-checkbox v-model="form.can_edit_references" label="Редактировать справочники" density="compact" hide-details color="#2d5a3d" />
             <v-checkbox v-model="form.can_view_salary" label="Видеть зарплатные данные (часы по тарифу)" density="compact" hide-details color="#2d5a3d" />
             <v-checkbox v-model="form.can_import" label="Импортировать данные" density="compact" hide-details color="#2d5a3d" />
