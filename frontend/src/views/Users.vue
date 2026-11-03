@@ -129,6 +129,12 @@
             <v-select v-if="!allDepartments" :menu-icon="null" v-model="form.allowed_department_ids" :items="deptItems"
                       multiple chips closable-chips density="compact" variant="outlined" hide-details clearable
                       label="Выберите подразделения" item-title="title" item-value="value" class="mb-2" />
+            <!-- ✅ Автоматическое добавление дочерних подразделений -->
+            <div v-if="autoChildDepts.length" class="text-caption mb-2" style="color:#2d5a3d;">
+              ➕ Будут автоматически добавлены дочерние подразделения:
+              <span v-for="(name, i) in autoChildDepts" :key="name">{{ name }}<template v-if="i < autoChildDepts.length - 1">, </template></span>
+              <em>(автоматически)</em>
+            </div>
             <div class="text-caption text-grey mb-3">Если не выбрано ни одного подразделения — сотрудник будет недоступен в списке при создании табеля.</div>
           </template>
 
@@ -162,7 +168,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import api from '../api'
 import CustomEditButton from '../components/CustomEditButton.vue'
 import CustomDeleteButton from '../components/CustomDeleteButton.vue'
@@ -407,8 +413,45 @@ async function loadDepartments() {
     // полный список доступен только администратору (этот экран и так только для него)
     const { data } = await api.get('/departments/?flat=true&all=true')
     deptItems.value = data.map(d => ({ title: d.parent_name ? `${d.name} (${d.parent_name})` : d.name, value: d.id }))
+    deptTree.value = data.map(d => ({ id: d.id, parent_id: d.parent_id ?? null }))
   } catch (e) { /* справочник под разделением не критичен */ }
 }
+
+// ✅ Автоматическое добавление дочерних подразделений:
+// при выборе родительского подразделения backend рекурсивно включает всех детей.
+// Здесь — визуальная подсказка, какие подразделения добавятся автоматически.
+const deptTree = ref([])
+
+function descendantDeptIds(parentId) {
+  const childrenByParent = {}
+  for (const d of deptTree.value) {
+    if (d.parent_id != null) (childrenByParent[d.parent_id] ||= []).push(d.id)
+  }
+  const result = []
+  const seen = new Set()
+  const stack = [...(childrenByParent[parentId] || [])]
+  while (stack.length) {
+    const id = stack.pop()
+    if (seen.has(id)) continue
+    seen.add(id)
+    result.push(id)
+    stack.push(...(childrenByParent[id] || []))
+  }
+  return result
+}
+
+const autoChildDepts = computed(() => {
+  const selected = form.value.allowed_department_ids || []
+  const namesById = {}
+  for (const it of deptItems.value) namesById[it.value] = it.title
+  const extra = new Set()
+  for (const id of selected) {
+    for (const cid of descendantDeptIds(id)) {
+      if (!selected.includes(cid)) extra.add(namesById[cid] || `#${cid}`)
+    }
+  }
+  return [...extra]
+})
 
 function parseAllowed(raw) {
   if (!raw) return []

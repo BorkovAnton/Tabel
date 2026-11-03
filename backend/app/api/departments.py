@@ -38,6 +38,61 @@ class DepartmentResponse(BaseModel):
 DepartmentResponse.model_rebuild()
 
 
+# Максимальная глубина рекурсии при обходе дерева подразделений
+# (защита от циклических ссылок parent_id).
+MAX_DEPARTMENT_TREE_DEPTH = 50
+
+
+def get_all_child_department_ids(db: Session, parent_id: int,
+                                 _depth: int = 0) -> List[int]:
+    """
+    Рекурсивно получить ID всех дочерних подразделений (включая parent_id).
+    Возвращает: [parent_id, child1_id, child2_id, ...]
+
+    Если дочерних подразделений нет — возвращает только [parent_id].
+    Защита от циклических ссылок: не более MAX_DEPARTMENT_TREE_DEPTH уровней.
+    """
+    if _depth >= MAX_DEPARTMENT_TREE_DEPTH:
+        # Достигнута максимальная глубина — останавливаемся,
+        # чтобы не уйти в бесконечную рекурсию при цикле в parent_id.
+        return [parent_id]
+
+    all_ids = [parent_id]
+
+    # Получаем прямых детей
+    children = db.query(Department.id).filter(
+        Department.parent_id == parent_id
+    ).all()
+
+    for (child_id,) in children:
+        # Рекурсивно добавляем ребенка и всех его детей
+        # (get_all_child_department_ids уже включает child_id — не дублируем)
+        all_ids.extend(get_all_child_department_ids(db, child_id, _depth + 1))
+
+    return all_ids
+
+
+def expand_department_ids_with_children(db: Session, dept_ids) -> List[int]:
+    """Раскрыть список id подразделений: добавить все дочерние (рекурсивно).
+
+    Гарантирует отсутствие дубликатов; сохраняет порядок первого появления.
+    Используется при назначении прав пользователю: если выбрано родительское
+    подразделение, автоматически включаются все его дочерние.
+    """
+    result: List[int] = []
+    seen = set()
+    for dept_id in (dept_ids or []):
+        try:
+            did = int(dept_id)
+        except (TypeError, ValueError):
+            continue
+        for expanded_id in get_all_child_department_ids(db, did):
+            if expanded_id not in seen:
+                seen.add(expanded_id)
+                result.append(expanded_id)
+    return result
+
+
 def build_tree(departments: List[Department], parent_id: Optional[int], db: Session) -> List[dict]:
     """Рекурсивно строит дерево подразделений"""
     result = []

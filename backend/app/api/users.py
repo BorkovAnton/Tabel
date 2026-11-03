@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from typing import List, Optional, Union
 
+from app.api.departments import expand_department_ids_with_children
 from app.core.security import hash_password, require_admin
 from app.database import get_db
 from app.models.department import Department
@@ -309,7 +310,9 @@ def create_user_with_roles(payload: UserCreateWithRoles, db: Session = Depends(g
             # ✅ ЭТАП 10: только новая система прав
             role=payload.role,
             data_scope=payload.data_scope,
-            allowed_department_ids_json=payload.allowed_department_ids_json,
+            # Автоматически добавляем все дочерние подразделения (рекурсивно)
+            allowed_department_ids_json=expand_department_ids_with_children(
+                db, payload.allowed_department_ids_json),
             can_approve=payload.can_approve or False,
             can_edit_references=payload.can_edit_references or False,
             can_view_salary=payload.can_view_salary or False,
@@ -359,7 +362,12 @@ def update_user_with_roles(user_id: int, payload: RoleFlags, db: Session = Depen
     if new_data_scope is not None:
         target.data_scope = new_data_scope
     if "allowed_department_ids_json" in data:
-        target.allowed_department_ids_json = data.pop("allowed_department_ids_json")
+        # Автоматически добавляем все дочерние подразделения (рекурсивно),
+        # без дубликатов: выбор родителя даёт доступ и ко всем его детям.
+        target.allowed_department_ids_json = expand_department_ids_with_children(
+            db, data.pop("allowed_department_ids_json"))
+    else:
+        data.pop("allowed_department_ids_json", None)
     # алиас из фронтенда не является колонкой модели — убираем, чтобы не попасть в setattr ниже
     data.pop("allowed_department_ids", None)
     # Специальные права — None = «не менять»,

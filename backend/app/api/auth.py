@@ -4,6 +4,7 @@ from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
+from app.api.departments import expand_department_ids_with_children
 from app.core.security import (
     create_access_token,
     get_current_user,
@@ -176,8 +177,10 @@ def create_user(payload: UserCreate, user: User = Depends(get_current_user), db:
         full_name=payload.full_name,
         role=payload.role,
         data_scope=payload.data_scope,
-        # ✅ ЭТАП 10: подразделения — только новая JSON-колонка (список id)
-        allowed_department_ids_json=_normalize_dept_ids(payload.allowed_department_ids),
+        # ✅ ЭТАП 10: подразделения — только новая JSON-колонка (список id);
+        # автоматически добавляем все дочерние подразделения (рекурсивно)
+        allowed_department_ids_json=expand_department_ids_with_children(
+            db, _normalize_dept_ids(payload.allowed_department_ids)),
         can_approve=payload.can_approve,
         can_edit_references=payload.can_edit_references,
         can_view_salary=payload.can_view_salary,
@@ -204,9 +207,11 @@ def update_user(user_id: int, payload: UserUpdate, user: User = Depends(get_curr
         target.hashed_password = hash_password(data.pop("password"))
     else:
         data.pop("password", None)
-    # ✅ ЭТАП 10: allowed_department_ids (список из схемы) сохраняем в JSON-колонку модели
+    # ✅ ЭТАП 10: allowed_department_ids (список из схемы) сохраняем в JSON-колонку модели;
+    # автоматически добавляем все дочерние подразделения (рекурсивно, без дубликатов)
     if "allowed_department_ids" in data:
-        data["allowed_department_ids_json"] = _normalize_dept_ids(data.pop("allowed_department_ids"))
+        data["allowed_department_ids_json"] = expand_department_ids_with_children(
+            db, _normalize_dept_ids(data.pop("allowed_department_ids")))
     if "permissions" in data and data["permissions"] is not None and not isinstance(data["permissions"], list):
         raise HTTPException(status_code=400, detail="Недопустимый формат прав доступа")
     for k, v in data.items():
