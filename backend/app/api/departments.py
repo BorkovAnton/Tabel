@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
 
-from app.core.security import allowed_department_id_set, get_current_user
+from app.core.security import allowed_department_id_set, get_current_user, has_role
 from app.database import get_db
 from app.models.department import Department
 from app.models.employee import Employee
@@ -29,6 +29,10 @@ class DepartmentResponse(BaseModel):
     parent_name: Optional[str] = None
     employee_count: int = 0
     children_count: int = 0
+    # Служебный узел дерева: добавлен только для связности дерева (предок
+    # разрешённого подразделения), права на него у пользователя отсутствуют —
+    # такие узлы нельзя выбирать как целевое подразделение.
+    is_service: bool = False
     children: List['DepartmentResponse'] = []
 
     class Config:
@@ -93,6 +97,51 @@ def expand_department_ids_with_children(db: Session, dept_ids) -> List[int]:
     return result
 
 
+def add_ancestors_for_tree(db: Session, departments: List[Department]) -> tuple[List[Department], set]:
+    """Догрузить всех предков разрешённых подразделений, чтобы дерево было связным.
+
+    build_tree начинает обход от корневых узлов (parent_id IS NULL). Если у
+    пользователя права только на дочернее подразделение (родитель в список
+    разрешённых не входит), filtered-дерево получается пустым. Догружаем
+    цепочку parent_id вверх для каждого узла; предков помечаем как служебные
+    (is_service=True) — они нужны только для отображения ветки дерева и не
+    должны выбираться как целевое подразделение.
+
+    Возвращает: (расширенный список подразделений, множество id предков).
+    """
+    if not departments:
+        return departments, set()
+
+    allowed_set = {d.id for d in departments}
+    all_depts = db.query(Department).all()
+    by_id = {d.id: d for d in all_depts}
+
+    extra_ids = set()
+    for d in departments:
+        pid = d.parent_id
+        depth = 0
+        while (pid is not None and pid not in allowed_set
+               and pid not in extra_ids and depth < MAX_DEPARTMENT_TREE_DEPTH):
+            if pid not in by_id:
+                break
+            extra_ids.add(pid)
+            pid = by_id[pid].parent_id
+            depth += 1
+
+    if not extra_ids:
+        return departments, set()
+
+    extended = list(departments)
+    for i in extra_ids:
+        ancestor = by_id[i]
+        try:
+            ancestor.is_service = True
+        except Exception:
+            pass
+        extended.append(ancestor)
+    return extended, extra_ids
+
+
 def build_tree(departments: List[Department], parent_id: Optional[int], db: Session) -> List[dict]:
     """Рекурсивно строит дерево подразделений"""
     result = []
@@ -128,6 +177,7 @@ def build_tree(departments: List[Department], parent_id: Optional[int], db: Sess
                 "parent_name": parent_name,
                 "employee_count": total_employee_count,  # Общее количество с детьми
                 "children_count": children_count,
+                "is_service": bool(getattr(dept, "is_service", False)),
                 "children": children
             })
     return result
@@ -147,8 +197,18 @@ def get_departments(
     Флаг all=True возвращает полный список — доступен только администратору.
     """
     allowed = None if all else allowed_department_id_set(user, db)
+    # Флаг all=True доступен только администратору: не-админ получает
+    # отфильтрованный по правам список (исправление дыры в безопасности).
+    if all and not has_role(user, "admin"):
+        all = False
+        allowed = allowed_department_id_set(user, db)
+
+    service_ids = set()
     if not all and allowed is not None:
         departments = db.query(Department).filter(Department.id.in_(allowed or [-1])).all()
+        # Догружаем предков, чтобы дерево было связным (иначе build_tree от
+        # корневых узлов вернёт пустой список для прав только на дочерние).
+        departments, service_ids = add_ancestors_for_tree(db, departments)
     else:
         departments = db.query(Department).all()
     
@@ -173,6 +233,7 @@ def get_departments(
                 "parent_name": parent_name,
                 "employee_count": employee_count,
                 "children_count": children_count,
+                "is_service": dept.id in service_ids,
                 "children": []
             })
         return result

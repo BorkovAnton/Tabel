@@ -95,7 +95,7 @@
           </div>
           <div class="form-field mb-3">
             <div class="field-label">Подразделение</div>
-            <v-select :menu-icon="null" v-model="form.department_id" :items="departments" item-title="name" item-value="id"
+            <v-select :menu-icon="null" v-model="form.department_id" :items="departmentItems" item-title="label" item-value="id"
                       variant="solo" density="compact" flat clearable hide-details />
           </div>
           <div class="form-field">
@@ -192,6 +192,13 @@ const createDialog = ref(false)
 const creating = ref(false)
 const createError = ref('')
 const departments = ref([])
+// Отображение в селекте: "name (parent_name)", если родитель известен.
+const departmentItems = computed(() =>
+  departments.value.map((d) => ({
+    id: d.id,
+    label: d.parent_name ? `${d.name} (${d.parent_name})` : d.name,
+  }))
+)
 const users = ref([])
 const form = ref({ month: now.getMonth() + 1, year: now.getFullYear(), department_id: null, responsible_user_id: null })
 
@@ -245,7 +252,10 @@ async function openCreate() {
   createDialog.value = true
   try {
     await auth.refresh()  // подтянуть актуальные права на подразделения
-    departments.value = (await api.get('/departments/')).data
+    // Плоский список: уже отфильтрован бэкендом по правам пользователя
+    // и не зависит от связности дерева (права могут быть только на дочерние).
+    const { data: deptData } = await api.get('/departments/', { params: { flat: true } })
+    departments.value = deptData.filter((d) => !d.is_service)
     users.value = (await api.get('/auth/users')).data.map(u => ({
       id: u.id, label: `${u.full_name || u.username} (${u.username})`
     }))
