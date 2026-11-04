@@ -137,14 +137,65 @@ function isNonWorkCodeByHeuristic(codeObj) {
   return false
 }
 
+// Нормализация направления (destination) кода: регистронезависимо, с
+// поддержкой русских названий из UI («Часы по тарифу», «Фактической работы»,
+// «Итого часов», «СВЕРХОРОЧНЫЕ ЧАСЫ», «ночные часы», «выходные и праздничные
+// дни», «сверхурочные дни») и канонических ключей расчёта (tariff_hours,
+// fact_days, total_hours, overtime_hours, night_hours, weekend_holiday,
+// overtime_days …). Синонимы: tariff / tariff_hours, fact / fact_days,
+// total / total_hours, ot_hours / overtime_hours.
+const DEST_ALIASES = {
+  'часы по тарифу': 'tariff_hours',
+  'тариф': 'tariff_hours',
+  'тарифные часы': 'tariff_hours',
+  'фактической работы': 'fact_days',
+  'фактическая работа': 'fact_days',
+  'факт': 'fact_days',
+  'фактические дни': 'fact_days',
+  'явка': 'fact_days',
+  'итого часов': 'total_hours',
+  'итого': 'total_hours',
+  'сверхурочные часы': 'overtime_hours',
+  'сверхурочные': 'overtime_hours',
+  'ot_hours': 'overtime_hours',
+  'сверхурочные дни': 'overtime_days',
+  'ночные часы': 'night_hours',
+  'дневные часы': 'day_hours',
+  'выходные и праздничные дни': 'weekend_holiday',
+  'выходные и праздн.': 'weekend_holiday',
+  'выходные/праздники': 'weekend_holiday',
+  'трудовой отпуск': 'vacation',
+  'отпуск': 'vacation',
+  'болезнь': 'sick',
+  'больничный': 'sick',
+  'с разрешения администрации': 'admin_leave',
+  'другие неявки': 'other_absence',
+  'неявка': 'other_absence',
+}
+
+export function normalizeDest(d) {
+  const s = String(d ?? '').trim().toLowerCase()
+  if (!s) return ''
+  if (DEST_ALIASES[s]) return DEST_ALIASES[s]
+  // Пробелы/дефисы не значимы: «Часы по тарифу» == «часы_по_тарифу»
+  const flat = s.replace(/[\s\-]+/g, '_')
+  if (DEST_ALIASES[flat]) return DEST_ALIASES[flat]
+  return s.replace(/\s+/g, '_')
+}
+
 // Эффективные destinations кода: явные назначения из справочника имеют
 // безусловный приоритет; если они пусты — применяется эвристика по
 // названию/коду (см. NAME_HINTS, STANDARD_CODE_HINTS). Для рабочего кода
 // без подсказки — стандартная явка. Коды «выходные/праздники» дополнительно
 // дают часы в «Итого часов» и «по тарифу» (работа в выходной оплачивается).
+// ВСЕ ключи нормализуются normalizeDest — иначе русские названия направлений
+// («Часы по тарифу») не совпадали с каноническими ключами расчёта
+// (tariff_hours), и проверка наличия направления давала ложный пропуск.
 export function effectiveDests(codeObj) {
-  const explicit = Array.isArray(codeObj && codeObj.destinations) ? codeObj.destinations : []
-  if (explicit.length > 0) return explicit
+  const explicit = Array.isArray(codeObj && codeObj.destinations)
+    ? codeObj.destinations.map(normalizeDest).filter(Boolean)
+    : []
+  if (explicit.length > 0) return [...new Set(explicit)]
   if (!codeObj) return []
   const guessed = guessDestByCode(codeObj)
   // Неявка (отпуск/болезнь/административный/прочие) — только своя колонка,
@@ -458,15 +509,11 @@ export function calculateSummary(row, tabel, timeCodes) {
     // ЭВРИСТИКА (см. NAME_HINTS / STANDARD_CODE_HINTS / effectiveDests):
     // у кода НЕ заданы назначения → раньше он не попадал НИ В ОДНУ суммирующую
     // колонку («Отпуск» печатался нулём). effectiveDests возвращает явные
-    // destinations (приоритет всегда у настроек пользователя); пустые
-    // назначения заполняются по названию/букве кода справочника.
-    const dests = effectiveDests(codeObj)
-
-    // Явные назначения имеют безусловный приоритет. Если они заданы, используем
-    // их как есть; иначе применяем эвристику effectiveDests.
-    const explicitDestinations = Array.isArray(codeObj.destinations) ? codeObj.destinations : []
-    const useExplicit = explicitDestinations.length > 0
-    const effective = useExplicit ? explicitDestinations : dests
+    // destinations (приоритет всегда у настроек пользователя; ключи
+    // нормализованы normalizeDest); пустые назначения заполняются по
+    // названию/букве кода справочника.
+    const effective = effectiveDests(codeObj)
+    const useExplicit = (Array.isArray(codeObj.destinations) ? codeObj.destinations.length : 0) > 0
 
     // Флаг неявочного кода: если в эффективных назначениях есть хоть одна
     // неявочная колонка — код считается неявкой (не получает рабочих часов).
@@ -477,33 +524,54 @@ export function calculateSummary(row, tabel, timeCodes) {
     // effectiveDests уже вернул нужную колонку (например vacation/sick).
     const toProcess = effective.filter(d => d !== 'total_hours' && d !== 'tariff_hours')
 
-    toProcess.forEach(dest => {
+    for (const dest of toProcess) {
       const colDef = summaryColumns.find(c => c.key === dest)
-      if (colDef && Object.prototype.hasOwnProperty.call(summary, dest)) {
-        if (colDef.unit === 'days') {
-          summary[dest] += 1
-        } else if (dest === 'night_hours') {
-          summary[dest] += hoursNight
-        } else if (dest === 'day_hours') {
-          summary[dest] += hoursDay
-        } else if (dest === 'overtime_hours') {
-          // код с направлением overtime_hours — сверхурочный: ВСЕ его часы
-          // идут в «Сверхурочные часы», а не только превышение над нормой.
-          summary[dest] += totalHoursE
-        } else {
-          summary[dest] += totalHoursE
-        }
+      if (!colDef || !Object.prototype.hasOwnProperty.call(summary, dest)) continue
+      if (colDef.unit === 'days') {
+        // Дни: неявочные и специальные колонки — всегда по 1 дню за ячейку.
+        // Колонка «фактической работы» при ЯВНЫХ назначениях добавляется
+        // централизованным досчётом ниже (иначе часы попали бы в дни дважды).
+        if (!(dest === 'fact_days' && useExplicit)) summary[dest] += 1
+      } else if (dest === 'night_hours') {
+        summary[dest] += hoursNight
+      } else if (dest === 'day_hours') {
+        summary[dest] += hoursDay
+      } else if (dest === 'overtime_hours') {
+        // код с направлением overtime_hours — сверхурочный: ВСЕ его часы
+        // идут в «Сверхурочные часы», а не только превышение над нормой.
+        summary[dest] += totalHoursE
+      } else if (dest === 'fact_days') {
+        // явное направление «Фактической работы»: начисление часов
+        // (как исторически) — централизованный досчёт ниже его пропускает.
+        summary[dest] += totalHoursE
+      } else {
+        summary[dest] += totalHoursE
       }
-    })
+    }
 
     // Централизованный досчёт рабочих колонок (фактические дни, итого часов,
-    // тарифные часы) для НЕ-неявочных кодов с часами. Это гарантирует, что
-    // даже если пользователь не задал destinations для рабочего кода, его
-    // часы всё равно попадут в итоги. Для неявок часы НЕ добавляются.
+    // тарифные часы). ЭВРИСТИЧЕСКИЕ назначения (у кода ПУСТЫ destinations в
+    // справочнике) включают рабочие колонки автоматически — так «Я»/рабочие
+    // коды без настроек не печатались нулями. Если же назначения заданы ЯВНО,
+    // часа в сводную колонку попадают ТОЛЬКО при наличии соответствующего
+    // направления: например «8ч15м» [«Фактической работы», «Итого часов»] НЕ
+    // получает «Часы по тарифу», а «8тс» с направлением «Часы по тарифу»
+    // получает. Для неявок часы НЕ добавляются.
     if (!isAbsenceCode && (totalHoursE > 0 || codeHasHours(codeObj))) {
-      if (!effective.includes('fact_days')) summary.fact_days += 1
-      summary.total_hours += totalHoursE
-      summary.tariff_hours += Math.min(totalHoursE, norm > 0 ? norm : totalHoursE)
+      const hasFact = effective.includes('fact_days')
+      const hasTotal = effective.includes('total_hours')
+      const hasTariff = effective.includes('tariff_hours')
+      if (!useExplicit) {
+        // Эвристика: стандартная явка — дни + итого + тариф (как раньше).
+        if (!hasFact) summary.fact_days += 1
+        if (!hasTotal) summary.total_hours += totalHoursE
+        if (!hasTariff) summary.tariff_hours += Math.min(totalHoursE, norm > 0 ? norm : totalHoursE)
+      } else {
+        // Явные destinations: начисляем строго по направлениям кода.
+        if (!hasFact && (hasTotal || hasTariff)) summary.fact_days += 1
+        if (hasTotal) summary.total_hours += totalHoursE
+        if (hasTariff) summary.tariff_hours += Math.min(totalHoursE, norm > 0 ? norm : totalHoursE)
+      }
     }
 
     // Логика сверхурочных ЧАСОВ и ДНЕЙ разделена:
@@ -519,10 +587,9 @@ export function calculateSummary(row, tabel, timeCodes) {
       const ot = Math.max(0, totalHoursE - norm)
       if (ot > 0) {
         summary.overtime_hours += ot
-        // из колонок обычных часов вычитаем превышение — теперь всегда:
-        // рабочие часы досчитываются централизованно для всех НЕ-неявочных
-        // кодов (см. выше), поэтому «по тарифу» содержит не более нормы,
-        // а всё превышение принадлежит сверхурочным.
+        // Вычитаем превышение из «по тарифу» только если часы реально там
+        // лежат (код с явным направлением «Часы по тарифу» или эвристика).
+        // Иначе колонка осталась бы 0 и Math.max дал бы ложное начисление.
         summary.tariff_hours = Math.max(0, summary.tariff_hours - ot)
         // «Итого часов» остаётся полным (все введённые часы)
       }
@@ -554,7 +621,7 @@ export function calculateSummary(row, tabel, timeCodes) {
   let otDaysHours = 0
   for (let d = 1; d <= daysInMonth; d++) {
     const codeObj = findCode(dayValue(rowDays, d))
-    if (codeObj && (codeObj.destinations || []).includes('overtime_days')) {
+    if (codeObj && effectiveDests(codeObj).includes('overtime_days')) {
       const n = getDayNorm(row, d)
       otDaysHours += n > 0 ? n : (normOf(row) > 0 ? normOf(row) : 8)
     }
