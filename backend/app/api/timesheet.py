@@ -922,6 +922,8 @@ def get_timesheet_report(
         
         days_data = {}
         total_hours = 0.0
+        # «Итого переработки» — сумма сверхурочных часов за месяц (record.overtime)
+        total_overtime = 0.0
         
         for day in range(1, days_in_month + 1):
             record = records_by_day.get(day)
@@ -974,6 +976,10 @@ def get_timesheet_report(
                 
                 if not record.needs_review:
                     total_hours += record.fact_hours
+                # Переработки считаем по всем записям (в т.ч. дней по документам),
+                # где backend уже рассчитал overtime с учётом порога из настроек
+                if record.overtime and record.overtime > 0:
+                    total_overtime += record.overtime
             else:
                 days_data[str(day)] = {
                     "value": "в",
@@ -1001,7 +1007,9 @@ def get_timesheet_report(
             "short_name": format_short_name(emp.full_name),
             "department": dept_name,
             "days": days_data,
-            "total_hours": round(total_hours, 2)
+            "total_hours": round(total_hours, 2),
+            # «Итого переработки» — сумма сверхурочных часов за месяц
+            "total_overtime": round(total_overtime, 2)
         })
     
     return {

@@ -186,6 +186,7 @@
               <col style="width: 110px;">
               <col v-for="day in reportData.days_in_month" :key="day" style="width: 45px;">
               <col style="width: 80px;">
+              <col style="width: 90px;">
             </colgroup>
             <thead>
               <tr class="bg-grey-lighten-4">
@@ -201,8 +202,11 @@
                   <div>{{ getDayOfWeek(day, reportData.year, reportData.month) }}</div>
                   <div class="text-caption">{{ day }}</div>
                 </th>
-                <th class="sticky-col-end text-center font-weight-bold bg-grey-lighten-3">
+                <th class="text-center font-weight-bold bg-grey-lighten-3">
                   Итого часов
+                </th>
+                <th class="sticky-col-end text-center font-weight-bold bg-grey-lighten-3">
+                  Итого переработки
                 </th>
               </tr>
             </thead>
@@ -278,8 +282,11 @@
                   </v-tooltip>
                 </td>
                 
-                <td class="sticky-col-end text-center font-weight-bold bg-grey-lighten-4">
+                <td class="text-center font-weight-bold bg-grey-lighten-4">
                   {{ emp.total_hours }}
+                </td>
+                <td class="sticky-col-end text-center font-weight-bold bg-grey-lighten-4" :class="empTotalOvertime(emp) > 0 ? 'text-orange-darken-2' : ''">
+                  {{ empTotalOvertime(emp) > 0 ? empTotalOvertime(emp).toFixed(2) : '—' }}
                 </td>
               </tr>
             </tbody>
@@ -612,6 +619,23 @@ function formatTime(decimalHours) {
   const hours = Math.floor(decimalHours)
   const minutes = Math.round((decimalHours - hours) * 60)
   return `${hours}:${String(minutes).padStart(2, '0')}`
+}
+
+// «Итого переработки» по сотруднику: берём total_overtime из ответа бэкенда,
+// а для старых/необновленных ответов — считаем сумму overtime по дням.
+function empTotalOvertime(emp) {
+  if (emp == null) return 0
+  if (emp.total_overtime != null && !Number.isNaN(Number(emp.total_overtime))) {
+    return Number(emp.total_overtime) || 0
+  }
+  if (emp.days) {
+    let sum = 0
+    Object.values(emp.days).forEach(d => {
+      if (d && d.overtime) sum += Number(d.overtime) || 0
+    })
+    return Math.round(sum * 100) / 100
+  }
+  return 0
 }
 
 function isWeekend(day) {
