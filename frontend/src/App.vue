@@ -77,6 +77,7 @@ const allNavItems = [
   { title: 'Импорт', path: '/import', icon: 'mdi-file-import', auth: true },
   { title: 'Расчёт событий', path: '/turnstile-fix', icon: 'mdi-calculator' },
   { title: 'Табель фактический', path: '/timesheet-report', icon: 'mdi-calendar-month' },
+  { title: 'Все проходы', path: '/all-passes', icon: 'mdi-door-open', auth: true },
   { title: 'Отчёт по часам', path: '/hours-report', icon: 'mdi-chart-box', auth: true },
   { title: 'Подразделения', path: '/departments', icon: 'mdi-office-building' },
   { title: 'Графики', path: '/schedules', icon: 'mdi-clock-outline' },

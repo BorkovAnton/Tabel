@@ -72,3 +72,11 @@ api.interceptors.response.use(
 )
 
 export default api
+
+// === Вкладка «Все проходы»: сырые события турникета сотрудника за месяц ===
+export async function getPassLog(year, month, employeeId) {
+  const { data } = await api.get('/api/turnstile/pass-log', {
+    params: { year, month, employee_id: employeeId }
+  })
+  return data
+}

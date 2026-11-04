@@ -15,6 +15,7 @@ import HoursReport from '../views/HoursReport.vue'
 import Settings from '../views/Settings.vue'
 import Documents from '../views/Documents.vue'
 import DismissalNotes from '../views/DismissalNotes.vue'
+import AllPasses from '../views/AllPasses.vue'
 import { auth } from '../auth'
 
 const routes = [
@@ -37,6 +38,8 @@ const routes = [
   { path: '/import', name: 'Import', component: Import, meta: { requiresAuth: true, requiresAdmin: true } },
   { path: '/turnstile', name: 'Turnstile', component: Turnstile },
   { path: '/timesheet-report', name: 'TimesheetReport', component: TimesheetReport },
+  // «Все проходы» — сырые события турникета сотрудника за месяц (сверка перед расчётом табеля)
+  { path: '/all-passes', name: 'AllPasses', component: AllPasses, meta: { requiresAuth: true } },
   { path: '/turnstile-fix', name: 'TurnstileFix', component: TurnstileFix },
   { path: '/departments', name: 'Departments', component: Departments },
   { path: '/schedules', name: 'Schedules', component: Schedules },

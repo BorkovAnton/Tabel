@@ -24,7 +24,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 ALLOWED_PAGE_KEYS = {
     "/", "/tabels", "/employees", "/import", "/turnstile-fix", "/timesheet-report",
     "/hours-report", "/departments", "/schedules", "/settings", "/dismissal-notes",
-    "/documents", "/users", "/time-codes",
+    "/documents", "/users", "/time-codes", "/all-passes",
 }
 
 # ✅ FIX 422: допустимые ключи ролей и областей видимости данных.

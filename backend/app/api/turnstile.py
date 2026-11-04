@@ -7,7 +7,9 @@ from datetime import date, datetime, time
 import pandas as pd
 import io
 
-from app.core.security import require_admin
+import calendar
+
+from app.core.security import require_admin, get_current_user, allowed_department_id_set
 from app.database import get_db
 from app.models.employee import Employee
 from app.models.turnstile_event import TurnstileEvent
@@ -301,6 +303,65 @@ def get_turnstile_events(
 
     events = query.order_by(TurnstileEvent.datetime).all()
     return events
+
+
+@router.get("/pass-log")
+def get_pass_log(
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    employee_id: int = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Все фактические проходы сотрудника за месяц (сырые события турникета).
+
+    Вкладка «Все проходы»: сверка отметок турникета перед расчётом табеля.
+    Доступ: любой авторизованный пользователь, но только по сотрудникам
+    своих подразделений (allowed_department_id_set; None = все подразделения).
+    """
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+
+    # Проверка прав на подразделение сотрудника
+    allowed = allowed_department_id_set(user, db)
+    if allowed is not None and (employee.department_id is None
+                                 or int(employee.department_id) not in allowed):
+        raise HTTPException(status_code=403,
+                            detail="Нет доступа к этому сотруднику")
+
+    dim = calendar.monthrange(year, month)[1]
+    dt_from = datetime(year, month, 1)
+    dt_to = datetime(year, month, dim, 23, 59, 59)
+
+    events = (
+        db.query(TurnstileEvent)
+        .filter(
+            TurnstileEvent.employee_id == employee_id,
+            TurnstileEvent.datetime >= dt_from,
+            TurnstileEvent.datetime <= dt_to,
+        )
+        .order_by(TurnstileEvent.datetime)
+        .all()
+    )
+
+    return {
+        "employee_id": employee.id,
+        "full_name": employee.full_name,
+        "department_name": employee.department.name if employee.department else None,
+        "year": year,
+        "month": month,
+        "events": [
+            {
+                "id": e.id,
+                "datetime": e.datetime.isoformat(),
+                "event_type": e.event_type,           # in | out | shift
+                "is_manual": bool(e.is_manual),
+                "shift_end": e.shift_end.isoformat() if e.shift_end else None,
+            }
+            for e in events
+        ],
+    }
 
 
 @router.get("/unrecognized", response_model=List[TurnstileEventResponse])

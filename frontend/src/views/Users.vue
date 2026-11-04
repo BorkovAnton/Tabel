@@ -201,6 +201,7 @@ const tabOptions = [
   { title: 'Импорт', value: '/import' },
   { title: 'Расчёт событий', value: '/turnstile-fix' },
   { title: 'Табель фактический', value: '/timesheet-report' },
+  { title: 'Все проходы', value: '/all-passes' },
   { title: 'Отчёт по часам', value: '/hours-report' },
   { title: 'Подразделения', value: '/departments' },
   { title: 'Графики', value: '/schedules' },
@@ -271,9 +272,9 @@ const ROLE_PERMISSIONS = {
 // null / [] => «все вкладки» (allTabs = true).
 const ROLE_TAB_PERMISSIONS = {
   admin: null,                                     // доступ ко всем вкладкам по роли
-  hr: ['/', '/tabels', '/employees', '/turnstile-fix', '/timesheet-report', '/hours-report', '/dismissal-notes', '/documents'],
-  manager: ['/tabels', '/timesheet-report'],
-  inspector: ['/tabels', '/timesheet-report', '/hours-report'],
+  hr: ['/', '/tabels', '/employees', '/turnstile-fix', '/timesheet-report', '/all-passes', '/hours-report', '/dismissal-notes', '/documents'],
+  manager: ['/tabels', '/timesheet-report', '/all-passes'],
+  inspector: ['/tabels', '/timesheet-report', '/all-passes', '/hours-report'],
   accountant: ['/tabels', '/hours-report', '/timesheet-report'],
   user: ['/tabels']
 }
