@@ -449,7 +449,15 @@ export function calculateSummary(row, tabel, timeCodes) {
     // Норма по графику работы для этого дня недели (fallback: norm_hours или 8)
     const norm = getDayNorm(row, d)
 
-    const codeObj = findCode(val)
+    let codeObj = findCode(val)
+
+    // ИСПРАВЛЕНИЕ: если значение ячейки СОВПАДАЕТ С КОДОМ СПРАВОЧНИКА,
+    // оно всегда обрабатывается как код справочника — даже когда выглядит
+    // как число («8тс» не парсится, но «8ч15м»/«7» парсятся rawToHours).
+    // Раньше числовой парсер имел приоритет, и коды с направлениями
+    // (destinations) обходились без проверки направлений → часы попадали
+    // в «Часы по тарифу» у всех числоподобных кодов (баг из задачи).
+    const isDictCode = !!codeObj
 
     if (!codeObj) {
       // Числовой ввод («8», «8ч15м»), которого нет в справочнике — ниже.
@@ -483,9 +491,10 @@ export function calculateSummary(row, tabel, timeCodes) {
     // Числовой ввод («8», «8ч15м», «8:15»), которого НЕТ в справочнике:
     // обычные часы + сверхурочные сверх нормы по графику.
     // «Сверхурочные дни» при числовом вводе НЕ добавляются.
-    // ВАЖНО: если код есть в справочнике (например «7» = Выходной),
-    // он обрабатывается ниже как код — а не как 7 часов.
-    if (rawToHours(val) !== null) {
+    // ВАЖНО: если код есть в справочнике (например «7» = Выходной или
+    // «8ч15м» с настроенными направлениями), он обрабатывается выше как
+    // код — а не как просто 7/8.25 часов (см. isDictCode).
+    if (!isDictCode && rawToHours(val) !== null) {
       const hours = rawToHours(val)
       if (hours > 0) {
         const regular = Math.min(hours, norm)
@@ -514,6 +523,9 @@ export function calculateSummary(row, tabel, timeCodes) {
     // названию/букве кода справочника.
     const effective = effectiveDests(codeObj)
     const useExplicit = (Array.isArray(codeObj.destinations) ? codeObj.destinations.length : 0) > 0
+    const hasFact = effective.includes('fact_days')
+    const hasTotal = effective.includes('total_hours')
+    const hasTariff = effective.includes('tariff_hours')
 
     // Флаг неявочного кода: если в эффективных назначениях есть хоть одна
     // неявочная колонка — код считается неявкой (не получает рабочих часов).
@@ -553,22 +565,25 @@ export function calculateSummary(row, tabel, timeCodes) {
     // тарифные часы). ЭВРИСТИЧЕСКИЕ назначения (у кода ПУСТЫ destinations в
     // справочнике) включают рабочие колонки автоматически — так «Я»/рабочие
     // коды без настроек не печатались нулями. Если же назначения заданы ЯВНО,
-    // часа в сводную колонку попадают ТОЛЬКО при наличии соответствующего
+    // часы в сводную колонку попадают ТОЛЬКО при наличии соответствующего
     // направления: например «8ч15м» [«Фактической работы», «Итого часов»] НЕ
     // получает «Часы по тарифу», а «8тс» с направлением «Часы по тарифу»
     // получает. Для неявок часы НЕ добавляются.
+    // Досчёт нужен только когда цикл по toProcess НЕ обработал эти колонки
+    // (они были исключены из него): fact_days при явных назначениях,
+    // total_hours и tariff_hours всегда.
     if (!isAbsenceCode && (totalHoursE > 0 || codeHasHours(codeObj))) {
-      const hasFact = effective.includes('fact_days')
-      const hasTotal = effective.includes('total_hours')
-      const hasTariff = effective.includes('tariff_hours')
       if (!useExplicit) {
         // Эвристика: стандартная явка — дни + итого + тариф (как раньше).
         if (!hasFact) summary.fact_days += 1
-        if (!hasTotal) summary.total_hours += totalHoursE
-        if (!hasTariff) summary.tariff_hours += Math.min(totalHoursE, norm > 0 ? norm : totalHoursE)
+        summary.total_hours += totalHoursE
+        summary.tariff_hours += Math.min(totalHoursE, norm > 0 ? norm : totalHoursE)
       } else {
         // Явные destinations: начисляем строго по направлениям кода.
-        if (!hasFact && (hasTotal || hasTariff)) summary.fact_days += 1
+        // Фактический рабочий день засчитывается при любом рабочем
+        // направлении (факт/итого/тариф) — иначе код «8ч15м» [«Фактической
+        // работы», «Итого часов»] терял день (цикл выше пропускает fact_days).
+        if (hasFact || hasTotal || hasTariff) summary.fact_days += 1
         if (hasTotal) summary.total_hours += totalHoursE
         if (hasTariff) summary.tariff_hours += Math.min(totalHoursE, norm > 0 ? norm : totalHoursE)
       }
@@ -590,7 +605,9 @@ export function calculateSummary(row, tabel, timeCodes) {
         // Вычитаем превышение из «по тарифу» только если часы реально там
         // лежат (код с явным направлением «Часы по тарифу» или эвристика).
         // Иначе колонка осталась бы 0 и Math.max дал бы ложное начисление.
-        summary.tariff_hours = Math.max(0, summary.tariff_hours - ot)
+        if (hasTariff || !useExplicit) {
+          summary.tariff_hours = Math.max(0, summary.tariff_hours - ot)
+        }
         // «Итого часов» остаётся полным (все введённые часы)
       }
     }
