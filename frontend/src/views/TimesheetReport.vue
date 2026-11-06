@@ -178,7 +178,7 @@
     <!-- Таблица табеля -->
     <v-card v-if="reportData" elevation="2">
       <v-card-text class="pa-0">
-        <div style="overflow-x: auto; max-height: 70vh;">
+        <div class="timesheet-scroll-container">
           <table class="timesheet-table">
             <colgroup>
               <col style="width: 40px;">
@@ -189,24 +189,34 @@
               <col style="width: 90px;">
             </colgroup>
             <thead>
-              <tr class="bg-grey-lighten-4">
-                <th class="sticky-col font-weight-bold">№</th>
-                <th class="sticky-col-2 font-weight-bold" title="Фамилия и инициалы">Ф.И.О.</th>
-                <th class="sticky-col-3 font-weight-bold">Подразделение</th>
-                <th 
-                  v-for="day in reportData.days_in_month" 
-                  :key="day" 
-                  class="text-center font-weight-bold"
-                  :class="isWeekend(day) ? 'bg-blue-lighten-5' : ''"
+              <!-- Шапка в две строки: день недели + число — вся шапка липкая (sticky top) -->
+              <tr class="header-row-days bg-grey-lighten-4">
+                <th rowspan="2" class="sticky-col sticky-corner font-weight-bold">№</th>
+                <th rowspan="2" class="sticky-col-2 sticky-corner font-weight-bold" title="Фамилия и инициалы">Ф.И.О.</th>
+                <th rowspan="2" class="sticky-col-3 sticky-corner font-weight-bold">Подразделение</th>
+                <th
+                  v-for="day in reportData.days_in_month"
+                  :key="'dow-' + day"
+                  class="text-center font-weight-bold header-day-name"
+                  :class="{ 'is-weekend': isWeekend(day) }"
                 >
-                  <div>{{ getDayOfWeek(day, reportData.year, reportData.month) }}</div>
-                  <div class="text-caption">{{ day }}</div>
+                  {{ getDayOfWeek(day, reportData.year, reportData.month) }}
                 </th>
-                <th class="text-center font-weight-bold bg-grey-lighten-3">
+                <th rowspan="2" class="text-center font-weight-bold header-total-hours">
                   Итого часов
                 </th>
-                <th class="sticky-col-end text-center font-weight-bold bg-grey-lighten-3">
+                <th rowspan="2" class="sticky-col-end sticky-corner-end text-center font-weight-bold">
                   Итого переработки
+                </th>
+              </tr>
+              <tr class="header-row-numbers">
+                <th
+                  v-for="day in reportData.days_in_month"
+                  :key="'dom-' + day"
+                  class="text-center font-weight-bold header-day-number"
+                  :class="{ 'is-weekend': isWeekend(day) }"
+                >
+                  {{ day }}
                 </th>
               </tr>
             </thead>
@@ -673,6 +683,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* Контейнер прокрутки таблицы: горизонтальная + вертикальная.
+   Sticky-шапка закрепляется относительно этого контейнера. */
+.timesheet-scroll-container {
+  overflow: auto;
+  max-height: 70vh;
+}
+
 /* Таблица */
 .timesheet-table {
   width: 100%;
@@ -692,6 +709,67 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   box-sizing: border-box;
+}
+
+/* ============================================================
+   Плавающая (sticky) шапка фактического табеля
+   Шапка состоит из двух строк: день недели + число.
+   Первая строка липнет к верху контейнера (top: 0),
+   вторая — под неё (top = высота первой строки).
+   Фоны ячеек шапки задаются явными непрозрачными HEX-значениями
+   (классы Vuetify bg-* не перекрывают background у sticky-th),
+   чтобы строки не просвечивали сквозь шапку при прокрутке.
+   ============================================================ */
+.timesheet-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  color: rgba(0, 0, 0, 0.87);
+}
+
+/* Первая строка шапки (дни недели) */
+.header-row-days th {
+  top: 0;
+  height: 26px;
+}
+
+/* Вторая строка шапки (числа месяца) — липнет под первую строку */
+.header-row-numbers th {
+  top: 26px; /* = фактическая высота первой строки шапки */
+}
+
+/* Тень-разделитель под плавающей шапкой (постоянная, без JS) */
+.header-row-numbers th {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* Непрозрачные фоны ячеек шапки: рабочие / выходные дни */
+.header-day-name,
+.header-day-number {
+  background-color: #f5f5f5 !important; /* grey lighten-4 */
+}
+.header-day-name.is-weekend,
+.header-day-number.is-weekend {
+  background-color: #e3f2fd !important; /* blue lighten-5 */
+}
+
+/* Итоговые колонки в шапке тоже липнут (по вертикали) */
+.header-total-hours {
+  background-color: #e0e0e0 !important; /* grey lighten-3 */
+}
+
+/* Угловые ячейки (№ / Ф.И.О. / Подразделение): sticky и по горизонтали,
+   и по вертикали — z-index выше остальных ячеек шапки и левых колонок */
+.sticky-corner {
+  top: 0;
+  z-index: 12;
+}
+
+/* Правый верхний угол («Итого переработки»): sticky left+top */
+.sticky-col-end.sticky-corner-end {
+  top: 0;
+  z-index: 12;
+  background: #e0e0e0 !important;
 }
 
 /* Липкие колонки */
@@ -762,11 +840,10 @@ onMounted(() => {
   z-index: 10;
 }
 
-/* Заголовки дней */
+/* Заголовки дней (обычные ячейки шапки, не sticky-колонки) */
 .timesheet-table thead th:not([class^="sticky-"]) {
-  padding: 6px 2px;
+  padding: 2px 2px;
   font-size: 0.7rem;
-  height: 50px;
   vertical-align: middle;
 }
 
