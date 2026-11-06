@@ -51,11 +51,18 @@
     <v-alert v-if="error" type="error" class="mb-4">{{ error }}</v-alert>
 
     <v-card class="pa-4">
+      <!-- ИЗМЕНЕНО: пагинация убрана — выводятся все сотрудники сразу
+           (:items-per-page="-1" + hide-default-footer). Для длинного списка
+           добавлена вертикальная прокрутка с фиксированной шапкой
+           (height="70vh" + fixed-header). -->
       <v-data-table
         :headers="headers"
         :items="rows"
         :loading="loading"
-        items-per-page-text="Строк на странице:"
+        :items-per-page="-1"
+        hide-default-footer
+        height="70vh"
+        fixed-header
         class="hours-report-table"
       >
         <template #item.tabel_hours="{ item }">
@@ -194,6 +201,15 @@ onMounted(() => {
 <style scoped>
 .hours-report-table :deep(th) {
   white-space: nowrap;
+}
+
+/* Sticky-шапка при вертикальной прокрутке (height="70vh" + fixed-header):
+   непрозрачный фон, чтобы строки не просвечивали сквозь заголовки. */
+.hours-report-table :deep(thead th) {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background-color: #eeeeee !important; /* текущий светлый цвет шапки, непрозрачный */
 }
 
 /* Розовая подсветка расхождений (факт меньше план/табеля) */
