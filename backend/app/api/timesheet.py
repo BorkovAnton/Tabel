@@ -27,7 +27,7 @@ from app.models.time_code import TimeCode
 from app.api.company_settings import get_overtime_threshold, apply_overtime_threshold
 from app.api.turnstile_fix import detect_lunch_break_minutes
 from app.schemas.employee import format_short_name
-from app.api.schedules import _day_norm  # норма с учётом промежутка обеда
+from app.api.schedules import _day_norm, lunch_deduction_minutes  # норма/вычет по промежутку обеда
 from app.schemas.timesheet import (
     TimesheetRecordResponse,
     TimesheetCalculateRequest,
@@ -100,8 +100,9 @@ def schedule_lunch_minutes(schedule: Optional[WorkSchedule], day: date) -> int:
         return 0
     
     if day_schedule:
-        # Учитываем конкретный промежуток обеда, если он задан в графике.
-        return day_schedule.lunch_duration_minutes
+        # Вычитаем обед ТОЛЬКО если в графике задан валидный промежуток
+        # (lunch_start/lunch_end, end > start); иначе вычет 0.
+        return lunch_deduction_minutes(day_schedule.lunch_start, day_schedule.lunch_end)
     
     return DEFAULT_LUNCH_MINUTES
 
@@ -166,16 +167,12 @@ def schedule_norm_hours(schedule: Optional[WorkSchedule], day: date) -> float:
         end_dt += timedelta(days=1)
     
     gross = (end_dt - start_dt).total_seconds() / 3600
-    lunch_hours = 0.0
-    ls = getattr(day_schedule, "lunch_start", None)
-    le = getattr(day_schedule, "lunch_end", None)
-    if ls and le:
-        ls_dt = datetime.combine(day, ls)
-        le_dt = datetime.combine(day, le)
-        if le_dt > ls_dt:
-            lunch_hours = (le_dt - ls_dt).total_seconds() / 3600
-    if lunch_hours <= 0:
-        lunch_hours = (day_schedule.lunch_minutes or 0) / 60
+    # Обед вычитается ТОЛЬКО из валидного промежутка (lunch_start/lunch_end);
+    # при пустом/нулевом промежутке вычет равен 0 (без legacy-фолбэка).
+    lunch_hours = lunch_deduction_minutes(
+        getattr(day_schedule, "lunch_start", None),
+        getattr(day_schedule, "lunch_end", None),
+    ) / 60.0
     net = gross - lunch_hours
     return round(max(net, 0.0), 2)
 

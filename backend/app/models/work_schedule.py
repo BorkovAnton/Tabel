@@ -1,5 +1,3 @@
-from datetime import date as _date, datetime
-
 from sqlalchemy import Column, Integer, String, Time, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -30,8 +28,9 @@ class WorkScheduleDay(Base):
     # Конкретный промежуток времени обеда (например 12:00–13:00).
     lunch_start = Column(Time, nullable=True)
     lunch_end = Column(Time, nullable=True)
-    # Старое поле сохранено для обратной совместимости: если промежуток
-    # обеда не задан, используется количество минут из него.
+    # Старое поле сохранено для обратной совместимости: при сохранении
+    # графика оно синхронизируется с длиной валидного промежутка обеда
+    # (или обнуляется). Расчёт нормы всегда берёт вычет из промежутка.
     lunch_minutes = Column(Integer, default=60)
     is_day_off = Column(Boolean, default=False)  # Выходной день
 
@@ -46,15 +45,11 @@ class WorkScheduleDay(Base):
     def lunch_duration_minutes(self) -> int:
         """Длительность обеда в минутах.
 
-        Если задан конкретный промежуток (lunch_start/lunch_end) — считаем
-        от него; иначе — обратная совместимость со старым lunch_minutes.
+        Обед вычитается ТОЛЬКО из заданного промежутка: если оба времени
+        заданы и lunch_end > lunch_start — возвращаем длину промежутка,
+        иначе 0. Фолбэка на legacy-колонку lunch_minutes нет (см.
+        app.api.schedules.lunch_deduction_minutes).
         """
-        if self.lunch_start and self.lunch_end:
-            delta = (
-                datetime.combine(_date.min, self.lunch_end)
-                - datetime.combine(_date.min, self.lunch_start)
-            )
-            minutes = int(delta.total_seconds() / 60)
-            if minutes > 0:
-                return minutes
-        return self.lunch_minutes or 0
+        from app.api.schedules import lunch_deduction_minutes
+
+        return lunch_deduction_minutes(self.lunch_start, self.lunch_end)

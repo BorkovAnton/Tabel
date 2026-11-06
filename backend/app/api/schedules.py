@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import time
+from datetime import date, datetime, time, timedelta
 from pydantic import BaseModel
 
 from app.database import get_db
@@ -71,6 +71,24 @@ def parse_time(time_str: Optional[str]) -> Optional[time]:
         )
 
 
+def lunch_deduction_minutes(lunch_start, lunch_end) -> int:
+    """Вычет обеда в минутах ТОЛЬКО из валидного промежутка.
+
+    Правило единое для всех мест расчёта нормы:
+      вычет = (lunch_end - lunch_start), если оба времени заданы
+              И lunch_end > lunch_start;
+      иначе вычет = 0.
+
+    Никакого фолбэка на старое (legacy) значение lunch_minutes при
+    пустом или нулевом промежутке обеда.
+    """
+    if lunch_start is not None and lunch_end is not None and lunch_end > lunch_start:
+        delta = (datetime.combine(date.today(), lunch_end)
+                 - datetime.combine(date.today(), lunch_start))
+        return int(delta.total_seconds() // 60)
+    return 0
+
+
 def calculate_day_norm(
     start: Optional[time],
     end: Optional[time],
@@ -81,25 +99,18 @@ def calculate_day_norm(
 ) -> float:
     """Норма часов за день по графику.
 
-    Если задан конкретный промежуток обеда (lunch_start/lunch_end) —
-    вычитаем его; иначе обратная совместимость со старым lunch_minutes.
+    Обед вычитается ТОЛЬКО из заданного промежутка (lunch_start/lunch_end):
+    если промежуток пуст или нулевой — вычет равен 0 (параметр ``lunch``
+    с legacy-минутами больше не используется как фолбэк).
     """
     if is_off or not start or not end:
         return 0.0
-    from datetime import datetime, date, timedelta
     start_dt = datetime.combine(date.today(), start)
     end_dt = datetime.combine(date.today(), end)
     if end_dt <= start_dt:
         end_dt += timedelta(days=1)
     gross = (end_dt - start_dt).total_seconds() / 3600
-    lunch_hours = 0.0
-    if lunch_start and lunch_end:
-        ls = datetime.combine(date.today(), lunch_start)
-        le = datetime.combine(date.today(), lunch_end)
-        if le > ls:
-            lunch_hours = (le - ls).total_seconds() / 3600
-    if lunch_hours <= 0:
-        lunch_hours = max(lunch or 0, 0) / 60
+    lunch_hours = lunch_deduction_minutes(lunch_start, lunch_end) / 60.0
     return round(max(gross - lunch_hours, 0.0), 2)
 
 
@@ -131,7 +142,7 @@ def get_schedules(db: Session = Depends(get_db)):
                 "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
                 "lunch_start": _fmt(getattr(day, "lunch_start", None)),
                 "lunch_end": _fmt(getattr(day, "lunch_end", None)),
-                "lunch_minutes": day.lunch_duration_minutes if getattr(day, "lunch_start", None) and getattr(day, "lunch_end", None) else (day.lunch_minutes or 0),
+                "lunch_minutes": lunch_deduction_minutes(getattr(day, "lunch_start", None), getattr(day, "lunch_end", None)),
                 "is_day_off": day.is_day_off,
                 "norm_hours": norm,
                 # ИСПРАВЛЕНО: код для автозаполнения из графика
@@ -166,14 +177,21 @@ def create_schedule(schedule: ScheduleCreate, db: Session = Depends(get_db)):
     db.refresh(new_schedule)
     
     for day_data in schedule.days:
+        # Для выходного дня все времена сохраняем как NULL
+        _start = None if day_data.is_day_off else parse_time(day_data.start_time)
+        _end = None if day_data.is_day_off else parse_time(day_data.end_time)
+        _lunch_start = None if day_data.is_day_off else parse_time(day_data.lunch_start)
+        _lunch_end = None if day_data.is_day_off else parse_time(day_data.lunch_end)
         day = WorkScheduleDay(
             schedule_id=new_schedule.id,
             day_of_week=day_data.day_of_week,
-            start_time=parse_time(day_data.start_time) if not day_data.is_day_off else None,
-            end_time=parse_time(day_data.end_time) if not day_data.is_day_off else None,
-            lunch_start=parse_time(day_data.lunch_start) if not day_data.is_day_off else None,
-            lunch_end=parse_time(day_data.lunch_end) if not day_data.is_day_off else None,
-            lunch_minutes=day_data.lunch_minutes,
+            start_time=_start,
+            end_time=_end,
+            lunch_start=_lunch_start,
+            lunch_end=_lunch_end,
+            # Синхронизируем legacy-колонку с валидным промежутком обеда:
+            # вычет = длина промежутка (если он задан и end > start), иначе 0.
+            lunch_minutes=lunch_deduction_minutes(_lunch_start, _lunch_end),
             is_day_off=day_data.is_day_off,
             # ИСПРАВЛЕНО: сохраняем «Код для автозаполнения» (пустая строка = NULL)
             auto_fill_code=(day_data.auto_fill_code or "").strip() or None
@@ -196,7 +214,7 @@ def create_schedule(schedule: ScheduleCreate, db: Session = Depends(get_db)):
             "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
             "lunch_start": _fmt(getattr(day, "lunch_start", None)),
             "lunch_end": _fmt(getattr(day, "lunch_end", None)),
-            "lunch_minutes": day.lunch_duration_minutes if getattr(day, "lunch_start", None) and getattr(day, "lunch_end", None) else (day.lunch_minutes or 0),
+            "lunch_minutes": lunch_deduction_minutes(getattr(day, "lunch_start", None), getattr(day, "lunch_end", None)),
             "is_day_off": day.is_day_off,
             "norm_hours": norm,
             # ИСПРАВЛЕНО: код для автозаполнения из графика
@@ -227,14 +245,21 @@ def update_schedule(schedule_id: int, schedule: ScheduleCreate, db: Session = De
     
     # Создаём новые
     for day_data in schedule.days:
+        # Для выходного дня все времена сохраняем как NULL
+        _start = None if day_data.is_day_off else parse_time(day_data.start_time)
+        _end = None if day_data.is_day_off else parse_time(day_data.end_time)
+        _lunch_start = None if day_data.is_day_off else parse_time(day_data.lunch_start)
+        _lunch_end = None if day_data.is_day_off else parse_time(day_data.lunch_end)
         day = WorkScheduleDay(
             schedule_id=schedule_id,
             day_of_week=day_data.day_of_week,
-            start_time=parse_time(day_data.start_time) if not day_data.is_day_off else None,
-            end_time=parse_time(day_data.end_time) if not day_data.is_day_off else None,
-            lunch_start=parse_time(day_data.lunch_start) if not day_data.is_day_off else None,
-            lunch_end=parse_time(day_data.lunch_end) if not day_data.is_day_off else None,
-            lunch_minutes=day_data.lunch_minutes,
+            start_time=_start,
+            end_time=_end,
+            lunch_start=_lunch_start,
+            lunch_end=_lunch_end,
+            # Синхронизируем legacy-колонку с валидным промежутком обеда:
+            # вычет = длина промежутка (если он задан и end > start), иначе 0.
+            lunch_minutes=lunch_deduction_minutes(_lunch_start, _lunch_end),
             is_day_off=day_data.is_day_off,
             # ИСПРАВЛЕНО: сохраняем «Код для автозаполнения» (пустая строка = NULL)
             auto_fill_code=(day_data.auto_fill_code or "").strip() or None
@@ -258,7 +283,7 @@ def update_schedule(schedule_id: int, schedule: ScheduleCreate, db: Session = De
             "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
             "lunch_start": _fmt(getattr(day, "lunch_start", None)),
             "lunch_end": _fmt(getattr(day, "lunch_end", None)),
-            "lunch_minutes": day.lunch_duration_minutes if getattr(day, "lunch_start", None) and getattr(day, "lunch_end", None) else (day.lunch_minutes or 0),
+            "lunch_minutes": lunch_deduction_minutes(getattr(day, "lunch_start", None), getattr(day, "lunch_end", None)),
             "is_day_off": day.is_day_off,
             "norm_hours": norm,
             # ИСПРАВЛЕНО: код для автозаполнения из графика
@@ -316,7 +341,7 @@ def get_schedule_day(
         "end_time": day.end_time.strftime("%H:%M") if day.end_time else None,
         "lunch_start": _fmt(getattr(day, "lunch_start", None)),
         "lunch_end": _fmt(getattr(day, "lunch_end", None)),
-        "lunch_minutes": day.lunch_duration_minutes if getattr(day, "lunch_start", None) and getattr(day, "lunch_end", None) else (day.lunch_minutes or 0),
+        "lunch_minutes": lunch_deduction_minutes(getattr(day, "lunch_start", None), getattr(day, "lunch_end", None)),
         "is_day_off": day.is_day_off,
         "norm_hours": _day_norm(day),
         "auto_fill_code": getattr(day, "auto_fill_code", None) or None

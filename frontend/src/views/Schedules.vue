@@ -42,7 +42,7 @@
                 <td>{{ day.start_time || '-' }}</td>
                 <td>{{ day.end_time || '-' }}</td>
                 <td>{{ day.is_day_off ? '-' : (day.lunch_start || '-') }}</td>
-                <td>{{ day.is_day_off ? '-' : (day.lunch_end || day.lunch_minutes + ' мин') }}</td>
+                <td>{{ day.is_day_off ? '-' : (day.lunch_end || '-') }}</td>
                 <td>
                   <v-chip :color="day.is_day_off ? 'grey' : 'green'" size="small">
                     {{ day.norm_hours }} ч
@@ -240,6 +240,18 @@ function initDays() {
   days.value = Array.from({ length: 7 }, (_, i) => emptyDay(i))
 }
 
+// Вычет обеда в минутах ТОЛЬКО из валидного промежутка:
+// если Начало и Конец обеда заданы и конец > начала — длина промежутка,
+// иначе 0. Фолбэка на legacy-поле lunch_minutes нет (как на бэкенде:
+// app.api.schedules.lunch_deduction_minutes).
+function lunchDeductionMinutes(day) {
+  if (!day.lunch_start || !day.lunch_end) return 0
+  const [lh, lm] = day.lunch_start.split(':').map(Number)
+  const [rh, rm] = day.lunch_end.split(':').map(Number)
+  const diff = (rh * 60 + rm) - (lh * 60 + lm)
+  return diff > 0 ? diff : 0
+}
+
 function calculateDayNorm(day) {
   if (day.is_day_off || !day.start_time || !day.end_time) return 0
   const [sh, sm] = day.start_time.split(':').map(Number)
@@ -248,13 +260,7 @@ function calculateDayNorm(day) {
   let endMin = eh * 60 + em
   if (endMin <= startMin) endMin += 24 * 60
   const gross = (endMin - startMin) / 60
-  let lunchMin = day.lunch_minutes || 0
-  if (day.lunch_start && day.lunch_end) {
-    const [lh, lm] = day.lunch_start.split(':').map(Number)
-    const [rh, rm] = day.lunch_end.split(':').map(Number)
-    const diff = (rh * 60 + rm) - (lh * 60 + lm)
-    if (diff > 0) lunchMin = diff
-  }
+  const lunchMin = lunchDeductionMinutes(day)
   return Math.max(gross - lunchMin / 60, 0).toFixed(2)
 }
 

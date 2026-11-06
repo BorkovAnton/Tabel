@@ -245,7 +245,9 @@ def hours_report(
     sched_rows = db.query(WorkScheduleDay).all()
     for r in sched_rows:
         sched_norms.setdefault(r.schedule_id, {})[r.day_of_week] = calculate_day_norm(
-            r.start_time, r.end_time, r.lunch_minutes, r.is_day_off
+            r.start_time, r.end_time, is_off=r.is_day_off,
+            lunch_start=getattr(r, "lunch_start", None),
+            lunch_end=getattr(r, "lunch_end", None),
         )
 
     # --- часы с табелей за период + сверхурочно с табеля (из заполненного вручную табеля) ---
