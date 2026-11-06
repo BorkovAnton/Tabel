@@ -74,19 +74,19 @@
             {{ fmt(item.fact_hours) }}
           </span>
         </template>
-        <template #item.overtime_planned="{ item }">
-          <!-- ИЗМЕНЕНО: формат как в табеле — «итого (только часы)»: итого =
-               сверхурочные часы + сверхурочные дни × норма дня; в скобках — часы без дней -->
-          <span class="font-weight-bold">{{ fmt(num(item.overtime_planned) + num(item.overtime_days_hours)) }}</span>
-          <span class="text-grey text-caption"> ({{ fmt(item.overtime_planned) }})</span>
+        <template #item.overtime_total="{ item }">
+          <!-- ИЗМЕНЕНО: колонка «Сверхурочно с табеля итого» — только итог
+               (сверхурочные часы + сверхурочные дни × норма дня). Разбивка
+               «часы без дней» из заголовка и скобок убрана. -->
+          <span class="font-weight-bold">{{ fmt(item.overtime_total) }}</span>
         </template>
         <template #item.overtime_hours="{ item }">
-          <!-- розовый, если сверхурочно факт меньше сверхурочного с табеля -->
+          <!-- розовый, если сверхурочно факт меньше сверхурочного с табеля (итого) -->
           <span
             :class="{
               'text-red': item.overtime_hours > 0,
               'font-weight-bold': item.overtime_hours > 0,
-              'pink-highlight': num(item.overtime_hours) < num(item.overtime_planned),
+              'pink-highlight': num(item.overtime_hours) < num(item.overtime_total),
             }"
           >
             {{ fmt(item.overtime_hours) }}
@@ -97,7 +97,7 @@
             <td colspan="4" class="text-right font-weight-bold">Итого:</td>
             <td class="font-weight-bold text-right">{{ fmt(sumTabel) }}</td>
             <td class="font-weight-bold text-right">{{ fmt(sumFact) }}</td>
-            <td class="font-weight-bold text-right">{{ fmt(sumOvertimePlannedTotal) }} <span class="text-grey text-caption">({{ fmt(sumOvertimePlanned) }})</span></td>
+            <td class="font-weight-bold text-right">{{ fmt(sumOvertimeTotal) }}</td>
             <td class="font-weight-bold text-right">{{ fmt(sumOvertime) }}</td>
           </tr>
         </template>
@@ -148,15 +148,15 @@ const headers = [
   { title: 'Подразделение', key: 'department_name', sortable: false },
   { title: 'Часы с табеля', key: 'tabel_hours', sortable: true, align: 'end' },
   { title: 'Часы фактические', key: 'fact_hours', sortable: true, align: 'end' },
-  { title: 'Сверхурочно с табеля итого (сверхурочно часов без дней)', key: 'overtime_planned', sortable: true, align: 'end' },
+  { title: 'Сверхурочно с табеля итого', key: 'overtime_total', sortable: true, align: 'end' },
   { title: 'Сверхурочно факт', key: 'overtime_hours', sortable: true, align: 'end' },
 ]
 
 const sumTabel = computed(() => rows.value.reduce((s, r) => s + (r.tabel_hours || 0), 0))
 const sumFact = computed(() => rows.value.reduce((s, r) => s + (r.fact_hours || 0), 0))
-const sumOvertimePlanned = computed(() => rows.value.reduce((s, r) => s + (r.overtime_planned || 0), 0))
-// ИЗМЕНЕНО: «итого» по колонке = часы + сверхурочные дни, переведённые в часы
-const sumOvertimePlannedTotal = computed(() => rows.value.reduce((s, r) => s + (r.overtime_planned || 0) + (r.overtime_days_hours || 0), 0))
+// ИЗМЕНЕНО: «Сверхурочно с табеля итого» — только итог (часы + дни × норма),
+// суммируется поле overtime_total из API; разбивка «часы без дней» убрана.
+const sumOvertimeTotal = computed(() => rows.value.reduce((s, r) => s + (r.overtime_total || 0), 0))
 const sumOvertime = computed(() => rows.value.reduce((s, r) => s + (r.overtime_hours || 0), 0))
 
 function num(v) {
