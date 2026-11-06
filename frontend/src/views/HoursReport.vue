@@ -203,13 +203,27 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-/* Sticky-шапка при вертикальной прокрутке (height="70vh" + fixed-header):
-   непрозрачный фон, чтобы строки не просвечивали сквозь заголовки. */
-.hours-report-table :deep(thead th) {
+/* Sticky-шапка при вертикальной прокрутке (height="70vh" + fixed-header).
+   ИСПРАВЛЕНО: в Vuetify 3 класс thead th не существует — шапка это
+   th.v-data-table-th, поэтому прошлое правило не применялось и оставался
+   розовый hover-фон (буква «Н» в :hover → rgba(pink,.04)) поверх светлого
+   текста — ничего не было видно. Теперь стиль приведён к общему виду с
+   таблицей «Табель фактического»: светло-серый непрозрачный фон, тёмный
+   текст, жирные заголовки, тень-разделитель под шапкой. */
+.hours-report-table :deep(.v-data-table-header th),
+.hours-report-table :deep(th.v-data-table-th) {
   position: sticky;
   top: 0;
   z-index: 5;
-  background-color: #eeeeee !important; /* текущий светлый цвет шапки, непрозрачный */
+  background-color: #eeeeee !important; /* как в табеле: bg-grey-lighten-4, непрозрачный */
+  color: rgba(0, 0, 0, 0.87) !important;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); /* тень-разделитель под липкой шапкой */
+}
+
+/* Розовый hover-фон не должен подсвечивать шапку (только строки tbody) */
+.hours-report-table :deep(th.v-data-table-th:hover) {
+  background-color: #eeeeee !important;
 }
 
 /* Розовая подсветка расхождений (факт меньше план/табеля) */
