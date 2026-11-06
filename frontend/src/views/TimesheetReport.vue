@@ -178,7 +178,10 @@
     <!-- Таблица табеля -->
     <v-card v-if="reportData" elevation="2">
       <v-card-text class="pa-0">
-        <div style="overflow-x: auto; max-height: 70vh;">
+        <!-- overflow-y:auto нужен, чтобы sticky-шапка закреплялась относительно
+             этого контейнера (max-height без явного overflow-y в некоторых
+             браузерах не даёт sticky работать) -->
+        <div class="timesheet-scroll" style="overflow: auto; max-height: 70vh;">
           <table class="timesheet-table">
             <colgroup>
               <col style="width: 40px;">
@@ -702,6 +705,14 @@ onMounted(() => {
   z-index: 10; 
 }
 
+/* В шапке липкие колонки должны быть ПОД угловыми ячейками,
+   но над остальными заголовками и ячейками tbody */
+thead .sticky-col,
+thead .sticky-col-2,
+thead .sticky-col-3 {
+  z-index: 22;
+}
+
 .sticky-col-2 { 
   position: sticky; 
   left: 40px; 
@@ -760,6 +771,35 @@ onMounted(() => {
   right: 0; 
   background: #f5f5f5 !important; 
   z-index: 10;
+}
+
+/* Шапка фактического табеля — плавающая (sticky) при вертикальной прокрутке.
+   Закрепляется относительно scroll-контейнера .timesheet-scroll (overflow: auto).
+   Фон непрозрачный — строки tbody не просвечивают.
+   Тень-разделитель под шапкой отделяет её от строк при прокрутке
+   (постоянное отображение — без JS-отслеживания скролла; border-collapse:
+   separate, поэтому рамка ячеек остаётся видимой). */
+.timesheet-table thead th {
+  position: sticky;
+  top: 0;
+  /* Обычные заголовки дней — выше ячеек tbody и липких колонок (z-index 10),
+     но НИЖЕ угловых ячеек шапки (22) и «Итого переработки» (25) */
+  z-index: 20;
+  background-color: #eeeeee !important; /* bg-grey-lighten-4, непрозрачный */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* Угловые ячейки шапки (№ / Ф.И.О. / Подразделение): sticky одновременно
+   по left и top — должны перекрывать и шапку, и липкие колонки tbody */
+thead .sticky-col,
+thead .sticky-col-2,
+thead .sticky-col-3 {
+  z-index: 22;
+}
+
+/* Итоговые колонки справа в шапке тоже липнут (sticky right + top) */
+thead .sticky-col-end {
+  z-index: 25;
 }
 
 /* Заголовки дней */
