@@ -628,17 +628,6 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
         ) for d in doc_rows
     ]
 
-    # Фактические часы за месяц из расчёта табеля (для формата «Код+Ч:ММ»).
-    ts_records = db.query(TimesheetRecord).filter(
-        TimesheetRecord.employee_id.in_(emp_ids),
-        TimesheetRecord.date >= m_start,
-        TimesheetRecord.date <= m_end
-    ).all()
-
-    fact_hours_map = {}
-    for rec in ts_records:
-        fact_hours_map.setdefault(rec.employee_id, {})[rec.date.day] = float(rec.fact_hours or 0.0)
-
     # ==============================================================================
     # 2. ФОРМИРУЕМ СПИСОК СОТРУДНИКОВ (entries)
     # ==============================================================================
@@ -658,30 +647,10 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
                 if dow in codes_by_dow:
                     day_auto_codes[d] = codes_by_dow[dow]
         
-        # 2. Формируем days с учетом документов и факта
+        # 2. Формируем days: только то, что сохранено в табеле (коды документов без часов)
         days_dict = {}
-        emp_fact_hours = fact_hours_map.get(e.employee_id, {})
-        
         for d in range(1, dim + 1):
-            val = getattr(e, f"day_{d}") or ""
-            
-            # Ищем активный документ для этого сотрудника в этот день
-            active_doc = next(
-                (doc for doc in documents_brief 
-                 if doc.employee_id == e.employee_id 
-                 and doc.start_date.day <= d <= doc.end_date.day), 
-                None
-            )
-            
-            # Если ячейка содержит код документа И есть фактические часы > 0
-            if active_doc and val == active_doc.code:
-                fact_h = emp_fact_hours.get(d, 0.0)
-                if fact_h > 0:
-                    h = int(fact_h)
-                    m = int(round((fact_h - h) * 60))
-                    val = f"{active_doc.code}+{h}:{m:02d}"
-            
-            days_dict[d] = val
+            days_dict[d] = getattr(e, f"day_{d}") or ""
             
         entries.append(EntryRow(
             employee_id=e.employee_id,
