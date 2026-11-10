@@ -317,6 +317,8 @@ def get_tabel_edit_access(tabel: Tabel, user: User, db: Session):
     is_hr_manager = bool(settings) and settings.hr_manager_id == user.id
     is_security = bool(settings) and settings.security_specialist_id == user.id
     is_creator = tabel.author_id == user.id
+    if is_admin_user(user):
+        return True, ""
 
     if tabel.security_approved:
         # Состояние 3: финальное — только СБ
