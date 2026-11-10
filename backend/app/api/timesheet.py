@@ -386,6 +386,14 @@ def _run_calculate_timesheet(
     # Общий порог переработки (минуты) из настроек системы — применяется ко всем графикам.
     # Превышение нормы <= порога не считается сверхурочным; 0 = считать любую переработку.
     ot_threshold = get_overtime_threshold(db)
+        # Праздники из производственного календаря: день перед праздником
+    # сокращается на 1 час (ТК РБ, ст. 116)
+    from app.models.holiday_calendar import HolidayCalendar
+    holidays_set = {
+        r[0] for r in db.query(HolidayCalendar.date)
+        .filter(HolidayCalendar.is_holiday.is_(True))
+        .all()
+    }
 
     for employee in employees:
         schedule = employee.schedule  # может быть None
@@ -397,6 +405,9 @@ def _run_calculate_timesheet(
             # ПРАВИЛЬНОЕ МЕСТО: внутри цикла по дням!
             lunch_minutes = schedule_lunch_minutes(schedule, day)
             default_hours = schedule_norm_hours(schedule, day)
+            # Предпраздничный день: норма по графику сокращается на 1 час
+            if default_hours > 0 and (day + timedelta(days=1)) in holidays_set:
+                default_hours = max(0.0, default_hours - 1.0)
             # Конкретный промежуток обеда из графика (если задан) —
             # вычитается из fact_hours по пересечению со сменой.
             _sched_day = schedule_day_row(schedule, day)

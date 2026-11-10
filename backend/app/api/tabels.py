@@ -1,7 +1,6 @@
 import calendar
 import re
-from datetime import date, datetime
-
+from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy import String, func, or_
@@ -607,6 +606,13 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
     emp_ids = [e.employee_id for e in tabel.entries]
     m_start = date(tabel.year, tabel.month, 1)
     m_end = date(tabel.year, tabel.month, dim)
+        # Праздники для предпраздничных (сокращённых) дней
+    from app.models.holiday_calendar import HolidayCalendar
+    holidays_set = {
+        r[0] for r in db.query(HolidayCalendar.date)
+        .filter(HolidayCalendar.is_holiday.is_(True))
+        .all()
+    }
 
     # ==============================================================================
     # 1. ЗАГРУЖАЕМ ДОКУМЕНТЫ И ФАКТИЧЕСКИЕ ЧАСЫ ДО ЦИКЛА entries
@@ -646,6 +652,9 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             for d in range(1, dim + 1):
                 dow = date(tabel.year, tabel.month, d).weekday()
                 day_norms[d] = float(norms_by_dow.get(dow, 0.0))
+                                # Предпраздничный день: норма сокращается на 1 час
+                if day_norms[d] > 0 and (date(tabel.year, tabel.month, d) + timedelta(days=1)) in holidays_set:
+                    day_norms[d] = max(0.0, day_norms[d] - 1.0)
                 if dow in codes_by_dow:
                     day_auto_codes[d] = codes_by_dow[dow]
         
