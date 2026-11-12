@@ -528,25 +528,39 @@
         </v-card-title>
         <v-card-text>
           <div class="text-body-2 mb-3 text-grey-darken-2">
-            Заполнение конкретной даты для <b>всех сотрудников</b> табеля.
+            Заполнение периода дат для <b>всех сотрудников</b> табеля.
             По умолчанию значение берётся <b>из графика работы каждого
             сотрудника</b>: код из поля «Код для автозаполнения» (например
             «8ч15м» в будни, «В» в выходные). Если снять галочку — во все ячейки
-            этой даты будет поставлен выбранный вручную код (например «К» —
-            командировка на 15 сентября). Изменения не сохранятся, пока вы не
-            нажмёте «Сохранить» — заполнение можно скорректировать вручную.
+            выбранного периода будет поставлен выбранный вручную код (например
+            «К» — командировка с 15 по 20 сентября). Изменения не сохранятся,
+            пока вы не нажмёте «Сохранить» — заполнение можно скорректировать
+            вручную.
           </div>
 
-          <v-select
-            v-model="fillDayDate"
-            :items="dayItems"
-            item-title="title"
-            item-value="value"
-            label="Дата (число месяца)"
-            density="compact"
-            hide-details="auto"
-            class="mb-3"
-          />
+          <div class="d-flex gap-3 mb-3" style="gap: 12px;">
+            <v-text-field
+              v-model.number="fillDayFrom"
+              type="number"
+              :min="1"
+              :max="tabel?.days_in_month ?? 31"
+              label="Дата с (число месяца)"
+              density="compact"
+              :hide-details="fillDayRangeValid ? 'auto' : false"
+              :error-messages="fillDayRangeError"
+              class="flex-grow-1"
+            />
+            <v-text-field
+              v-model.number="fillDayTo"
+              type="number"
+              :min="1"
+              :max="tabel?.days_in_month ?? 31"
+              label="Дата по (число месяца)"
+              density="compact"
+              hide-details="auto"
+              class="flex-grow-1"
+            />
+          </div>
 
           <v-checkbox
             v-model="fillByScheduleDay"
@@ -592,13 +606,16 @@
           <v-alert v-if="fillDayPreview.total === 0" type="info" density="compact" variant="tonal" class="mt-2">
             В табеле нет сотрудников — заполнять нечего.
           </v-alert>
+          <v-alert v-else-if="!fillDayRangeValid" type="error" density="compact" variant="tonal" class="mt-2">
+            {{ fillDayRangeError }}
+          </v-alert>
           <v-alert v-else-if="fillDayPreview.toFill === 0" type="warning" density="compact" variant="tonal" class="mt-2">
             <template v-if="fillByScheduleDay">
-              Ни для одного сотрудника в графике нет кода автозаполнения на эту
-              дату (либо все ячейки уже заполнены — включите перезапись).
+              Ни для одного сотрудника в графике нет кода автозаполнения на даты
+              периода (либо все ячейки уже заполнены — включите перезапись).
             </template>
             <template v-else>
-              Все ячейки за выбранную дату уже заполнены. Включите
+              Все ячейки за выбранный период уже заполнены. Включите
               «Перезаписать существующие значения», чтобы обновить их.
             </template>
           </v-alert>
@@ -606,7 +623,8 @@
             Будет заполнено ячеек:
             <b class="text-primary">{{ fillDayPreview.toFill }}</b>
             <span class="text-caption text-grey">
-              (сотрудников: {{ fillDayPreview.total }},
+              (сотрудников: {{ fillDayPreview.empCount }},
+              дней периода: {{ fillDayPreview.daysCount }},
               пропущено заполненных: {{ fillDayPreview.skippedFilled }},
               без кода в графике: {{ fillDayPreview.skippedNoCode }})
             </span>
@@ -616,7 +634,7 @@
           <v-spacer />
           <v-btn variant="text" @click="fillDayDialog = false">Отмена</v-btn>
           <v-btn color="success" prepend-icon="mdi-calendar-check"
-                 :disabled="fillDayPreview.toFill === 0 || (!fillByScheduleDay && (!fillDayCode || !isValidValue(fillDayCode)))"
+                 :disabled="!fillDayRangeValid || fillDayPreview.toFill === 0 || (!fillByScheduleDay && (!fillDayCode || !isValidValue(fillDayCode)))"
                  @click="applyFillDay">
             Заполнить
           </v-btn>
@@ -986,12 +1004,13 @@ const fillDialog = ref(false)
 const overwriteExisting = ref(true)  // перезаписывать уже заполненные ячейки или нет
 
 // ─── «Заполнить число» / «Заполнить сотрудника» ────────────────────────────
-// fillDayDialog  — выбранный код ставится в одну дату всем сотрудникам табеля.
+// fillDayDialog  — выбранный код ставится в ПЕРИОД дат всем сотрудникам табеля.
 // fillEmpDialog  — выбранный код ставится на весь месяц выделенному сотруднику.
 // selectedRow    — индекс выделенной строки табеля (null — никто не выделен).
 const fillDayDialog = ref(false)
 const fillEmpDialog = ref(false)
-const fillDayDate = ref(null)        // число месяца (1..days_in_month)
+const fillDayFrom = ref(null)        // начало периода: число месяца (1..days_in_month)
+const fillDayTo = ref(null)          // конец периода: число месяца (1..days_in_month)
 const fillDayCode = ref('')          // код/значение для заполнения даты
 const fillEmpCode = ref('')          // код/значение для заполнения сотрудника
 const overwriteExistingDay = ref(true)
@@ -1021,16 +1040,6 @@ function selectRow(idx) {
     messageType.value = 'info'
   }
 }
-
-// Числа месяца для селектора даты: «15 (ср)».
-const dayItems = computed(() => {
-  if (!tabel.value) return []
-  const list = []
-  for (let d = 1; d <= tabel.value.days_in_month; d++) {
-    list.push({ title: `${d} (${getDayOfWeek(d)})`, value: d })
-  }
-  return list
-})
 
 // Список кодов справочника для диалогов ручного заполнения (v-combobox:
 // можно и выбрать код, и ввести значение вручную).
@@ -1162,11 +1171,32 @@ function applyResolved(resolved, overwrite) {
   return filled
 }
 
-// Ячейки для «Заполнить число»: одна дата × все сотрудники.
+// Валидация периода «Заполнить число»: 1 <= с <= по <= days_in_month.
+const fillDayRangeValid = computed(() => {
+  const dim = tabel.value?.days_in_month ?? 31
+  const f = Number(fillDayFrom.value), t = Number(fillDayTo.value)
+  return Number.isInteger(f) && Number.isInteger(t) && f >= 1 && t >= 1 && f <= dim && t <= dim && f <= t
+})
+
+const fillDayRangeError = computed(() => {
+  const dim = tabel.value?.days_in_month ?? 31
+  const f = Number(fillDayFrom.value), t = Number(fillDayTo.value)
+  if (!Number.isInteger(f) || !Number.isInteger(t)) return 'Укажите целые числа месяца.'
+  if (f < 1 || t < 1) return 'Дата должна быть не меньше 1.'
+  if (f > dim || t > dim) return `Дата не может быть больше ${dim} (число дней в месяце).`
+  if (f > t) return '«Дата с» не может быть больше «Дата по».'
+  return ''
+})
+
+// Ячейки для «Заполнить число»: ПЕРИОД дат [с..по] включительно × все сотрудники.
 const fillDayCells = computed(() => {
-  if (!tabel.value || !fillDayDate.value) return []
-  const d = fillDayDate.value
-  return tabel.value.entries.map(row => ({ row, d }))
+  if (!tabel.value) return []
+  if (!fillDayRangeValid.value) return []
+  const cells = []
+  for (let d = Number(fillDayFrom.value); d <= Number(fillDayTo.value); d++) {
+    for (const row of tabel.value.entries) cells.push({ row, d })
+  }
+  return cells
 })
 
 const fillDayResolved = computed(() =>
@@ -1176,22 +1206,34 @@ const fillDayResolved = computed(() =>
 const fillDayPreview = computed(() => {
   const cells = fillDayCells.value
   const { toFill, skippedFilled, skippedNoCode } = previewResolved(fillDayResolved.value, overwriteExistingDay.value)
-  return { total: cells.length, toFill, skippedFilled, skippedNoCode }
+  const empCount = tabel.value?.entries?.length ?? 0
+  const daysCount = fillDayRangeValid.value
+    ? Number(fillDayTo.value) - Number(fillDayFrom.value) + 1
+    : 0
+  return { total: cells.length, empCount, daysCount, toFill, skippedFilled, skippedNoCode }
 })
 
 function openFillDayDialog() {
   overwriteExistingDay.value = true
   fillByScheduleDay.value = true
-  // По умолчанию — сегодня, если этот день входит в месяц табеля
+  // По умолчанию: если месяц табеля совпадает с текущим — оба поля = сегодня;
+  // иначе оба поля = 1.
   const now = new Date()
   const inMonth = now.getFullYear() === tabel.value?.year &&
     (now.getMonth() + 1) === tabel.value?.month
-  fillDayDate.value = inMonth ? now.getDate() : 1
+  const def = inMonth ? now.getDate() : 1
+  fillDayFrom.value = def
+  fillDayTo.value = def
   fillDayCode.value = ''
   fillDayDialog.value = true
 }
 
+// Название месяца в родительном падеже для баннера («12–16 ноября»).
+const monthNamesGenitive = ['января','февраля','марта','апреля','мая','июня',
+  'июля','августа','сентября','октября','ноября','декабря']
+
 function applyFillDay() {
+  if (!fillDayRangeValid.value) return
   const modeSched = fillByScheduleDay.value
   const val = String(fillDayCode.value ?? '').trim()
   if (!modeSched && (!val || !isValidValue(val))) return
@@ -1199,13 +1241,16 @@ function applyFillDay() {
   const filled = applyResolved(resolved, overwriteExistingDay.value)
   if (filled === 0) {
     message.value = modeSched
-      ? 'Нечего заполнять: в графике сотрудников нет кода для этой даты (или все ячейки заполнены — включите перезапись).'
-      : 'Нечего заполнять: все ячейки за эту дату уже заполнены (включите перезапись).'
+      ? 'Нечего заполнять: в графике сотрудников нет кода для дат этого периода (или все ячейки заполнены — включите перезапись).'
+      : 'Нечего заполнять: все ячейки за этот период уже заполнены (включите перезапись).'
     messageType.value = 'warning'
     return
   }
   fillDayDialog.value = false
-  message.value = `Заполнено: ${filled} ${pluralCells(filled)} за ${fillDayDate.value} ${monthNames[(tabel.value?.month ?? 1) - 1]} (${modeSched ? 'по графику сотрудников' : `код «${val}»`}). Нажмите «Сохранить», чтобы записать изменения.`
+  const from = Number(fillDayFrom.value), to = Number(fillDayTo.value)
+  const monthName = monthNamesGenitive[(tabel.value?.month ?? 1) - 1]
+  const periodPart = from === to ? `за ${from} ${monthName}` : `за период ${from}–${to} ${monthName}`
+  message.value = `Заполнено: ${filled} ${pluralCells(filled)} ${periodPart} (${modeSched ? 'по графику сотрудников' : `код «${val}»`}). Нажмите «Сохранить», чтобы записать изменения.`
   messageType.value = 'success'
 }
 
