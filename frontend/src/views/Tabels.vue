@@ -13,11 +13,10 @@
         <v-col cols="12" md="3">
           <v-select
             v-model="filterMonth"
-            :items="monthItems"
+            :items="allMonthItems"
             item-title="title"
             item-value="value"
             label="Месяц"
-            clearable
             density="compact"
             hide-details
             variant="outlined"
@@ -28,7 +27,6 @@
             v-model="filterYear"
             :items="years"
             label="Год"
-            clearable
             density="compact"
             hide-details
             variant="outlined"
@@ -49,7 +47,7 @@
 
     <v-data-table
       :headers="headers"
-      :items="tabels"
+      :items="filteredTabels"
       :loading="loading"
       hover
       class="rounded-lg"
@@ -161,7 +159,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
 import CustomDeleteButton from '../components/CustomDeleteButton.vue'
@@ -179,6 +177,12 @@ const headers = [
   { title: '', key: 'actions', sortable: false }
 ]
 
+// ИСПРАВЛЕНИЕ: ранее таблица показывала сырой ответ сервера (tabels), а фильтры
+// месяц/год применялись только в параметрах запроса и НЕ перезапускались при
+// изменении селектов — выбор месяца не менял список. Теперь:
+//  - отображаем computed filteredTabels (клиентская фильтрация по месяцу и году);
+//  - watch на filterMonth/filterYear перезагружает данные с параметрами;
+//  - «Все месяцы» (null) не фильтрует; пустой год тоже.
 const tabels = ref([])
 const loading = ref(false)
 const filterMonth = ref(null)
@@ -187,6 +191,15 @@ const filterYear = ref(new Date().getFullYear())
 const now = new Date()
 const years = Array.from({ length: 6 }, (_, i) => now.getFullYear() - 3 + i)
 const monthItems = monthNames.map((title, idx) => ({ title, value: idx + 1 }))
+const allMonthItems = [{ title: 'Все месяцы', value: null }, ...monthItems]
+
+const filteredTabels = computed(() =>
+  tabels.value.filter((t) => {
+    if (filterYear.value && Number(t.year) !== Number(filterYear.value)) return false
+    if (filterMonth.value && Number(t.month) !== Number(filterMonth.value)) return false
+    return true
+  })
+)
 
 const createDialog = ref(false)
 const creating = ref(false)
@@ -216,6 +229,9 @@ async function load() {
     loading.value = false
   }
 }
+
+// При смене месяца/года — перезапрос с параметрами + клиентская фильтрация.
+watch([filterMonth, filterYear], () => { load() })
 
 function openTabel(e, item) {
   // В Vuetify 3 без return-object первый аргумент — объект события (без id),

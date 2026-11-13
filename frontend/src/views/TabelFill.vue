@@ -11,7 +11,8 @@
       <v-btn variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
         Коды часов
       </v-btn>
-      <v-btn variant="outlined" color="primary" prepend-icon="mdi-calendar-clock" :disabled="!tabel?.entries?.length || !canEdit" @click="openFillByScheduleDialog">
+      <!-- «Заполнить по графику» перетирает весь табель — только для администратора -->
+      <v-btn v-if="isAdmin" variant="outlined" color="primary" prepend-icon="mdi-calendar-clock" :disabled="!tabel?.entries?.length || !canEdit" @click="openFillByScheduleDialog">
         Заполнить по графику
       </v-btn>
       <!-- ЗАПОЛНИТЬ ЧИСЛО: выбранный код в конкретную дату для всех сотрудников -->
@@ -876,6 +877,9 @@ const editReason = computed(() => tabel.value?.edit_reason || '')
 // Текущий пользователь берётся из локального состояния авторизации
 // (обновляется при логине; id совпадает с /auth/me)
 const currentUserId = computed(() => auth.user?.id ?? null)
+// «Заполнить по графику» (автораспределение по всему месяцу) доступно только роли admin:
+// остальные пользователи случайно перетирают весь табель.
+const isAdmin = computed(() => auth.user?.role === 'admin')
 
 const hrManagerName = computed(() => {
   const u = approvalUsers.value.find(x => x.id === approvalSettings.value.hr_manager_id)
@@ -1709,6 +1713,8 @@ const fillPreview = computed(() => {
 })
 
 function openFillByScheduleDialog() {
+  // Защита от вызова вне UI (консоль): кнопка скрыта для не-админов.
+  if (!isAdmin.value) return
   // Сброс настроек диалога перед открытием
   overwriteExisting.value = true
   fillDialog.value = true
@@ -1716,6 +1722,7 @@ function openFillByScheduleDialog() {
 
 function applyFillBySchedule() {
   if (!tabel.value) return
+  if (!isAdmin.value) return   // заполнение по графику — только роль admin
   let filled = 0, filledByDocs = 0
   for (const row of tabel.value.entries) {
     for (let d = 1; d <= tabel.value.days_in_month; d++) {
@@ -2611,4 +2618,4 @@ td.col-fio.sticky-left-2 > .sticky-fill { justify-content: flex-start; }
   gap: 12px;
   flex-wrap: wrap;
 }
-</style>
+</style>
