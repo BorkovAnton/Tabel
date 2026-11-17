@@ -30,7 +30,7 @@ ALLOWED_PAGE_KEYS = {
 # ✅ FIX 422: допустимые ключи ролей и областей видимости данных.
 # Фронтенд должен присылать именно ключ ('admin', 'hr', ...), а не отображаемое имя.
 # Валидаторы ниже также терпимо принимают отображаемые русские имена (обратная совместимость).
-ALLOWED_ROLE_KEYS = {"none", "user", "manager", "hr", "inspector", "accountant", "admin"}
+ALLOWED_ROLE_KEYS = {"none", "user", "manager", "hr", "inspector", "accountant", "admin", "viewer"}
 ROLE_LABEL_TO_KEY = {
     "пользователь (только свои)": "user",
     "пользователь": "user",
@@ -39,6 +39,7 @@ ROLE_LABEL_TO_KEY = {
     "инспектор табелей": "inspector",
     "бухгалтер": "accountant",
     "администратор": "admin",
+    "просмотр табелей (назначенные подразделения)": "viewer",
 }
 ALLOWED_DATA_SCOPE_KEYS = {"own", "department", "custom", "all"}
 DATA_SCOPE_LABEL_TO_KEY = {

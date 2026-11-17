@@ -444,7 +444,18 @@ def list_tabels(
     q = db.query(Tabel)
     # ЭТАП 9: все табели видят роли admin/hr/inspector/accountant, scope 'all'
     # или флаг can_view_all_tabels; остальные — только свои (ответственный).
-    if not can_see_all_tabels(user):
+    if can_see_all_tabels(user):
+        pass  # все табели
+    elif user.role == "viewer":
+        # viewer видит только табели назначенных подразделений
+        from app.core.security import allowed_department_id_set
+        allowed = allowed_department_id_set(user, db)
+        if not allowed:
+            # viewer без назначенных подразделений — пустой список
+            q = q.filter(Tabel.id == -1)
+        else:
+            q = q.filter(Tabel.department_id.in_(allowed))
+    else:
         q = q.filter(Tabel.responsible_user_id == user.id)
     if year:
         q = q.filter(Tabel.year == year)

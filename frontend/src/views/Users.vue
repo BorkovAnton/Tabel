@@ -124,7 +124,7 @@
           </div>
 
           <!-- Права на подразделения: единый блок при области видимости «Выбранные подразделения» -->
-                    <template v-if="(form.data_scope === 'custom' || form.role === 'viewer') && form.role !== 'admin'">
+          <template v-if="(form.data_scope === 'custom' || form.role === 'viewer') && form.role !== 'admin'">
             <v-checkbox v-model="allDepartments" label="Все подразделения" density="compact" hide-details color="blue-grey" class="mb-2" />
             <v-select v-if="!allDepartments" :menu-icon="null" v-model="form.allowed_department_ids" :items="deptItems"
                       multiple chips closable-chips density="compact" variant="outlined" hide-details clearable
@@ -507,11 +507,11 @@ function openEdit(item) {
     // ✅ ЭТАП 8: заполняем ТОЛЬКО новые поля из ответа API (с безопасными значениями по умолчанию).
     // Старые булевы поля (is_admin/is_hr/...) в форму больше не попадают.
     role: item.role || 'user',
-        // При выборе роли viewer автоматически ставить data_scope='custom'
-    if (item.role === 'viewer' && !item.data_scope) {
-      form.value.data_scope = 'custom'
-    }
-    data_scope: item.data_scope || 'own',
+    // Если роль viewer и data_scope не задан, ставим 'custom', иначе берём из item или 'own'
+    data_scope: (item.role === 'viewer' && !item.data_scope) ? 'custom' : (item.data_scope || 'own'),
+    allowed_department_ids: Array.isArray(item.allowed_department_ids) && item.allowed_department_ids.length
+      ? item.allowed_department_ids.slice()
+      : parseAllowed(item.allowed_departments), // тихий фолбэк для старых данных
     allowed_department_ids: Array.isArray(item.allowed_department_ids) && item.allowed_department_ids.length
       ? item.allowed_department_ids.slice()
       : parseAllowed(item.allowed_departments), // тихий фолбэк для старых данных
