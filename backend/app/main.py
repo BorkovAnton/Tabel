@@ -65,13 +65,16 @@ finally:
 app = FastAPI(title="Tabel System", version="0.1.0")
 
 # CORS
+_origins_raw = _os.getenv("CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _origins_raw.split(",") if o.strip()] or [
+    "http://localhost", "http://127.0.0.1",
+    "http://localhost:8080", "http://127.0.0.1:8080",
+    "http://localhost:3000", "http://127.0.0.1:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://192.168.100.231",  # <-- ДОБАВИТЬ ВАШ IP
-        "http://127.0.0.1:3000"
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

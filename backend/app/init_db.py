@@ -27,6 +27,9 @@ MIGRATIONS = [
     ("time_codes", "use_schedule_hours", "BOOLEAN NOT NULL DEFAULT FALSE"),
     # «Код для автозаполнения» в днях графика работы (функция «Заполнить по графику»)
     ("work_schedule_days", "auto_fill_code", "VARCHAR NULL"),
+    # Обеденный промежуток: начало и конец обеда (вместо устаревшего lunch_minutes)
+    ("work_schedule_days", "lunch_start", "TIME NULL"),
+    ("work_schedule_days", "lunch_end", "TIME NULL"),
     # «Часы для выходного дня»: фиксированные часы кода в выходные (напр. 8 для «К»)
     ("time_codes", "weekend_hours", "NUMERIC(5,2) DEFAULT NULL"),
     # Часы события в документе (автоподставляются из выбранного «Кода часов»)

@@ -12,3 +12,7 @@ __pycache__/
 backend/test_*.db
 backend/dev.db
 backend/app.db
+
+.vscode/
+
+.env
