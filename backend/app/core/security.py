@@ -219,6 +219,21 @@ def allowed_department_id_set(user: User, db: Session) -> set[int] | None:
         # старый текстовый "*" — тихий фолбэк до удаления колонок (Этап 10)
         return None
     else:
+            # 3) Роль viewer: только назначенные подразделения (без полного доступа)
+        if user.role == "viewer":
+            if base_ids:
+                # Раскрыть дочерние подразделения
+                result = set(base_ids)
+                queue = list(base_ids)
+                while queue:
+                    parent_id = queue.pop()
+                    children = db.query(Department.id).filter(Department.parent_id == parent_id).all()
+                    for (child_id,) in children:
+                        if child_id not in result:
+                            result.add(child_id)
+                            queue.append(child_id)
+                return result
+            return set()  # viewer без назначенных подразделений — ничего не видит
         # 2) Роли с полным доступом ко всем подразделениям
         if has_role(user, "admin", "hr", "inspector", "accountant"):
             return None

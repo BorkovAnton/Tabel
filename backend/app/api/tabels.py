@@ -271,28 +271,27 @@ def _get_tabel_or_404(tabel_id: int, db: Session) -> Tabel:
 
 def _can_access(tabel: Tabel, user: User, db: Session = None) -> bool:
     # ЭТАП 9: инспектор/владелец табеля определяется новыми полями role/can_*
-    from app.core.security import is_inspector
+    from app.core.security import is_inspector, allowed_department_id_set
 
     if is_inspector(user):
         return True
-    # Право «Заполнение табелей» (can_approve) даёт доступ ко всем табелям —
-    # иначе пользователь-заполнитель получает 403 при открытии чужого табеля
-    # (например, созданного администратором с другим ответственным).
-    if can_manage_tabels(user):
+    
+    # Роль viewer: доступ только к табелям назначенных подразделений
+    if user.role == "viewer":
+        allowed = allowed_department_id_set(user, db)
+        if allowed is None:
+            return False  # viewer без назначенных подразделений
+        return tabel.department_id in allowed
+    
+    # Право «Заполнение табелей» (can_approve) даёт доступ ко всем табелям
+    if user.can_approve:
         return True
-    # Назначенные роли согласования видят все табели (чтобы проверять и редактировать)
-    if db is not None:
-        settings = _get_settings(db)
-        if settings and user.id in (settings.hr_manager_id, settings.security_specialist_id):
-            return True
-    # Любой пользователь с доступом к управлению табелями: доступ к табелям,
-    # где он ответственный
-    if tabel.responsible_user_id == user.id:
-        return True
-    # Создатель табеля тоже должен иметь доступ (для старых записей author_id == created_by)
-    if getattr(tabel, "created_by", None) == user.id:
-        return True
-    return False
+    
+    # Остальные роли: доступ по подразделению
+    allowed = allowed_department_id_set(user, db)
+    if allowed is None:
+        return True  # все подразделения
+    return tabel.department_id in allowed
 
 
 def _get_settings(db: Session) -> CompanySetting:
@@ -312,6 +311,9 @@ def get_tabel_edit_access(tabel: Tabel, user: User, db: Session):
       - draft — создатель табеля (для старых табелей — ответственный)
         + начальник отдела кадров + специалист СБ.
     """
+        # Роль viewer: только просмотр, без редактирования
+    if user.role == "viewer":
+        return False, "Роль 'Просмотр табелей' — только просмотр"
     settings = _get_settings(db)
     is_hr_manager = bool(settings) and settings.hr_manager_id == user.id
     is_security = bool(settings) and settings.security_specialist_id == user.id
@@ -374,6 +376,10 @@ def _check_access(tabel: Tabel, user: User, db: Session = None):
 def _check_write_access(tabel: Tabel, user: User, db: Session):
     """Права на изменение содержимого табеля (cells/kdu/сотрудники)."""
     _check_access(tabel, user, db)
+    
+    # Роль viewer: запрет на любые изменения
+    if user.role == "viewer":
+        raise HTTPException(status_code=403, detail="Роль 'Просмотр табелей' — только просмотр")
 
 
 def _valid_codes(db: Session) -> set[str]:
