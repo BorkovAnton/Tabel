@@ -178,6 +178,7 @@ class EntryRow(BaseModel):
     # «Код для автозаполнения» из графика по дням месяца {1: "8ч15м", 6: "В", ...}
     # (день недели -> auto_fill_code; дни без кода отсутствуют в словаре)
     day_auto_codes: Dict[int, str] = {}
+    accounting_type: str = "daily"  # 'daily' | 'summed' (суммированный учёт, вахта)
 
     @field_validator("full_name", "tab_number", mode="before")
     @classmethod
@@ -191,6 +192,7 @@ class TabelDetailOut(BaseModel):
     year: int
     month: int
     days_in_month: int
+    month_norm_hours: float = 0.0  # Месячная норма часов по производственному календарю (для суммированного учёта)
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     responsible_user_id: int
@@ -613,6 +615,12 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
     if sched_ids:
         from app.api.schedules import _day_norm
         rows = db.query(WorkScheduleDay).filter(WorkScheduleDay.schedule_id.in_(sched_ids)).all()
+        # Тип учёта по каждому графику (для суммированного расчёта сверхурочки)
+        from app.models.work_schedule import WorkSchedule
+        schedule_acc_type: Dict[int, str] = {
+            s.id: (s.accounting_type or "daily")
+            for s in db.query(WorkSchedule).filter(WorkSchedule.id.in_(sched_ids)).all()
+        } if sched_ids else {}
         for r in rows:
             schedule_norms.setdefault(r.schedule_id, {})[r.day_of_week] = _day_norm(r)
             # «Код для автозаполнения» из графика (пустой не сохраняем)
@@ -630,6 +638,24 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
         .filter(HolidayCalendar.is_holiday.is_(True))
         .all()
     }
+
+    # Праздники для предпраздничных (сокращённых) дней
+    from app.models.holiday_calendar import HolidayCalendar
+    holidays_set = {
+        r[0] for r in db.query(HolidayCalendar.date)
+        .filter(HolidayCalendar.is_holiday.is_(True))
+        .all()
+    }
+
+    # === Расчёт месячной нормы для суммированного учёта из таблицы норм ===
+    from app.models.month_norm import MonthNorm
+    month_norm = db.query(MonthNorm).filter(
+        MonthNorm.year == tabel.year,
+        MonthNorm.month == tabel.month
+    ).first()
+    month_norm_hours_val = float(month_norm.norm_hours) if month_norm else 0.0
+    # ===========================================================================
+    # ===========================================================================
 
     # ==============================================================================
     # 1. ЗАГРУЖАЕМ ДОКУМЕНТЫ И ФАКТИЧЕСКИЕ ЧАСЫ ДО ЦИКЛА entries
@@ -692,10 +718,12 @@ def get_tabel(tabel_id: int, db: Session = Depends(get_db), user: User = Depends
             schedule_id=emp.schedule_id if emp else None,
             day_norms=day_norms,
             day_auto_codes=day_auto_codes,
+            accounting_type=schedule_acc_type.get(emp.schedule_id, "daily") if emp else "daily",
         ))
     can_edit, edit_reason = get_tabel_edit_access(tabel, user, db)
     return TabelDetailOut(
         id=tabel.id, year=tabel.year, month=tabel.month, days_in_month=dim,
+        month_norm_hours=month_norm_hours_val,
         department_id=tabel.department_id,
         department_name=tabel.department.name if tabel.department else None,
         responsible_user_id=tabel.responsible_user_id,

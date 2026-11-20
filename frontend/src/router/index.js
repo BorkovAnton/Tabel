@@ -44,7 +44,8 @@ const routes = [
   { path: '/departments', name: 'Departments', component: Departments },
   { path: '/schedules', name: 'Schedules', component: Schedules },
   // Настройки предприятия — только Администратор
-  { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true, requiresAdmin: true } }
+  { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true, requiresAdmin: true } },
+  { path: '/month-norms', name: 'MonthNorms', component: () => import('../views/MonthNorms.vue'), meta: { requiresAuth: true, title: 'Нормы рабочего времени' } }
 ]
 
 const router = createRouter({

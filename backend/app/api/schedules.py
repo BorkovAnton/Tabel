@@ -31,6 +31,7 @@ class ScheduleDayCreate(BaseModel):
 
 class ScheduleCreate(BaseModel):
     name: str
+    accounting_type: str = "daily"  # 'daily' (поденный) или 'summed' (суммированный)
     days: List[ScheduleDayCreate]
 
 
@@ -50,6 +51,7 @@ class ScheduleDayResponse(BaseModel):
 class ScheduleResponse(BaseModel):
     id: int
     name: str
+    accounting_type: str = "daily"
     week_norm_hours: float
     employee_count: int
     days: List[ScheduleDayResponse]
@@ -154,6 +156,7 @@ def get_schedules(db: Session = Depends(get_db)):
         result.append({
             "id": sched.id,
             "name": sched.name,
+            "accounting_type": sched.accounting_type or "daily",
             "week_norm_hours": round(week_norm, 2),
             "employee_count": employee_count,
             "days": days_data
@@ -239,6 +242,7 @@ def update_schedule(schedule_id: int, schedule: ScheduleCreate, db: Session = De
         raise HTTPException(status_code=404, detail="График не найден")
     
     sched.name = schedule.name
+    sched.accounting_type = schedule.accounting_type
     
     # Удаляем старые дни
     db.query(WorkScheduleDay).filter(WorkScheduleDay.schedule_id == schedule_id).delete()

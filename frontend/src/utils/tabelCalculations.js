@@ -656,7 +656,16 @@ export function calculateSummary(row, tabel, timeCodes) {
       }
     }
   }
-
+  // === СУММИРОВАННЫЙ УЧЁТ (вахта): сверхурочка = превышение итога месяца над нормой ===
+  // Работает только если бэкенд передал month_norm_hours (>0). Иначе — старая подневная логика.
+  const accType = row && row.accounting_type
+  const mNorm = Number(tabel && tabel.month_norm_hours) || 0
+  if (accType === 'summed' && mNorm > 0) {
+    const ot = Math.max(0, (summary.total_hours || 0) - mNorm)
+    summary.overtime_hours = ot
+    summary.overtime_days = 0
+    summary.overtime_total = ot
+  }
   return summary
 }
 

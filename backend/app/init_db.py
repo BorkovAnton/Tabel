@@ -9,8 +9,8 @@ is_documents_manager, allowed_departments — они больше не созд�
 перед удалением автоматически создаётся резервная копия users_backup_stage10.
 """
 from sqlalchemy import create_engine, inspect, text
-
 from app.database import DATABASE_URL
+from app.models.month_norm import MonthNorm
 
 MIGRATIONS = [
     ("tabel_entries", "position", "INTEGER DEFAULT 0"),
@@ -75,6 +75,8 @@ MIGRATIONS = [
     ("users", "can_view_all_documents", "BOOLEAN NOT NULL DEFAULT FALSE"),
     # Автор документа (для фильтрации видимости без can_view_all_documents)
     ("documents", "created_by", "INTEGER REFERENCES users(id)"),
+    # Тип учёта рабочего времени в графике: 'daily' | 'summed' (суммированный, вахта)
+    ("work_schedules", "accounting_type", "VARCHAR(20) DEFAULT 'daily'"),
 ]
 
 # ✅ Новые права: автоматически проставляем can_view_all_documents=True
@@ -119,6 +121,14 @@ def ensure_columns() -> None:
     print(f"[migrate] Подключение к БД установлено (dialect: {dialect})")
     print(f"[migrate] Таблицы в БД: {sorted(tables)}")
     print(f"[migrate] Всего миграций в списке: {len(MIGRATIONS)}")
+
+    # ✅ АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ТАБЛИЦЫ (Безопасно для прода!)
+    # checkfirst=True гарантирует, что если таблица уже есть, ошибки не будет.
+    try:
+        MonthNorm.__table__.create(engine, checkfirst=True)
+        print("[migrate] ✅ Таблица month_norms проверена/создана")
+    except Exception as e:
+        print(f"[migrate] ⚠️ Ошибка при проверке/создании month_norms: {e}")
 
     added = 0
     skipped_exists = 0

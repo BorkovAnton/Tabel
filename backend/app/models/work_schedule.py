@@ -8,6 +8,8 @@ class WorkSchedule(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
+    # Тип учёта рабочего времени: 'daily' (поденный, по умолчанию) или 'summed' (суммированный, вахта)
+    accounting_type = Column(String, default="daily", nullable=False)
     
     # Связь с днями недели (cascade удаляет дни при удалении графика)
     days = relationship("WorkScheduleDay", back_populates="schedule", cascade="all, delete-orphan")

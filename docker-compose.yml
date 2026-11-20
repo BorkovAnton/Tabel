@@ -40,6 +40,10 @@ services:
     environment:
       - VUE_APP_API_URL=${VUE_APP_API_URL:-http://localhost:8000}
       - VUE_APP_WS_URL=${VUE_APP_WS_URL:-ws://localhost:8000/ws}
+    volumes:
+      # ✅ Hot reload фронтенда: webpack-dev-server (npm run serve) следит за src
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
 
 volumes:
   postgres_data:

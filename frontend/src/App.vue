@@ -81,6 +81,7 @@ const allNavItems = [
   { title: 'Отчёт по часам', path: '/hours-report', icon: 'mdi-chart-box', auth: true },
   { title: 'Подразделения', path: '/departments', icon: 'mdi-office-building' },
   { title: 'Графики', path: '/schedules', icon: 'mdi-clock-outline' },
+  { title: 'Нормы рабочего времени', path: '/month-norms', icon: 'mdi-calendar-clock', auth: true },
   { title: 'Настройки', path: '/settings', icon: 'mdi-cog', auth: true },
   { title: 'Табель', path: '/tabels', icon: 'mdi-table-large', auth: true },
   { title: 'Увольнительные записки', path: '/dismissal-notes', icon: 'mdi-clock-alert-outline', auth: true },

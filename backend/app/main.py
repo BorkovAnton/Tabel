@@ -22,6 +22,7 @@ from app.api.user_print_settings import router as user_print_settings_router
 from app.api.import_positions import router as import_positions_router
 from app.init_data import seed
 from app.init_db import ensure_columns
+from app.api.month_norms import router as month_norms_router
 
 # ✅ ПРОВЕРКА ВЕРСИИ КОДА (диагностика: контейнер использует актуальный код?)
 print("=" * 60)
@@ -98,6 +99,7 @@ app.include_router(documents_router)
 app.include_router(dismissal_notes_router)
 app.include_router(user_print_settings_router)
 app.include_router(import_positions_router)
+app.include_router(month_norms_router)
 
 # ✅ FIX 422: логируем тело запроса и причины при ошибках валидации Pydantic,
 # чтобы в логах бэкенда было видно, что именно присылает фронтенд.

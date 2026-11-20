@@ -1532,6 +1532,9 @@ function cellTipData(val, row, d) {
 
 // Фоновая подсветка ячейки, если часов больше нормы (жёлтый — есть сверхурочные)
 function isOvertimeCell(row, val, d) {
+  // СУММИРОВАННЫЙ УЧЁТ: по дням сверхурочки нет, жёлтая подсветка не нужна
+  if (row && row.accounting_type === 'summed') return false
+  
   const data = cellTipData(val, row, d)
   return !!data && data.ot > 0
 }
@@ -2618,4 +2621,4 @@ td.col-fio.sticky-left-2 > .sticky-fill { justify-content: flex-start; }
   gap: 12px;
   flex-wrap: wrap;
 }
-</style>
+</style>

@@ -66,6 +66,15 @@
             variant="outlined"
             class="mb-4"
           ></v-text-field>
+          <v-select
+            v-model="accountingType"
+            :items="accountingTypeOptions"
+            label="Тип учёта рабочего времени"
+            variant="outlined"
+            class="mb-4"
+            hint="Суммированный — для вахтёров: сверхурочка считается по месяцу, а не по дням"
+            persistent-hint
+          ></v-select>
 
           <!-- ИСПРАВЛЕНО: горизонтальный скролл, если таблица не помещается в окно -->
           <div style="overflow-x: auto;">
@@ -195,6 +204,10 @@ import CustomEditButton from '../components/CustomEditButton.vue'
 import CustomDeleteButton from '../components/CustomDeleteButton.vue'
 
 const DAY_NAMES = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
+const accountingTypeOptions = [
+  { title: 'Поденный (обычный)', value: 'daily' },
+  { title: 'Суммированный (вахта, 24ч смены)', value: 'summed' },
+]
 
 const loading = ref(false)
 const saving = ref(false)
@@ -205,6 +218,7 @@ const deleteDialog = ref(false)
 const isEdit = ref(false)
 const selectedSchedule = ref(null)
 const scheduleName = ref('')
+const accountingType = ref('daily')
 const days = ref([])
 
 // ИСПРАВЛЕНО: справочник кодов для колонки «Код для автозаполнения»
@@ -284,6 +298,7 @@ function openAddDialog() {
   isEdit.value = false
   selectedSchedule.value = null
   scheduleName.value = ''
+  accountingType.value = 'daily'
   initDays()
   dialog.value = true
 }
@@ -291,6 +306,7 @@ function openAddDialog() {
 function openEditDialog(item) {
   isEdit.value = true
   selectedSchedule.value = item
+  accountingType.value = item.accounting_type || 'daily'
   scheduleName.value = item.name
   days.value = item.days.map(d => ({
     day_of_week: d.day_of_week,
@@ -316,6 +332,7 @@ async function saveSchedule() {
   try {
     const data = {
       name: scheduleName.value,
+      accounting_type: accountingType.value,
       days: days.value.map(d => ({
         day_of_week: d.day_of_week,
         start_time: d.is_day_off ? null : d.start_time,
