@@ -25,6 +25,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:password@postgres:5432/tabel
       - SECRET_KEY=your-secret-key
+      - CORS_ORIGINS=http://192.168.100.231,http://192.168.100.231:80,http://192.168.100.231:3000,http://192.168.100.231:8000,http://localhost,http://localhost:3000
     volumes:
       # ✅ МОНТИРУЕМ КОД ДЛЯ HOT RELOAD: изменения из E:\tabel видны в контейнере
       # без пересборки образа (решает проблему «миграции не срабатывают, потому
@@ -40,10 +41,6 @@ services:
     environment:
       - VUE_APP_API_URL=${VUE_APP_API_URL:-http://localhost:8000}
       - VUE_APP_WS_URL=${VUE_APP_WS_URL:-ws://localhost:8000/ws}
-    volumes:
-      # ✅ Hot reload фронтенда: webpack-dev-server (npm run serve) следит за src
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
 
 volumes:
   postgres_data:
