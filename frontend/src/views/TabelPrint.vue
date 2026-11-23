@@ -338,7 +338,6 @@ const totals = computed(() => {
       if (col.unit === 'manual') return
       res[col.key] += Number(s[col.key]) || 0
     })
-    res.overtime_total += Number(s.overtime_total) || 0
   })
   // КДУ хранятся в строке (ручной ввод), не в summary
   if (tabel.value && Array.isArray(tabel.value.entries)) {
