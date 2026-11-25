@@ -109,6 +109,10 @@
       <v-btn color="primary" prepend-icon="mdi-printer" @click="onPrintClick">
         Распечатать
       </v-btn>
+      <v-btn color="success" variant="outlined" class="ml-2"
+             prepend-icon="mdi-microsoft-excel" @click="exportToExcel">
+        Экспорт в Excel
+      </v-btn>
       <v-btn variant="outlined" class="ml-2" @click="$router.back()">
         Назад
       </v-btn>
@@ -435,6 +439,127 @@ async function loadTabel() {
   } catch (e) {
     /* используем значения по умолчанию */
   }
+}
+
+import * as XLSX from 'xlsx-js-style'
+
+function exportToExcel() {
+  if (!tabel.value) return
+  const t = tabel.value
+  const dim = t.days_in_month || 31
+
+  const header = ['№', 'ФИО', 'Должность', 'Таб. №',
+    ...Array.from({ length: dim }, (_, i) => String(i + 1)),
+    ...printColumns.value.map(c => c.label)]
+
+  const rows = [header]
+
+  t.entries.forEach((row, idx) => {
+    const s = summaryOf(row)
+    rows.push([
+      idx + 1,
+      formatShortName(row.full_name),
+      row.position || '',
+      row.tab_number || '',
+      ...Array.from({ length: dim }, (_, i) =>
+        getCellDisplayValue(row.days[i + 1], timeCodes.value)),
+      ...printColumns.value.map(c =>
+        c.unit === 'manual' ? Number(row[c.key]) || 0 : Number(s[c.key]) || 0)
+    ])
+  })
+
+  if (t.entries.length) {
+    const tot = totals.value
+    rows.push([
+      'ИТОГО', '', '', '',
+      ...Array.from({ length: dim }, () => ''),
+      ...printColumns.value.map(c => Number(tot[c.key]) || 0)
+    ])
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+
+  // ===== БАЗОВЫЕ СТИЛИ: границы + шрифт на ВСЕ ячейки =====
+  const thin = { style: 'thin', color: { rgb: '000000' } }
+  const BORDER = { top: thin, bottom: thin, left: thin, right: thin }
+  const FONT = { name: 'Times New Roman', sz: 11 }
+
+  const range = XLSX.utils.decode_range(ws['!ref'])
+  const FIRST_DAY_COL = 4
+  const LAST_DAY_COL = 4 + dim - 1
+
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const ref = XLSX.utils.encode_cell({ r, c })
+      if (!ws[ref]) ws[ref] = { t: 's', v: '' }
+
+      // выравнивание: ФИО и Должность — слева, остальное — по центру
+      const align = (c === 1 || c === 2)
+        ? { horizontal: 'left', vertical: 'center' }
+        : { horizontal: 'center', vertical: 'center' }
+
+      ws[ref].s = { font: FONT, border: BORDER, alignment: align }
+    }
+  }
+
+  // ===== НАЛОЖЕНИЕ: заголовок =====
+  for (let c = 0; c <= range.e.c; c++) {
+    const ref = XLSX.utils.encode_cell({ r: 0, c })
+    ws[ref].s = {
+      font: { ...FONT, bold: true },
+      border: BORDER,
+      fill: { patternType: 'solid', fgColor: { rgb: 'D9E1F2' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true }
+    }
+  }
+
+  // ===== НАЛОЖЕНИЕ: цвета выходных/праздников в днях + будущие коды =====
+  const weekendSet = new Set(t.weekend_days || [])
+  const holidaySet = new Set(t.holiday_days || [])
+
+  for (let r = 1; r <= range.e.r; r++) {
+    for (let c = FIRST_DAY_COL; c <= LAST_DAY_COL; c++) {
+      const day = c - FIRST_DAY_COL + 1
+      const ref = XLSX.utils.encode_cell({ r, c })
+      let rgb = 'FFFFFF'
+      if (holidaySet.has(day)) rgb = 'FFF3CD'
+      else if (weekendSet.has(day)) rgb = 'F0F0F0'
+
+      // 🚀 будущая доработка — цвета по кодам:
+      // const code = String(ws[ref].v || '')
+      // if (code === 'О') rgb = 'FFE4E1'
+      // if (code === 'К') rgb = 'E2F0D9'
+
+      ws[ref].s = { ...ws[ref].s, fill: { patternType: 'solid', fgColor: { rgb } } }
+    }
+  }
+
+  // ===== НАЛОЖЕНИЕ: строка ИТОГО — жирный + серый фон =====
+  if (t.entries.length) {
+    const last = range.e.r
+    for (let c = 0; c <= range.e.c; c++) {
+      const ref = XLSX.utils.encode_cell({ r: last, c })
+      ws[ref].s = {
+        font: { ...FONT, bold: true },
+        border: BORDER,
+        fill: { patternType: 'solid', fgColor: { rgb: 'F7F7F7' } },
+        alignment: (c === 1 || c === 2)
+          ? { horizontal: 'left', vertical: 'center' }
+          : { horizontal: 'center', vertical: 'center' }
+      }
+    }
+  }
+
+  // ширины колонок
+  ws['!cols'] = header.map((h, i) => {
+    if (i < 4) return { wch: i === 1 ? 20 : i === 2 ? 22 : 8 }
+    if (i >= FIRST_DAY_COL && i <= LAST_DAY_COL) return { wch: 5 }
+    return { wch: 12 }
+  })
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Табель')
+  XLSX.writeFile(wb, `tabel-${route.params.id}-export.xlsx`)
 }
 
 function printTable() {
