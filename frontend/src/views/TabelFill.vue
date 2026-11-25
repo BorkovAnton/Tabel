@@ -11,10 +11,6 @@
       <v-btn variant="tonal" color="#2d5a3d" prepend-icon="mdi-book-outline" @click="codesDialog = true">
         Коды часов
       </v-btn>
-      <!-- «Заполнить по графику» перетирает весь табель — только для администратора -->
-      <v-btn v-if="isAdmin" variant="outlined" color="primary" prepend-icon="mdi-calendar-clock" :disabled="!tabel?.entries?.length || !canEdit" @click="openFillByScheduleDialog">
-        Заполнить по графику
-      </v-btn>
       <!-- ЗАПОЛНИТЬ ЧИСЛО: выбранный код в конкретную дату для всех сотрудников -->
       <v-btn variant="outlined" color="success" prepend-icon="mdi-calendar-check"
              :disabled="!tabel?.entries?.length || !canEdit" @click="openFillDayDialog">
