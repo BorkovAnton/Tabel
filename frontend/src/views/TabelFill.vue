@@ -16,16 +16,53 @@
              :disabled="!tabel?.entries?.length || !canEdit" @click="openFillDayDialog">
         Заполнить число
       </v-btn>
+    <!-- Диалог «Заполнить по документам» -->
+    <v-dialog v-model="fillDocsDialog" max-width="480">
+      <v-card>
+        <v-card-title class="text-h6">
+          <v-icon icon="mdi-file-document-multiple" color="info" class="mr-2" />
+          Заполнить по документам
+        </v-card-title>
+        <v-card-text>
+          <p class="mb-3">
+            Это действие проставит коды из активных «Документов и приказов» 
+            (отпуска, больничные и т.д.) в ячейки сотрудников за выбранный месяц.
+          </p>
+          <v-checkbox
+            v-model="overwriteDocs"
+            label="Перезаписывать уже заполненные ячейки"
+            density="compact"
+            color="warning"
+            hide-details
+          ></v-checkbox>
+          <v-alert v-if="!hasDocuments" type="warning" variant="tonal" density="compact" class="mt-2">
+            Для сотрудников этого табеля нет активных документов на данный период.
+          </v-alert>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn variant="text" @click="fillDocsDialog = false">Отмена</v-btn>
+          <v-btn color="info" prepend-icon="mdi-file-document-multiple" 
+                 :disabled="!hasDocuments" :loading="fillingDocs" @click="applyFillByDocuments">
+            Заполнить
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
       <!-- ЗАПОЛНИТЬ СОТРУДНИКА: выбранный код на весь месяц для выделенного сотрудника -->
       <v-btn variant="outlined" color="success" prepend-icon="mdi-account-edit"
              :disabled="selectedRow === null || !canEdit" @click="openFillEmployeeDialog">
         Заполнить сотрудника
       </v-btn>
+      <v-btn variant="outlined" color="info" prepend-icon="mdi-file-document-multiple" 
+             :disabled="!tabel?.entries?.length || !canEdit" @click="openFillByDocsDialog">
+        Заполнить по документам
+      </v-btn>
       <v-btn color="green darken-1" prepend-icon="mdi-content-save" :loading="saving" :disabled="!canEdit" @click="save(true)">
         Сохранить
       </v-btn>
       <v-btn variant="outlined" prepend-icon="mdi-printer" :to="`/tabels/${route.params.id}/print`" class="ml-2">
-        Печать Т-13
+        Печать
       </v-btn>
       <v-btn variant="outlined" prepend-icon="mdi-cog" @click="showPrintSettings = true" class="ml-2">
         Настройки печати
@@ -993,6 +1030,44 @@ const showPrintSettings = ref(false)
 function onPrintSettingsSaved(columns) {
   message.value = `Настройки печати сохранены: выбрано колонок — ${columns.length}.`
   messageType.value = 'success'
+}
+
+// === Логика заполнения по документам ===
+const fillDocsDialog = ref(false)
+const overwriteDocs = ref(false)
+const fillingDocs = ref(false)
+
+const hasDocuments = computed(() => {
+  return tabel.value?.documents && tabel.value.documents.length > 0
+})
+
+function openFillByDocsDialog() {
+  overwriteDocs.value = false
+  fillDocsDialog.value = true
+}
+
+async function applyFillByDocuments() {
+  fillingDocs.value = true
+  try {
+    const response = await api.post(`/tabels/${tabel.value.id}/fill-by-documents`, {
+      overwrite: overwriteDocs.value
+    })
+    
+    if (response.data.ok) {
+      // Показываем уведомление (можно заменить на ваш snackbar, если он есть)
+      alert(response.data.message || `Успешно заполнено ${response.data.filled_count} ячеек.`)
+      fillDocsDialog.value = false
+      
+      // Перезагружаем табель, чтобы отобразить изменения
+      await loadTabel()
+    }
+  } catch (error) {
+    console.error('Ошибка при заполнении по документам:', error)
+    const errMsg = error.response?.data?.detail || 'Произошла ошибка при заполнении табеля.'
+    alert(errMsg)
+  } finally {
+    fillingDocs.value = false
+  }
 }
 
 // ─── «Заполнить по графику» ────────────────────────────────────────────────

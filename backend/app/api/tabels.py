@@ -261,6 +261,9 @@ class KduUpdate(BaseModel):
 class EntriesAdd(BaseModel):
     employee_ids: List[int]
 
+class FillByDocumentsRequest(BaseModel):
+    overwrite: bool = False  # Если True, перезаписывать уже заполненные ячейки
+
 
 # ---------- вспомогательные ----------
 
@@ -1000,3 +1003,77 @@ def delete_tabel(tabel_id: int, db: Session = Depends(get_db),
     db.delete(tabel)
     db.commit()
     return {"ok": True}
+
+@router.post("/{tabel_id}/fill-by-documents")
+def fill_tabel_by_documents(
+    tabel_id: int,
+    payload: FillByDocumentsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Автоматическое заполнение табеля кодами из активных документов и приказов."""
+    tabel = _get_tabel_or_404(tabel_id, db)
+    _check_write_access(tabel, user, db)
+
+    m_start = date(tabel.year, tabel.month, 1)
+    dim = calendar.monthrange(tabel.year, tabel.month)[1]
+    m_end = date(tabel.year, tabel.month, dim)
+
+    # Получаем все активные документы, пересекающиеся с месяцем табеля
+    from app.models.document import Document
+    docs = db.query(Document).filter(
+        Document.is_active.is_(True),
+        Document.start_date <= m_end,
+        Document.end_date >= m_start
+    ).all()
+
+    # Группируем документы по employee_id для быстрого доступа
+    docs_by_emp = {}
+    for doc in docs:
+        if not doc.code:  # Пропускаем документы без кода
+            continue
+        if doc.employee_id not in docs_by_emp:
+            docs_by_emp[doc.employee_id] = []
+        docs_by_emp[doc.employee_id].append(doc)
+
+    updated_cells_count = 0
+    emp_ids_in_tabel = {entry.employee_id for entry in tabel.entries}
+
+    for emp_id in emp_ids_in_tabel:
+        if emp_id not in docs_by_emp:
+            continue
+
+        entry = next((e for e in tabel.entries if e.employee_id == emp_id), None)
+        if not entry:
+            continue
+
+        # Сортируем документы по дате начала (на случай пересечений, приоритет у более ранних)
+        emp_docs = sorted(docs_by_emp[emp_id], key=lambda d: d.start_date)
+
+        for doc in emp_docs:
+            # Определяем пересечение периода документа и дней текущего месяца табеля
+            # day 1 соответствует m_start
+            start_day = max(1, (doc.start_date - m_start).days + 1)
+            end_day = min(dim, (doc.end_date - m_start).days + 1)
+
+            if start_day > end_day:
+                continue  # Документ не попадает в этот месяц
+
+            for day in range(start_day, end_day + 1):
+                current_val = getattr(entry, f"day_{day}", "") or ""
+                
+                # Если ячейка не пустая и мы не разрешили перезапись — пропускаем
+                if current_val and not payload.overwrite:
+                    continue
+
+                setattr(entry, f"day_{day}", doc.code)
+                updated_cells_count += 1
+
+    if updated_cells_count > 0:
+        db.commit()
+
+    return {
+        "ok": True,
+        "filled_count": updated_cells_count,
+        "message": f"Успешно заполнено {updated_cells_count} ячеек на основании документов."
+    }
