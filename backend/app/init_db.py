@@ -77,6 +77,7 @@ MIGRATIONS = [
     ("documents", "created_by", "INTEGER REFERENCES users(id)"),
     # Тип учёта рабочего времени в графике: 'daily' | 'summed' (суммированный, вахта)
     ("work_schedules", "accounting_type", "VARCHAR(20) DEFAULT 'daily'"),
+    ("time_codes", "color", "VARCHAR(7)"),
 ]
 
 # ✅ Новые права: автоматически проставляем can_view_all_documents=True

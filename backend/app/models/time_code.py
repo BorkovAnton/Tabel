@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Boolean, Integer, String, Float, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-
+from typing import Optional
 from app.database import Base
 
 
@@ -23,3 +23,5 @@ class TimeCode(Base):
     weekend_hours: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     destinations = Column(JSON, default=list)
+    # Цвет кода для отображения в табеле/печати/Excel (#RRGGBB)
+    color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True, default=None)

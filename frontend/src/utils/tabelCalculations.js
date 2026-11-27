@@ -711,3 +711,16 @@ export function getCellHours(val, row, d, timeCodes) {
   }
   return s
 }
+
+export function buildCodeColorMap(timeCodes) {
+  const m = {}
+  for (const c of (timeCodes || [])) {
+    if (c && c.code && c.color) m[String(c.code).trim().toLowerCase()] = c.color
+  }
+  return m
+}
+
+export function cellColor(codeColorMap, rawValue) {
+  const v = String(rawValue ?? '').trim().toLowerCase()
+  return codeColorMap[v] || ''
+}

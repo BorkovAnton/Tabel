@@ -25,6 +25,17 @@ class TimeCodeBase(BaseModel):
     weekend_hours: Optional[float] = None
     destinations: List[str] = []
     is_active: bool = True
+    color: Optional[str] = None  # #RRGGBB
+
+    @field_validator("color")
+    @classmethod
+    def _validate_color(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        v = v.strip()
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", v):
+            raise ValueError("Цвет должен быть в формате #RRGGBB")
+        return v
 
     @field_validator("code")
     @classmethod
@@ -52,6 +63,7 @@ class TimeCodeUpdate(BaseModel):
     use_schedule_hours: Optional[bool] = None
     weekend_hours: Optional[float] = None
     is_active: Optional[bool] = None
+    color: Optional[str] = None
 
 
 class TimeCodeOut(TimeCodeBase):
@@ -97,7 +109,7 @@ def update_time_code(
     if not db_code:
         raise HTTPException(status_code=404, detail="Код не найден")
 
-    for field in ("name", "hours_day", "hours_night", "use_schedule_hours", "weekend_hours", "is_active", "destinations"):
+    for field in ("name", "hours_day", "hours_night", "use_schedule_hours", "weekend_hours", "is_active", "destinations", "color"):
         if field in code_data:
             setattr(db_code, field, code_data[field])
 

@@ -117,7 +117,8 @@
               {{ row.full_name }}<br /><small class="text-grey">{{ row.tab_number }}</small>
             </div></td>
             <td v-for="d in tabel.days_in_month" :key="d" class="cell-day"
-                :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }">
+                :class="{ 'cell-weekend': isWeekend(d), 'cell-holiday': isHoliday(d) }"
+                :style="{ backgroundColor: cellColor(codeColorMap, row.days[d]) }">
               <div class="cell-wrap" :class="{ 'is-open': openCell === row.employee_id + '_' + d }">
                 <v-tooltip location="bottom" :max-width="220" :disabled="!row.days[d]">
                   <template #activator="{ props: tooltipProps }">
@@ -333,7 +334,7 @@
     </div>
 
     <!-- Справочник «Коды часов» -->
-    <v-dialog v-model="codesDialog" max-width="900">
+    <v-dialog v-model="codesDialog" max-width="1100">
       <v-card title="Справочник «Коды часов»">
         <v-card-text>
           <v-table density="compact" hover>
@@ -341,10 +342,11 @@
               <tr>
                 <th style="width: 80px;">Код</th>
                 <th>Наименование</th>
-                <th style="width: 80px;">Часов день</th>
+                <th style="width: 60px;">Цвет</th>
+                <th style="width: 90px;">Часов день</th>
                 <th style="width: 90px;">Часов ночь</th>
-                <th style="width: 110px;" title="Часы берутся из нормы графика работы на конкретный день">По графику</th>
-                <th style="width: 110px;" title="Фиксированные часы в выходные/праздники (норма 0), например 8 для командировки «К»">Часы в выходной</th>
+                <th style="width: 90px;" title="Часы берутся из нормы графика работы на конкретный день">По графику</th>
+                <th style="width: 90px;" title="Фиксированные часы в выходные/праздники (норма 0), например 8 для командировки «К»">Часы в выходной</th>
                 <th style="min-width: 250px; max-width: 400px;">Направления</th>
                 <th v-if="auth.isAdmin" style="width: 100px;">Действия</th>
               </tr>
@@ -353,6 +355,10 @@
               <tr v-for="c in timeCodes" :key="c.id" class="code-row">
                 <td><b>{{ c.code }}</b></td>
                 <td>{{ c.name }}</td>
+                <td class="text-center">
+                  <span v-if="c.color" class="code-swatch" :style="{ background: c.color }"></span>
+                  <span v-else class="text-grey">—</span>
+                </td>
                 <td class="text-center">{{ c.hours_day }}</td>
                 <td class="text-center">{{ c.hours_night }}</td>
                 <td class="text-center">
@@ -405,6 +411,15 @@
                 variant="outlined" 
                 style="flex:1; min-width: 150px;" 
                 hide-details 
+              />
+              <v-text-field 
+                v-model="newCode.color" 
+                label="Цвет" 
+                placeholder="#RRGGBB"
+                density="compact" 
+                variant="outlined" 
+                maxlength="7"
+                class="mt-2"
               />
               <v-text-field 
                 v-model.number="newCode.hours_day" 
@@ -881,6 +896,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
+import { buildCodeColorMap, cellColor } from '../utils/tabelCalculations'
 import CustomEditButton from '../components/CustomEditButton.vue'
 import CustomDeleteButton from '../components/CustomDeleteButton.vue'
 import PrintSettingsDialog from '../components/PrintSettingsDialog.vue'
@@ -897,6 +913,7 @@ const monthNames = ['Январь','Февраль','Март','Апрель','�
 
 const tabel = ref(null)
 const timeCodes = ref([])
+const codeColorMap = computed(() => buildCodeColorMap(timeCodes.value))
 
 // ─── Согласование табеля (workflow: draft → hr_approved → fully_approved) ───
 const approvalSettings = ref({})       // company_settings (hr_manager_id / security_specialist_id)
@@ -1019,7 +1036,7 @@ const messageType = ref('success')
 const saving = ref(false)
 
 const codesDialog = ref(false)
-const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, weekend_hours: null, destinations: [] })
+const newCode = ref({ code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, weekend_hours: null, destinations: [], color: null })
 const codeError = ref('')
 const isEditing = ref(false)
 const editingCode = ref(null)
@@ -2118,7 +2135,8 @@ function editCode(c) {
     hours_night: c.hours_night,
     use_schedule_hours: !!c.use_schedule_hours,
     weekend_hours: (c.weekend_hours == null || c.weekend_hours === '') ? null : Number(c.weekend_hours),
-    destinations: [...(c.destinations || [])]
+    destinations: [...(c.destinations || [])],
+    color: c.color || null,
   }
   codeError.value = ''
 }
@@ -2126,7 +2144,7 @@ function editCode(c) {
 function cancelEdit() {
   isEditing.value = false
   editingCode.value = null
-  newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, weekend_hours: null, destinations: [] }
+  newCode.value = { code: '', name: '', hours_day: 0, hours_night: 0, use_schedule_hours: false, weekend_hours: null, destinations: [], color: null }
   codeError.value = ''
 }
 
@@ -2200,6 +2218,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.code-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  vertical-align: middle;
+}
 /* Tooltip для ячеек табеля */
 .day-tooltip {
   font-size: 12px;
